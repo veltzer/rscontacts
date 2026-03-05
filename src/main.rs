@@ -94,6 +94,12 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Print contacts with phone numbers missing a label (type)
+    CheckPhoneNoLabel,
+    /// Print contacts with invalid-looking email addresses
+    CheckEmail,
+    /// Print contacts that have the same phone number attached twice
+    CheckDuplicatePhones,
     /// Print version information
     Version,
     /// Generate shell completions
@@ -116,6 +122,27 @@ fn credentials_path() -> PathBuf {
 
 fn token_cache_path() -> PathBuf {
     config_dir().join("token_cache.json")
+}
+
+fn is_valid_email(email: &str) -> bool {
+    let trimmed = email.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let Some((local, domain)) = trimmed.rsplit_once('@') else {
+        return false;
+    };
+    if local.is_empty() || domain.is_empty() {
+        return false;
+    }
+    if !domain.contains('.') {
+        return false;
+    }
+    let tld = domain.rsplit('.').next().unwrap_or("");
+    if tld.len() < 2 {
+        return false;
+    }
+    true
 }
 
 fn is_all_caps(name: &str) -> bool {
@@ -576,6 +603,69 @@ async fn cmd_check_phone_minus(fix: bool, dry_run: bool) -> Result<(), Box<dyn s
     Ok(())
 }
 
+async fn cmd_check_duplicate_phones() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
+
+    for person in &contacts {
+        if let Some(nums) = &person.phone_numbers {
+            let values: Vec<&str> = nums.iter().filter_map(|pn| pn.value.as_deref()).collect();
+            let mut seen = std::collections::HashSet::new();
+            let dupes: Vec<&str> = values.iter().filter(|v| !seen.insert(**v)).copied().collect();
+            if !dupes.is_empty() {
+                let name = person_display_name(person);
+                for phone in &dupes {
+                    println!("{} | {}", name, phone);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn cmd_check_email() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
+
+    for person in &contacts {
+        if let Some(emails) = &person.email_addresses {
+            for email in emails {
+                if let Some(val) = email.value.as_deref() {
+                    if !is_valid_email(val) {
+                        let name = person_display_name(person);
+                        println!("{} | {}", name, val);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn cmd_check_phone_no_label() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
+
+    for person in &contacts {
+        if let Some(nums) = &person.phone_numbers {
+            let unlabeled: Vec<&str> = nums.iter()
+                .filter(|pn| pn.type_.is_none())
+                .filter_map(|pn| pn.value.as_deref())
+                .collect();
+            if !unlabeled.is_empty() {
+                let name = person_display_name(person);
+                for phone in &unlabeled {
+                    println!("{} | {}", name, phone);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers", "metadata"]).await?;
@@ -642,6 +732,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneMinus { fix, dry_run } => cmd_check_phone_minus(fix, dry_run).await?,
         Commands::CheckPhoneWhitespace { fix, dry_run } => cmd_check_phone_whitespace(fix, dry_run).await?,
+        Commands::CheckPhoneNoLabel => cmd_check_phone_no_label().await?,
+        Commands::CheckEmail => cmd_check_email().await?,
+        Commands::CheckDuplicatePhones => cmd_check_duplicate_phones().await?,
         Commands::CheckAll { fix, dry_run, ref country } => cmd_check_all(fix, dry_run, country).await?,
         Commands::Version => {
             let is_dirty = std::process::Command::new("git")
@@ -931,6 +1024,23 @@ mod tests {
         let dir = config_dir();
         assert!(dir.ends_with("rscontacts"));
         assert!(dir.to_str().unwrap().contains(".config"));
+    }
+
+    #[test]
+    fn test_is_valid_email_valid() {
+        assert!(is_valid_email("user@example.com"));
+        assert!(is_valid_email("first.last@domain.co.uk"));
+        assert!(is_valid_email("test+tag@gmail.com"));
+    }
+
+    #[test]
+    fn test_is_valid_email_invalid() {
+        assert!(!is_valid_email(""));
+        assert!(!is_valid_email("noatsign"));
+        assert!(!is_valid_email("@nodomain.com"));
+        assert!(!is_valid_email("user@"));
+        assert!(!is_valid_email("user@nodot"));
+        assert!(!is_valid_email("user@domain.x"));
     }
 
     #[test]
