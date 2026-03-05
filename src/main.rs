@@ -1010,6 +1010,78 @@ async fn cmd_check_email() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn check_email_caps(contacts: &[google_people1::api::Person], prefix: &str, header: Option<&str>) -> usize {
+    let mut count = 0;
+    for person in contacts {
+        if let Some(emails) = &person.email_addresses {
+            for email in emails {
+                if let Some(val) = email.value.as_deref() {
+                    if val != val.to_lowercase().as_str() {
+                        if count == 0 {
+                            if let Some(header) = header {
+                                println!("=== {} ===", header);
+                            }
+                        }
+                        let name = person_display_name(person);
+                        println!("{}{} | {} -> {}", prefix, name, val, val.to_lowercase());
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+    if count > 0 && header.is_some() { println!(); }
+    count
+}
+
+async fn cmd_check_email_caps(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
+
+    for person in &contacts {
+        if let Some(emails) = &person.email_addresses {
+            let has_caps = emails.iter().any(|e| {
+                e.value.as_deref().is_some_and(|v| v != v.to_lowercase().as_str())
+            });
+            if has_caps {
+                let name = person_display_name(person);
+                for email in emails {
+                    if let Some(val) = email.value.as_deref() {
+                        if val != val.to_lowercase().as_str() {
+                            println!("{} | {} -> {}", name, val, val.to_lowercase());
+                        }
+                    }
+                }
+                if fix && !dry_run {
+                    use std::io::Write;
+                    std::io::stdout().flush()?;
+                    let resource_name = person
+                        .resource_name
+                        .as_deref()
+                        .ok_or("Contact missing resource name")?;
+                    let mut updated = person.clone();
+                    if let Some(ref mut ems) = updated.email_addresses {
+                        for e in ems.iter_mut() {
+                            if let Some(ref val) = e.value {
+                                e.value = Some(val.to_lowercase());
+                            }
+                        }
+                    }
+                    hub.people()
+                        .update_contact(updated, resource_name)
+                        .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
+                        .doit()
+                        .await?;
+                    eprintln!("  Fixed emails for {}", name);
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn check_duplicate_emails(contacts: &[google_people1::api::Person], prefix: &str, header: Option<&str>) -> usize {
     let mut count = 0;
     for person in contacts {
@@ -1706,6 +1778,7 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
     if check_phone_no_label(&all_contacts, "  ", Some("Phones without label (check-phone-no-label)")) > 0 { found_any = true; }
     if check_phone_label_english(&all_contacts, "  ", Some("Non-English phone labels (check-phone-label-english)")) > 0 { found_any = true; }
     if check_invalid_emails(&all_contacts, "  ", Some("Invalid emails (check-email)")) > 0 { found_any = true; }
+    if check_email_caps(&all_contacts, "  ", Some("Emails with uppercase (check-email-caps)")) > 0 { found_any = true; }
     if check_duplicate_phones(&all_contacts, "  ", Some("Duplicate phone numbers (check-duplicate-phones)")) > 0 { found_any = true; }
     if check_duplicate_emails(&all_contacts, "  ", Some("Duplicate email addresses (check-duplicate-emails)")) > 0 { found_any = true; }
 
@@ -1785,6 +1858,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneNoLabel => cmd_check_phone_no_label().await?,
         Commands::CheckPhoneLabelEnglish { fix, dry_run } => cmd_check_phone_label_english(fix, dry_run).await?,
         Commands::CheckEmail => cmd_check_email().await?,
+        Commands::CheckEmailCaps { fix, dry_run } => cmd_check_email_caps(fix, dry_run).await?,
         Commands::CheckDuplicateEmails { fix, dry_run } => cmd_check_duplicate_emails(fix, dry_run).await?,
         Commands::CheckDuplicatePhones { fix, dry_run } => cmd_check_duplicate_phones(fix, dry_run).await?,
         Commands::CheckLabelsNophone { fix, dry_run } => cmd_check_labels_nophone(fix, dry_run).await?,
