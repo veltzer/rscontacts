@@ -37,6 +37,8 @@ enum Commands {
         #[arg(long)]
         fix: bool,
     },
+    /// Print contacts with phone numbers missing a country code
+    CheckPhone,
     /// Print version information
     Version,
     /// Generate shell completions
@@ -63,6 +65,11 @@ fn token_cache_path() -> PathBuf {
 
 fn is_english_name(name: &str) -> bool {
     name.chars().all(|c| c.is_ascii() || c == '\u{200f}' || c == '\u{200e}')
+}
+
+fn has_country_code(phone: &str) -> bool {
+    let trimmed = phone.trim();
+    trimmed.starts_with('+') || trimmed.starts_with("00")
 }
 
 struct NoInteractionDelegate;
@@ -335,6 +342,61 @@ async fn cmd_check_english(fix: bool) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
+async fn cmd_check_phone() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+
+    let mut page_token: Option<String> = None;
+
+    loop {
+        let mut request = hub
+            .people()
+            .connections_list("people/me")
+            .person_fields(FieldMask::new::<&str>(&["names", "phoneNumbers"]));
+
+        if let Some(ref token) = page_token {
+            request = request.page_token(token);
+        }
+
+        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
+
+        if let Some(connections) = result.connections {
+            for person in &connections {
+                let phones: Vec<&str> = person
+                    .phone_numbers
+                    .as_ref()
+                    .map(|nums| nums.iter().filter_map(|p| p.value.as_deref()).collect())
+                    .unwrap_or_default();
+
+                let bad_phones: Vec<&str> = phones
+                    .iter()
+                    .filter(|p| !has_country_code(p))
+                    .copied()
+                    .collect();
+
+                if !bad_phones.is_empty() {
+                    let name = person
+                        .names
+                        .as_ref()
+                        .and_then(|names| names.first())
+                        .and_then(|n| n.display_name.as_deref())
+                        .unwrap_or("<no name>");
+
+                    for phone in bad_phones {
+                        println!("{} | {}", name, phone);
+                    }
+                }
+            }
+        }
+
+        page_token = result.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     rustls::crypto::aws_lc_rs::default_provider()
@@ -347,6 +409,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Auth { no_browser } => cmd_auth(no_browser).await?,
         Commands::List => cmd_list().await?,
         Commands::CheckEnglish { fix } => cmd_check_english(fix).await?,
+        Commands::CheckPhone => cmd_check_phone().await?,
         Commands::Version => {
             let is_dirty = std::process::Command::new("git")
                 .args(["diff", "--quiet", "HEAD"])
@@ -417,6 +480,37 @@ mod tests {
     fn test_cli_check_english_fix() {
         let cli = Cli::parse_from(["rscontacts", "check-english", "--fix"]);
         assert!(matches!(cli.command, Commands::CheckEnglish { fix: true }));
+    }
+
+    #[test]
+    fn test_cli_check_phone_subcommand() {
+        let cli = Cli::parse_from(["rscontacts", "check-phone"]);
+        assert!(matches!(cli.command, Commands::CheckPhone));
+    }
+
+    #[test]
+    fn test_has_country_code_plus() {
+        assert!(has_country_code("+1-555-1234"));
+        assert!(has_country_code("+972501234567"));
+        assert!(has_country_code("  +44 20 7946 0958"));
+    }
+
+    #[test]
+    fn test_has_country_code_double_zero() {
+        assert!(has_country_code("00972501234567"));
+        assert!(has_country_code("0044 20 7946 0958"));
+    }
+
+    #[test]
+    fn test_has_country_code_missing() {
+        assert!(!has_country_code("0501234567"));
+        assert!(!has_country_code("555-1234"));
+        assert!(!has_country_code("(02) 555-1234"));
+    }
+
+    #[test]
+    fn test_has_country_code_empty() {
+        assert!(!has_country_code(""));
     }
 
     #[test]
