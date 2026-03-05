@@ -189,6 +189,11 @@ fn person_name(person: &google_people1::api::Person) -> &str {
         .unwrap_or("")
 }
 
+fn person_display_name(person: &google_people1::api::Person) -> &str {
+    let name = person_name(person);
+    if name.is_empty() { "<no name>" } else { name }
+}
+
 fn person_email(person: &google_people1::api::Person) -> &str {
     person
         .email_addresses
@@ -260,9 +265,7 @@ where
         .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
         .doit()
         .await?;
-    let name = person_name(person);
-    let display = if name.is_empty() { "<no name>" } else { name };
-    eprintln!("  Fixed: {}", display);
+    eprintln!("  Fixed: {}", person_display_name(person));
     tokio::time::sleep(MUTATE_DELAY).await;
     Ok(())
 }
@@ -360,8 +363,7 @@ async fn cmd_list() -> Result<(), Box<dyn std::error::Error>> {
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers"]).await?;
 
     for person in &contacts {
-        let name = person_name(person);
-        let name = if name.is_empty() { "<no name>" } else { name };
+        let name = person_display_name(person);
         let email = person_email(person);
 
         let phone = person
@@ -416,47 +418,116 @@ fn print_name_with_email(name: &str, email: &str, prefix: &str) {
     }
 }
 
-async fn cmd_check_english(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
-
-    let non_english: Vec<_> = contacts.into_iter().filter(|p| {
+async fn check_name_issues<F>(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    predicate: F,
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+) -> Result<usize, Box<dyn std::error::Error>>
+where
+    F: Fn(&str) -> bool,
+{
+    let filtered: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
         let name = person_name(p);
-        !name.is_empty() && !is_english_name(name)
+        !name.is_empty() && predicate(name)
     }).collect();
 
-    for person in &non_english {
-        let name = person_name(person);
-        let email = person_email(person);
-        print_name_with_email(name, email, "");
-
-        if fix && !dry_run {
-            interactive_name_fix(&hub, person, name).await?;
+    if !filtered.is_empty() {
+        if let Some(header) = header {
+            println!("=== {} ({}) ===", header, filtered.len());
         }
     }
 
+    for person in &filtered {
+        let name = person_name(person);
+        let email = person_email(person);
+        print_name_with_email(name, email, prefix);
+
+        if fix && !dry_run {
+            interactive_name_fix(hub, person, name).await?;
+        }
+    }
+
+    if !filtered.is_empty() && header.is_some() {
+        println!();
+    }
+
+    Ok(filtered.len())
+}
+
+async fn check_phone_issues<P, T>(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    predicate: P,
+    transform: T,
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+) -> Result<usize, Box<dyn std::error::Error>>
+where
+    P: Fn(&str) -> bool,
+    T: Fn(&str) -> String + Clone,
+{
+    let filtered: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
+        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
+            pn.value.as_deref().is_some_and(|v| predicate(v))
+        }))
+    }).collect();
+
+    if !filtered.is_empty() {
+        if let Some(header) = header {
+            println!("=== {} ({}) ===", header, filtered.len());
+        }
+    }
+
+    for person in &filtered {
+        let name = person_display_name(person);
+
+        if let Some(nums) = &person.phone_numbers {
+            for pn in nums {
+                if let Some(val) = pn.value.as_deref() {
+                    if predicate(val) {
+                        let fixed = transform(val);
+                        print_phone_fix(name, val, &fixed, fix, dry_run, prefix);
+                    }
+                }
+            }
+        }
+
+        if fix && !dry_run {
+            let transform = transform.clone();
+            update_phone_numbers(hub, person, |val| {
+                if predicate(val) {
+                    Some(transform(val))
+                } else {
+                    None
+                }
+            }).await?;
+        }
+    }
+
+    if !filtered.is_empty() && header.is_some() {
+        println!();
+    }
+
+    Ok(filtered.len())
+}
+
+async fn cmd_check_english(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
+    check_name_issues(&hub, &contacts, |name| !is_english_name(name), fix, dry_run, "", None).await?;
     Ok(())
 }
 
 async fn cmd_check_caps(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
-
-    let all_caps: Vec<_> = contacts.into_iter().filter(|p| {
-        let name = person_name(p);
-        !name.is_empty() && is_all_caps(name)
-    }).collect();
-
-    for person in &all_caps {
-        let name = person_name(person);
-        let email = person_email(person);
-        print_name_with_email(name, email, "");
-
-        if fix && !dry_run {
-            interactive_name_fix(&hub, person, name).await?;
-        }
-    }
-
+    check_name_issues(&hub, &contacts, |name| is_all_caps(name), fix, dry_run, "", None).await?;
     Ok(())
 }
 
@@ -471,120 +542,37 @@ fn print_phone_fix(name: &str, phone: &str, fixed: &str, fix: bool, dry_run: boo
 async fn cmd_check_phone_countrycode(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
-
-    let filtered: Vec<_> = contacts.into_iter().filter(|p| {
-        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
-            pn.value.as_deref().is_some_and(|v| is_fixable_phone(v) && !has_country_code(v))
-        }))
-    }).collect();
-
-    for person in &filtered {
-        let name = person_name(person);
-        let name = if name.is_empty() { "<no name>" } else { name };
-
-        let phones: Vec<&str> = person.phone_numbers.as_ref()
-            .map(|nums| nums.iter().filter_map(|p| p.value.as_deref()).collect())
-            .unwrap_or_default();
-
-        let bad_phones: Vec<&str> = phones.iter()
-            .filter(|p| is_fixable_phone(p) && !has_country_code(p))
-            .copied().collect();
-
-        for phone in &bad_phones {
-            let fixed = add_country_code(phone, country);
-            print_phone_fix(name, phone, &fixed, fix, dry_run, "");
-        }
-
-        if fix && !dry_run {
-            let country = country.to_string();
-            update_phone_numbers(&hub, person, |val| {
-                if is_fixable_phone(val) && !has_country_code(val) {
-                    Some(add_country_code(val, &country))
-                } else {
-                    None
-                }
-            }).await?;
-        }
-    }
-
+    let country = country.to_string();
+    check_phone_issues(
+        &hub, &contacts,
+        |v| is_fixable_phone(v) && !has_country_code(v),
+        move |v| add_country_code(v, &country),
+        fix, dry_run, "", None,
+    ).await?;
     Ok(())
 }
 
 async fn cmd_check_phone_remove_whitespace(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
-
-    let filtered: Vec<_> = contacts.into_iter().filter(|p| {
-        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
-            pn.value.as_deref().is_some_and(|v| v.contains(char::is_whitespace))
-        }))
-    }).collect();
-
-    for person in &filtered {
-        let name = person_name(person);
-        let name = if name.is_empty() { "<no name>" } else { name };
-
-        if let Some(nums) = &person.phone_numbers {
-            for pn in nums {
-                if let Some(val) = pn.value.as_deref() {
-                    if val.contains(char::is_whitespace) {
-                        let fixed: String = val.chars().filter(|c| !c.is_whitespace()).collect();
-                        print_phone_fix(name, val, &fixed, fix, dry_run, "");
-                    }
-                }
-            }
-        }
-
-        if fix && !dry_run {
-            update_phone_numbers(&hub, person, |val| {
-                if val.contains(char::is_whitespace) {
-                    Some(val.chars().filter(|c| !c.is_whitespace()).collect())
-                } else {
-                    None
-                }
-            }).await?;
-        }
-    }
-
+    check_phone_issues(
+        &hub, &contacts,
+        |v| v.contains(char::is_whitespace),
+        |v| v.chars().filter(|c| !c.is_whitespace()).collect(),
+        fix, dry_run, "", None,
+    ).await?;
     Ok(())
 }
 
 async fn cmd_check_phone_remove_minus(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
-
-    let filtered: Vec<_> = contacts.into_iter().filter(|p| {
-        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
-            pn.value.as_deref().is_some_and(|v| v.contains('-'))
-        }))
-    }).collect();
-
-    for person in &filtered {
-        let name = person_name(person);
-        let name = if name.is_empty() { "<no name>" } else { name };
-
-        if let Some(nums) = &person.phone_numbers {
-            for pn in nums {
-                if let Some(val) = pn.value.as_deref() {
-                    if val.contains('-') {
-                        let fixed = val.replace('-', "");
-                        print_phone_fix(name, val, &fixed, fix, dry_run, "");
-                    }
-                }
-            }
-        }
-
-        if fix && !dry_run {
-            update_phone_numbers(&hub, person, |val| {
-                if val.contains('-') {
-                    Some(val.replace('-', ""))
-                } else {
-                    None
-                }
-            }).await?;
-        }
-    }
-
+    check_phone_issues(
+        &hub, &contacts,
+        |v| v.contains('-'),
+        |v| v.replace('-', ""),
+        fix, dry_run, "", None,
+    ).await?;
     Ok(())
 }
 
@@ -594,147 +582,42 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
 
     let mut found_any = false;
 
-    // Check non-English names
-    let non_english: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
-        let name = person_name(p);
-        !name.is_empty() && !is_english_name(name)
-    }).collect();
-    if !non_english.is_empty() {
-        found_any = true;
-        println!("=== Non-English names ({}) ===", non_english.len());
-        for person in &non_english {
-            let name = person_name(person);
-            let email = person_email(person);
-            print_name_with_email(name, email, "  ");
-            if fix && !dry_run {
-                interactive_name_fix(&hub, person, name).await?;
-            }
-        }
-        println!();
-    }
+    let non_english = check_name_issues(
+        &hub, &all_contacts, |name| !is_english_name(name),
+        fix, dry_run, "  ", Some("Non-English names"),
+    ).await?;
+    if non_english > 0 { found_any = true; }
 
-    // Check all-caps names
-    let all_caps: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
-        let name = person_name(p);
-        !name.is_empty() && is_all_caps(name)
-    }).collect();
-    if !all_caps.is_empty() {
-        found_any = true;
-        println!("=== All-caps names ({}) ===", all_caps.len());
-        for person in &all_caps {
-            let name = person_name(person);
-            let email = person_email(person);
-            print_name_with_email(name, email, "  ");
-            if fix && !dry_run {
-                interactive_name_fix(&hub, person, name).await?;
-            }
-        }
-        println!();
-    }
+    let all_caps = check_name_issues(
+        &hub, &all_contacts, |name| is_all_caps(name),
+        fix, dry_run, "  ", Some("All-caps names"),
+    ).await?;
+    if all_caps > 0 { found_any = true; }
 
-    // Check phones without country code
-    let no_country: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
-        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
-            pn.value.as_deref().is_some_and(|v| is_fixable_phone(v) && !has_country_code(v))
-        }))
-    }).collect();
-    if !no_country.is_empty() {
-        found_any = true;
-        println!("=== Phones missing country code ({}) ===", no_country.len());
-        for person in &no_country {
-            let name = person_name(person);
-            let name = if name.is_empty() { "<no name>" } else { name };
-            let phones: Vec<&str> = person.phone_numbers.as_ref()
-                .map(|nums| nums.iter().filter_map(|p| p.value.as_deref())
-                    .filter(|v| is_fixable_phone(v) && !has_country_code(v)).collect())
-                .unwrap_or_default();
-            for phone in &phones {
-                let fixed = add_country_code(phone, country);
-                print_phone_fix(name, phone, &fixed, fix, dry_run, "  ");
-            }
-            if fix && !dry_run {
-                let country = country.to_string();
-                update_phone_numbers(&hub, person, |val| {
-                    if is_fixable_phone(val) && !has_country_code(val) {
-                        Some(add_country_code(val, &country))
-                    } else {
-                        None
-                    }
-                }).await?;
-            }
-        }
-        println!();
-    }
+    let country_owned = country.to_string();
+    let no_country = check_phone_issues(
+        &hub, &all_contacts,
+        |v| is_fixable_phone(v) && !has_country_code(v),
+        move |v| add_country_code(v, &country_owned),
+        fix, dry_run, "  ", Some("Phones missing country code"),
+    ).await?;
+    if no_country > 0 { found_any = true; }
 
-    // Check phones with dashes
-    let with_minus: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
-        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
-            pn.value.as_deref().is_some_and(|v| v.contains('-'))
-        }))
-    }).collect();
-    if !with_minus.is_empty() {
-        found_any = true;
-        println!("=== Phones with dashes ({}) ===", with_minus.len());
-        for person in &with_minus {
-            let name = person_name(person);
-            let name = if name.is_empty() { "<no name>" } else { name };
-            if let Some(nums) = &person.phone_numbers {
-                for pn in nums {
-                    if let Some(val) = pn.value.as_deref() {
-                        if val.contains('-') {
-                            let fixed = val.replace('-', "");
-                            print_phone_fix(name, val, &fixed, fix, dry_run, "  ");
-                        }
-                    }
-                }
-            }
-            if fix && !dry_run {
-                update_phone_numbers(&hub, person, |val| {
-                    if val.contains('-') {
-                        Some(val.replace('-', ""))
-                    } else {
-                        None
-                    }
-                }).await?;
-            }
-        }
-        println!();
-    }
+    let with_minus = check_phone_issues(
+        &hub, &all_contacts,
+        |v| v.contains('-'),
+        |v| v.replace('-', ""),
+        fix, dry_run, "  ", Some("Phones with dashes"),
+    ).await?;
+    if with_minus > 0 { found_any = true; }
 
-    // Check phones with whitespace
-    let with_ws: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
-        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
-            pn.value.as_deref().is_some_and(|v| v.contains(char::is_whitespace))
-        }))
-    }).collect();
-    if !with_ws.is_empty() {
-        found_any = true;
-        println!("=== Phones with whitespace ({}) ===", with_ws.len());
-        for person in &with_ws {
-            let name = person_name(person);
-            let name = if name.is_empty() { "<no name>" } else { name };
-            if let Some(nums) = &person.phone_numbers {
-                for pn in nums {
-                    if let Some(val) = pn.value.as_deref() {
-                        if val.contains(char::is_whitespace) {
-                            let fixed: String = val.chars().filter(|c| !c.is_whitespace()).collect();
-                            print_phone_fix(name, val, &fixed, fix, dry_run, "  ");
-                        }
-                    }
-                }
-            }
-            if fix && !dry_run {
-                update_phone_numbers(&hub, person, |val| {
-                    if val.contains(char::is_whitespace) {
-                        Some(val.chars().filter(|c| !c.is_whitespace()).collect())
-                    } else {
-                        None
-                    }
-                }).await?;
-            }
-        }
-        println!();
-    }
+    let with_ws = check_phone_issues(
+        &hub, &all_contacts,
+        |v| v.contains(char::is_whitespace),
+        |v| v.chars().filter(|c| !c.is_whitespace()).collect(),
+        fix, dry_run, "  ", Some("Phones with whitespace"),
+    ).await?;
+    if with_ws > 0 { found_any = true; }
 
     if !found_any {
         println!("All checks passed!");
