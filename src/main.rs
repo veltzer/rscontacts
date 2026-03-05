@@ -32,6 +32,9 @@ enum Commands {
         /// Don't open browser automatically; print URL instead
         #[arg(long)]
         no_browser: bool,
+        /// Force re-authentication even if a token is already cached
+        #[arg(long)]
+        force: bool,
     },
     /// List all contacts
     List {
@@ -403,7 +406,14 @@ async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
     Ok(PeopleService::new(client, auth))
 }
 
-async fn cmd_auth(no_browser: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if force {
+        let cache = token_cache_path();
+        if cache.exists() {
+            std::fs::remove_file(&cache)?;
+            eprintln!("Removed cached token at {}", cache.display());
+        }
+    }
     let secret = yup_oauth2::read_application_secret(credentials_path()).await?;
 
     let mut builder = yup_oauth2::InstalledFlowAuthenticator::builder(
@@ -1028,7 +1038,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Auth { no_browser } => cmd_auth(no_browser).await?,
+        Commands::Auth { no_browser, force } => cmd_auth(no_browser, force).await?,
         Commands::List { labels } => cmd_list(labels).await?,
         Commands::CheckNameEnglish { fix, dry_run } => cmd_check_english(fix, dry_run).await?,
         Commands::CheckNameCaps { fix, dry_run } => cmd_check_caps(fix, dry_run).await?,
@@ -1077,13 +1087,19 @@ mod tests {
     #[test]
     fn test_cli_auth_subcommand() {
         let cli = Cli::parse_from(["rscontacts", "auth"]);
-        assert!(matches!(cli.command, Commands::Auth { no_browser: false }));
+        assert!(matches!(cli.command, Commands::Auth { no_browser: false, force: false }));
     }
 
     #[test]
     fn test_cli_auth_no_browser() {
         let cli = Cli::parse_from(["rscontacts", "auth", "--no-browser"]);
-        assert!(matches!(cli.command, Commands::Auth { no_browser: true }));
+        assert!(matches!(cli.command, Commands::Auth { no_browser: true, force: false }));
+    }
+
+    #[test]
+    fn test_cli_auth_force() {
+        let cli = Cli::parse_from(["rscontacts", "auth", "--force"]);
+        assert!(matches!(cli.command, Commands::Auth { no_browser: false, force: true }));
     }
 
     #[test]
