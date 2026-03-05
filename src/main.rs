@@ -71,7 +71,7 @@ fn token_cache_path() -> PathBuf {
 
 fn is_all_caps(name: &str) -> bool {
     let alpha_chars: String = name.chars().filter(|c| c.is_alphabetic()).collect();
-    !alpha_chars.is_empty() && alpha_chars == alpha_chars.to_uppercase()
+    alpha_chars.len() >= 2 && alpha_chars == alpha_chars.to_uppercase()
 }
 
 fn is_english_name(name: &str) -> bool {
@@ -623,6 +623,12 @@ mod tests {
     fn test_is_all_caps_no_alpha() {
         assert!(!is_all_caps("123"));
         assert!(!is_all_caps(""));
+    }
+
+    #[test]
+    fn test_is_all_caps_short_codes() {
+        assert!(!is_all_caps("P78"));
+        assert!(!is_all_caps("A1"));
     }
 
     #[test]
