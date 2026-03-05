@@ -109,9 +109,9 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contacts not assigned to any label (contact group)
-    CheckNoLabel,
+    CheckContactNoLabel,
     /// Print contacts with phone numbers missing a type (mobile/home/work/etc)
-    CheckPhoneNoType,
+    CheckPhoneNoLabel,
     /// Print contacts with invalid-looking email addresses
     CheckEmail,
     /// Print contacts that have the same phone number attached twice
@@ -854,7 +854,7 @@ async fn cmd_check_phone_no_type() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_check_no_label() -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_contact_no_label() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "memberships", "metadata"]).await?;
     check_no_label(&contacts, "", None);
@@ -1036,8 +1036,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneMinus { fix, dry_run } => cmd_check_phone_minus(fix, dry_run).await?,
         Commands::CheckPhoneWhitespace { fix, dry_run } => cmd_check_phone_whitespace(fix, dry_run).await?,
-        Commands::CheckNoLabel => cmd_check_no_label().await?,
-        Commands::CheckPhoneNoType => cmd_check_phone_no_type().await?,
+        Commands::CheckContactNoLabel => cmd_check_contact_no_label().await?,
+        Commands::CheckPhoneNoLabel => cmd_check_phone_no_type().await?,
         Commands::CheckEmail => cmd_check_email().await?,
         Commands::CheckDuplicatePhones { fix, dry_run } => cmd_check_duplicate_phones(fix, dry_run).await?,
         Commands::CheckLabelsNophone { fix, dry_run } => cmd_check_labels_nophone(fix, dry_run).await?,
