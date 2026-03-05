@@ -156,6 +156,10 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Show all distinct phone labels in use
+    ShowPhoneLabels,
+    /// Show all contact labels (contact groups) in use
+    ShowContactLabels,
     /// Print version information
     Version,
     /// Generate shell completions
@@ -1161,6 +1165,55 @@ async fn cmd_check_labels_nophone(fix: bool, dry_run: bool) -> Result<(), Box<dy
         }
     }
 
+    Ok(())
+}
+
+async fn cmd_show_phone_labels() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["phoneNumbers"]).await?;
+    let mut labels = std::collections::BTreeSet::new();
+    for person in &contacts {
+        if let Some(nums) = &person.phone_numbers {
+            for pn in nums {
+                if let Some(label) = pn.formatted_type.as_deref().or(pn.type_.as_deref()) {
+                    if !label.is_empty() {
+                        labels.insert(label.to_string());
+                    }
+                }
+            }
+        }
+    }
+    for label in &labels {
+        println!("{}", label);
+    }
+    Ok(())
+}
+
+async fn cmd_show_contact_labels() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let mut all_groups: Vec<google_people1::api::ContactGroup> = Vec::new();
+    let mut page_token: Option<String> = None;
+    loop {
+        let mut request = hub.contact_groups().list();
+        if let Some(ref token) = page_token {
+            request = request.page_token(token);
+        }
+        let (_response, result) = request.doit().await?;
+        if let Some(groups) = result.contact_groups {
+            all_groups.extend(groups);
+        }
+        page_token = result.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+    for group in &all_groups {
+        if group.group_type.as_deref() == Some("USER_CONTACT_GROUP") {
+            let name = group.name.as_deref().unwrap_or("<unnamed>");
+            let count = group.member_count.unwrap_or(0);
+            println!("{} ({})", name, count);
+        }
+    }
     Ok(())
 }
 
