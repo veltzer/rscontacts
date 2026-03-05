@@ -420,7 +420,7 @@ async fn check_no_label(
                     std::io::stdin().read_line(&mut input)?;
                     match input.trim().chars().next() {
                         Some('l') => {
-                            if let Some(group_rn) = prompt_label_autocomplete(label_names, user_groups)? {
+                            if let Some(group_rn) = prompt_label_autocomplete(hub, label_names, user_groups).await? {
                                 let req = google_people1::api::ModifyContactGroupMembersRequest {
                                     resource_names_to_add: Some(vec![resource_name.to_string()]),
                                     resource_names_to_remove: None,
@@ -806,7 +806,8 @@ pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), 
     Ok(())
 }
 
-fn prompt_label_autocomplete(
+async fn prompt_label_autocomplete(
+    hub: &HubType,
     label_names: &[String],
     user_groups: &[(&str, &str)],
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
@@ -848,7 +849,7 @@ fn prompt_label_autocomplete(
     let completer = LabelCompleter { labels: label_names.to_vec() };
     let mut rl = Editor::new()?;
     rl.set_helper(Some(completer));
-    match rl.readline("  Label (tab to complete): ") {
+    match rl.readline("  Label (tab to complete, or type new name): ") {
         Ok(line) => {
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -859,9 +860,23 @@ fn prompt_label_autocomplete(
             if let Some((_, rn)) = user_groups.iter().find(|(name, _)| name.to_lowercase() == lower) {
                 Ok(Some(rn.to_string()))
             } else {
-                eprintln!("  Unknown label \"{}\". Available: {}", trimmed,
-                    label_names.join(", "));
-                Ok(None)
+                // Create a new label
+                if prompt_yes_no(&format!("Label \"{}\" does not exist. Create it?", trimmed))? {
+                    let mut new_group = google_people1::api::ContactGroup::default();
+                    new_group.name = Some(trimmed.to_string());
+                    let req = google_people1::api::CreateContactGroupRequest {
+                        contact_group: Some(new_group),
+                        read_group_fields: None,
+                    };
+                    let (_, created) = hub.contact_groups().create(req).doit().await?;
+                    let rn = created.resource_name
+                        .ok_or("Created group missing resource name")?;
+                    eprintln!("  Created label \"{}\"", trimmed);
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                    Ok(Some(rn))
+                } else {
+                    Ok(None)
+                }
             }
         }
         Err(_) => Ok(None),
