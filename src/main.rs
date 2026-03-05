@@ -44,7 +44,17 @@ enum Commands {
         fix: bool,
     },
     /// Print contacts with phone numbers missing a country code
-    CheckPhone,
+    CheckPhone {
+        /// Auto-fix by prepending country code
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+        /// Country code to prepend (without +)
+        #[arg(long, default_value = "972")]
+        country: String,
+    },
     /// Print version information
     Version,
     /// Generate shell completions
@@ -81,6 +91,12 @@ fn is_english_name(name: &str) -> bool {
 fn has_country_code(phone: &str) -> bool {
     let trimmed = phone.trim();
     trimmed.starts_with('+') || trimmed.starts_with("00")
+}
+
+fn add_country_code(phone: &str, country: &str) -> String {
+    let trimmed = phone.trim();
+    let without_leading_zero = trimmed.strip_prefix('0').unwrap_or(trimmed);
+    format!("+{}{}", country, without_leading_zero)
 }
 
 struct NoInteractionDelegate;
@@ -452,16 +468,17 @@ async fn cmd_check_caps(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_check_phone() -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_phone(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
 
+    let mut contacts: Vec<google_people1::api::Person> = Vec::new();
     let mut page_token: Option<String> = None;
 
     loop {
         let mut request = hub
             .people()
             .connections_list("people/me")
-            .person_fields(FieldMask::new::<&str>(&["names", "phoneNumbers"]));
+            .person_fields(FieldMask::new::<&str>(&["names", "phoneNumbers", "metadata"]));
 
         if let Some(ref token) = page_token {
             request = request.page_token(token);
@@ -470,30 +487,16 @@ async fn cmd_check_phone() -> Result<(), Box<dyn std::error::Error>> {
         let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
 
         if let Some(connections) = result.connections {
-            for person in &connections {
-                let phones: Vec<&str> = person
+            for person in connections {
+                let has_bad_phone = person
                     .phone_numbers
                     .as_ref()
-                    .map(|nums| nums.iter().filter_map(|p| p.value.as_deref()).collect())
-                    .unwrap_or_default();
+                    .is_some_and(|nums| nums.iter().any(|p| {
+                        p.value.as_deref().is_some_and(|v| !has_country_code(v))
+                    }));
 
-                let bad_phones: Vec<&str> = phones
-                    .iter()
-                    .filter(|p| !has_country_code(p))
-                    .copied()
-                    .collect();
-
-                if !bad_phones.is_empty() {
-                    let name = person
-                        .names
-                        .as_ref()
-                        .and_then(|names| names.first())
-                        .and_then(|n| n.display_name.as_deref())
-                        .unwrap_or("<no name>");
-
-                    for phone in bad_phones {
-                        println!("{} | {}", name, phone);
-                    }
+                if has_bad_phone {
+                    contacts.push(person);
                 }
             }
         }
@@ -501,6 +504,60 @@ async fn cmd_check_phone() -> Result<(), Box<dyn std::error::Error>> {
         page_token = result.next_page_token;
         if page_token.is_none() {
             break;
+        }
+    }
+
+    for person in &contacts {
+        let name = person
+            .names
+            .as_ref()
+            .and_then(|names| names.first())
+            .and_then(|n| n.display_name.as_deref())
+            .unwrap_or("<no name>");
+
+        let phones: Vec<&str> = person
+            .phone_numbers
+            .as_ref()
+            .map(|nums| nums.iter().filter_map(|p| p.value.as_deref()).collect())
+            .unwrap_or_default();
+
+        let bad_phones: Vec<&str> = phones
+            .iter()
+            .filter(|p| !has_country_code(p))
+            .copied()
+            .collect();
+
+        for phone in &bad_phones {
+            let fixed = add_country_code(phone, country);
+            if fix || dry_run {
+                println!("{} | {} -> {}", name, phone, fixed);
+            } else {
+                println!("{} | {}", name, phone);
+            }
+        }
+
+        if fix && !dry_run {
+            let resource_name = person
+                .resource_name
+                .as_deref()
+                .ok_or("Contact missing resource name")?;
+
+            let mut updated = person.clone();
+            if let Some(ref mut nums) = updated.phone_numbers {
+                for pn in nums.iter_mut() {
+                    if let Some(ref val) = pn.value {
+                        if !has_country_code(val) {
+                            pn.value = Some(add_country_code(val, country));
+                        }
+                    }
+                }
+            }
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                .doit()
+                .await?;
+            eprintln!("  Fixed: {}", name);
         }
     }
 
@@ -520,7 +577,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::List => cmd_list().await?,
         Commands::CheckEnglish { fix } => cmd_check_english(fix).await?,
         Commands::CheckCaps { fix } => cmd_check_caps(fix).await?,
-        Commands::CheckPhone => cmd_check_phone().await?,
+        Commands::CheckPhone { fix, dry_run, ref country } => cmd_check_phone(fix, dry_run, country).await?,
         Commands::Version => {
             let is_dirty = std::process::Command::new("git")
                 .args(["diff", "--quiet", "HEAD"])
@@ -634,7 +691,44 @@ mod tests {
     #[test]
     fn test_cli_check_phone_subcommand() {
         let cli = Cli::parse_from(["rscontacts", "check-phone"]);
-        assert!(matches!(cli.command, Commands::CheckPhone));
+        assert!(matches!(cli.command, Commands::CheckPhone { fix: false, dry_run: false, .. }));
+    }
+
+    #[test]
+    fn test_cli_check_phone_fix() {
+        let cli = Cli::parse_from(["rscontacts", "check-phone", "--fix"]);
+        assert!(matches!(cli.command, Commands::CheckPhone { fix: true, dry_run: false, .. }));
+    }
+
+    #[test]
+    fn test_cli_check_phone_dry_run() {
+        let cli = Cli::parse_from(["rscontacts", "check-phone", "--fix", "--dry-run"]);
+        assert!(matches!(cli.command, Commands::CheckPhone { fix: true, dry_run: true, .. }));
+    }
+
+    #[test]
+    fn test_cli_check_phone_custom_country() {
+        let cli = Cli::parse_from(["rscontacts", "check-phone", "--country", "1"]);
+        if let Commands::CheckPhone { country, .. } = cli.command {
+            assert_eq!(country, "1");
+        } else {
+            panic!("wrong command");
+        }
+    }
+
+    #[test]
+    fn test_add_country_code_with_leading_zero() {
+        assert_eq!(add_country_code("0501234567", "972"), "+972501234567");
+    }
+
+    #[test]
+    fn test_add_country_code_without_leading_zero() {
+        assert_eq!(add_country_code("501234567", "972"), "+972501234567");
+    }
+
+    #[test]
+    fn test_add_country_code_us() {
+        assert_eq!(add_country_code("5551234", "1"), "+15551234");
     }
 
     #[test]
