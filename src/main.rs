@@ -128,6 +128,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Print labels (contact groups) that have no contacts
+    CheckLabelsNophone {
+        /// Delete empty labels
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be deleted without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print version information
     Version,
     /// Generate shell completions
@@ -885,6 +894,70 @@ async fn cmd_check_phone_no_label(fix: bool, dry_run: bool) -> Result<(), Box<dy
                         .doit()
                         .await?;
                     tokio::time::sleep(MUTATE_DELAY).await;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn prompt_delete_label(name: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    loop {
+        eprint!("  Delete label \"{}\"? [y/n] ", name);
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        match input.trim().chars().next() {
+            Some('y') => return Ok(true),
+            Some('n') => return Ok(false),
+            _ => eprintln!("  Invalid choice. Enter y or n."),
+        }
+    }
+}
+
+async fn cmd_check_labels_nophone(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+
+    let mut all_groups: Vec<google_people1::api::ContactGroup> = Vec::new();
+    let mut page_token: Option<String> = None;
+
+    loop {
+        let mut request = hub.contact_groups().list();
+        if let Some(ref token) = page_token {
+            request = request.page_token(token);
+        }
+        let (_response, result) = request.doit().await?;
+        if let Some(groups) = result.contact_groups {
+            all_groups.extend(groups);
+        }
+        page_token = result.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+
+    let empty_groups: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
+        let count = g.member_count.unwrap_or(0);
+        let is_user_group = g.group_type.as_deref() == Some("USER_CONTACT_GROUP");
+        count == 0 && is_user_group
+    }).collect();
+
+    for group in &empty_groups {
+        let name = group.name.as_deref().unwrap_or("<unnamed>");
+        println!("{}", name);
+
+        if fix && !dry_run {
+            use std::io::Write;
+            std::io::stdout().flush()?;
+            if let Some(resource_name) = group.resource_name.as_deref() {
+                if prompt_delete_label(name)? {
+                    hub.contact_groups().delete(resource_name).doit().await?;
+                    eprintln!("  Deleted.");
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                } else {
+                    eprintln!("  Skipped.");
                 }
             }
         }
