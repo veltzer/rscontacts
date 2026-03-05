@@ -138,6 +138,15 @@ enum Commands {
     },
     /// Print contacts with invalid-looking email addresses
     CheckEmail,
+    /// Print contacts with uppercase letters in email addresses
+    CheckEmailCaps {
+        /// Automatically lowercase emails
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print contacts that have the same email address attached twice
     CheckDuplicateEmails {
         /// Interactively remove duplicate email addresses
