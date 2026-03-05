@@ -285,14 +285,58 @@ fn is_correct_phone_format(phone: &str) -> bool {
     let number = &rest[dash_pos + 1..];
     !cc.is_empty()
         && cc.chars().all(|c| c.is_ascii_digit())
+        && COUNTRY_CODES.contains(&cc)
         && !number.is_empty()
         && number.chars().all(|c| c.is_ascii_digit())
         && !rest[dash_pos + 1..].contains('-')
 }
 
+const COUNTRY_CODES: &[&str] = &[
+    "1", "7",
+    "20", "27", "30", "31", "32", "33", "34", "36", "39",
+    "40", "41", "43", "44", "45", "46", "47", "48", "49",
+    "51", "52", "53", "54", "55", "56", "57", "58",
+    "60", "61", "62", "63", "64", "65", "66",
+    "81", "82", "84", "86", "90", "91", "92", "93", "94", "95", "98",
+    "212", "213", "216", "218",
+    "220", "221", "222", "223", "224", "225", "226", "229",
+    "230", "231", "232", "233", "234", "235", "236", "238", "239",
+    "240", "241", "242", "243", "244", "245", "246", "247", "248", "249",
+    "250", "251", "252", "253", "254", "255", "256", "257", "258",
+    "260", "262", "263", "264", "265", "266", "267", "268", "269",
+    "290", "297", "298", "299",
+    "350", "351", "352", "353", "354", "355", "356", "357", "358", "359",
+    "370", "371", "372", "373", "374", "375", "376", "377", "378", "379",
+    "380", "381", "382", "385", "386", "387", "388", "389",
+    "420", "423",
+    "500", "501", "502", "503", "504", "505", "506", "507", "508", "509",
+    "590", "591", "592", "593", "594", "595", "596", "597", "598", "599",
+    "672", "673", "674", "675", "676", "677", "678", "679",
+    "680", "681", "682", "683", "684", "685", "686", "687", "688", "689",
+    "690", "691", "692",
+    "800", "808", "850", "852", "853", "855", "856",
+    "870", "878", "880", "881", "882", "883", "886", "888",
+    "891", "900",
+    "960", "961", "962", "963", "964", "965", "966", "967", "968",
+    "970", "971", "972", "973", "974", "975", "976", "977", "979",
+    "992", "993", "994", "995", "996", "998",
+];
+
+fn detect_country_code(digits: &str) -> Option<usize> {
+    // Try longest match first (3 digits, then 2, then 1)
+    for len in (1..=3).rev() {
+        if digits.len() > len {
+            let prefix = &digits[..len];
+            if COUNTRY_CODES.contains(&prefix) {
+                return Some(len);
+            }
+        }
+    }
+    None
+}
+
 fn fix_phone_format(phone: &str, country: &str) -> String {
     let trimmed = phone.trim();
-    // Strip all non-digit characters except leading +
     let has_plus = trimmed.starts_with('+');
     let digits: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
 
@@ -303,18 +347,11 @@ fn fix_phone_format(phone: &str, country: &str) -> String {
         } else {
             &digits[..]
         };
-        // Try to split country code: common lengths are 1-3 digits
-        // Use the provided country code length as hint
-        let cc_len = country.len();
-        if pure_digits.len() > cc_len && pure_digits.starts_with(country) {
-            format!("+{}-{}", country, &pure_digits[cc_len..])
+        if let Some(cc_len) = detect_country_code(pure_digits) {
+            format!("+{}-{}", &pure_digits[..cc_len], &pure_digits[cc_len..])
         } else {
-            // Can't determine CC reliably, just use first cc_len digits
-            if pure_digits.len() > cc_len {
-                format!("+{}-{}", &pure_digits[..cc_len], &pure_digits[cc_len..])
-            } else {
-                format!("+{}-{}", country, pure_digits)
-            }
+            // Unknown country code, use default
+            format!("+{}-{}", country, pure_digits)
         }
     } else {
         // No country code — add it, strip leading 0
@@ -2312,6 +2349,21 @@ mod tests {
         assert_eq!(fix_phone_format("0505665636", "972"), "+972-505665636");
         assert_eq!(fix_phone_format("00972505665636", "972"), "+972-505665636");
         assert_eq!(fix_phone_format("+972 50 566 5636", "972"), "+972-505665636");
+        // Single-digit country code (Russia)
+        assert_eq!(fix_phone_format("+79268335991", "972"), "+7-9268335991");
+        // Two-digit country code (UK)
+        assert_eq!(fix_phone_format("+442079460958", "972"), "+44-2079460958");
+        // US/Canada
+        assert_eq!(fix_phone_format("+15551234567", "972"), "+1-5551234567");
+    }
+
+    #[test]
+    fn test_detect_country_code() {
+        assert_eq!(detect_country_code("79268335991"), Some(1));  // Russia +7
+        assert_eq!(detect_country_code("442079460958"), Some(2)); // UK +44
+        assert_eq!(detect_country_code("972505665636"), Some(3)); // Israel +972
+        assert_eq!(detect_country_code("15551234567"), Some(1));  // US +1
+        assert_eq!(detect_country_code(""), None);
     }
 
     #[test]
