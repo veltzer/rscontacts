@@ -110,7 +110,7 @@ enum Commands {
     },
     /// Print contacts not assigned to any label (contact group)
     CheckContactNoLabel,
-    /// Print contacts with phone numbers missing a type (mobile/home/work/etc)
+    /// Print contacts with phone numbers missing a label (mobile/home/work/etc)
     CheckPhoneNoLabel,
     /// Print contacts with invalid-looking email addresses
     CheckEmail,
@@ -821,7 +821,7 @@ async fn cmd_check_email() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn check_phone_no_type(contacts: &[google_people1::api::Person], prefix: &str, header: Option<&str>) -> usize {
+fn check_phone_no_label(contacts: &[google_people1::api::Person], prefix: &str, header: Option<&str>) -> usize {
     let mut count = 0;
     for person in contacts {
         if let Some(nums) = &person.phone_numbers {
@@ -847,10 +847,10 @@ fn check_phone_no_type(contacts: &[google_people1::api::Person], prefix: &str, h
     count
 }
 
-async fn cmd_check_phone_no_type() -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_phone_no_label() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
-    check_phone_no_type(&contacts, "", None);
+    check_phone_no_label(&contacts, "", None);
     Ok(())
 }
 
@@ -975,7 +975,7 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
     if first_cap > 0 { found_any = true; }
 
     if check_no_label(&all_contacts, "  ", Some("Contacts without label")) > 0 { found_any = true; }
-    if check_phone_no_type(&all_contacts, "  ", Some("Phones without type")) > 0 { found_any = true; }
+    if check_phone_no_label(&all_contacts, "  ", Some("Phones without label")) > 0 { found_any = true; }
     if check_invalid_emails(&all_contacts, "  ", Some("Invalid emails")) > 0 { found_any = true; }
     if check_duplicate_phones(&all_contacts, "  ", Some("Duplicate phone numbers")) > 0 { found_any = true; }
 
@@ -1037,7 +1037,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneMinus { fix, dry_run } => cmd_check_phone_minus(fix, dry_run).await?,
         Commands::CheckPhoneWhitespace { fix, dry_run } => cmd_check_phone_whitespace(fix, dry_run).await?,
         Commands::CheckContactNoLabel => cmd_check_contact_no_label().await?,
-        Commands::CheckPhoneNoLabel => cmd_check_phone_no_type().await?,
+        Commands::CheckPhoneNoLabel => cmd_check_phone_no_label().await?,
         Commands::CheckEmail => cmd_check_email().await?,
         Commands::CheckDuplicatePhones { fix, dry_run } => cmd_check_duplicate_phones(fix, dry_run).await?,
         Commands::CheckLabelsNophone { fix, dry_run } => cmd_check_labels_nophone(fix, dry_run).await?,
