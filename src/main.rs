@@ -105,23 +105,17 @@ enum Commands {
         #[arg(long, default_value = "972")]
         country: String,
     },
-    /// Print contacts with dashes/minuses in phone numbers
-    CheckPhoneMinus {
-        /// Remove dashes from phone numbers
+    /// Print phone numbers not in +CC-NUMBER format
+    CheckPhoneFormat {
+        /// Fix phone numbers to +CC-NUMBER format
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
-    },
-    /// Print contacts with whitespace in phone numbers
-    CheckPhoneWhitespace {
-        /// Remove whitespace from phone numbers
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
+        /// Country code to use when formatting
+        #[arg(long, default_value = "972")]
+        country: String,
     },
     /// Print contacts not assigned to any label (contact group)
     CheckContactNoLabel,
@@ -273,6 +267,57 @@ fn add_country_code(phone: &str, country: &str) -> String {
     let trimmed = phone.trim();
     let without_leading_zero = trimmed.strip_prefix('0').unwrap_or(trimmed);
     format!("+{}{}", country, without_leading_zero)
+}
+
+fn is_correct_phone_format(phone: &str) -> bool {
+    let trimmed = phone.trim();
+    if !trimmed.starts_with('+') {
+        return false;
+    }
+    let rest = &trimmed[1..];
+    let Some(dash_pos) = rest.find('-') else {
+        return false;
+    };
+    let cc = &rest[..dash_pos];
+    let number = &rest[dash_pos + 1..];
+    !cc.is_empty()
+        && cc.chars().all(|c| c.is_ascii_digit())
+        && !number.is_empty()
+        && number.chars().all(|c| c.is_ascii_digit())
+        && !rest[dash_pos + 1..].contains('-')
+}
+
+fn fix_phone_format(phone: &str, country: &str) -> String {
+    let trimmed = phone.trim();
+    // Strip all non-digit characters except leading +
+    let has_plus = trimmed.starts_with('+');
+    let digits: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
+
+    if has_plus || trimmed.starts_with("00") {
+        // Already has country code — extract it
+        let pure_digits = if trimmed.starts_with("00") {
+            &digits[2..]
+        } else {
+            &digits[..]
+        };
+        // Try to split country code: common lengths are 1-3 digits
+        // Use the provided country code length as hint
+        let cc_len = country.len();
+        if pure_digits.len() > cc_len && pure_digits.starts_with(country) {
+            format!("+{}-{}", country, &pure_digits[cc_len..])
+        } else {
+            // Can't determine CC reliably, just use first cc_len digits
+            if pure_digits.len() > cc_len {
+                format!("+{}-{}", &pure_digits[..cc_len], &pure_digits[cc_len..])
+            } else {
+                format!("+{}-{}", country, pure_digits)
+            }
+        }
+    } else {
+        // No country code — add it, strip leading 0
+        let without_zero = digits.strip_prefix('0').unwrap_or(&digits);
+        format!("+{}-{}", country, without_zero)
+    }
 }
 
 // --- Helper functions ---
@@ -830,25 +875,14 @@ async fn cmd_check_phone_countrycode(fix: bool, dry_run: bool, country: &str) ->
     Ok(())
 }
 
-async fn cmd_check_phone_whitespace(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_phone_format(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
+    let country_owned = country.to_string();
     check_phone_issues(
         &hub, &contacts,
-        |v| is_fixable_phone(v) && v.contains(char::is_whitespace),
-        |v| v.chars().filter(|c| !c.is_whitespace()).collect(),
-        fix, dry_run, "", None,
-    ).await?;
-    Ok(())
-}
-
-async fn cmd_check_phone_minus(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
-    check_phone_issues(
-        &hub, &contacts,
-        |v| is_fixable_phone(v) && v.contains('-'),
-        |v| v.replace('-', ""),
+        |v| is_fixable_phone(v) && !is_correct_phone_format(v),
+        move |v| fix_phone_format(v, &country_owned),
         fix, dry_run, "", None,
     ).await?;
     Ok(())
@@ -1750,21 +1784,14 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
     ).await?;
     if no_country > 0 { found_any = true; }
 
-    let with_minus = check_phone_issues(
+    let country_owned2 = country.to_string();
+    let bad_format = check_phone_issues(
         &hub, &all_contacts,
-        |v| is_fixable_phone(v) && v.contains('-'),
-        |v| v.replace('-', ""),
-        fix, dry_run, "  ", Some("Phones with dashes (check-phone-minus)"),
+        |v| is_fixable_phone(v) && !is_correct_phone_format(v),
+        move |v| fix_phone_format(v, &country_owned2),
+        fix, dry_run, "  ", Some("Phones not in +CC-NUMBER format (check-phone-format)"),
     ).await?;
-    if with_minus > 0 { found_any = true; }
-
-    let with_ws = check_phone_issues(
-        &hub, &all_contacts,
-        |v| is_fixable_phone(v) && v.contains(char::is_whitespace),
-        |v| v.chars().filter(|c| !c.is_whitespace()).collect(),
-        fix, dry_run, "  ", Some("Phones with whitespace (check-phone-whitespace)"),
-    ).await?;
-    if with_ws > 0 { found_any = true; }
+    if bad_format > 0 { found_any = true; }
 
     let first_cap = check_name_issues(
         &hub, &all_contacts, |name| !starts_with_capital(name),
@@ -1852,8 +1879,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckNameFirstCapitalLetter { fix, dry_run } => cmd_check_first_capital_letter(fix, dry_run).await?,
         Commands::CheckNameOrder { fix, dry_run } => cmd_check_name_order(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => cmd_check_phone_countrycode(fix, dry_run, country).await?,
-        Commands::CheckPhoneMinus { fix, dry_run } => cmd_check_phone_minus(fix, dry_run).await?,
-        Commands::CheckPhoneWhitespace { fix, dry_run } => cmd_check_phone_whitespace(fix, dry_run).await?,
+        Commands::CheckPhoneFormat { fix, dry_run, ref country } => cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckContactNoLabel => cmd_check_contact_no_label().await?,
         Commands::CheckPhoneNoLabel => cmd_check_phone_no_label().await?,
         Commands::CheckPhoneLabelEnglish { fix, dry_run } => cmd_check_phone_label_english(fix, dry_run).await?,
@@ -2154,6 +2180,31 @@ mod tests {
     #[test]
     fn test_is_english_name_empty() {
         assert!(is_english_name(""));
+    }
+
+    #[test]
+    fn test_is_correct_phone_format() {
+        assert!(is_correct_phone_format("+972-505665636"));
+        assert!(is_correct_phone_format("+1-5551234567"));
+        assert!(is_correct_phone_format("+44-2079460958"));
+    }
+
+    #[test]
+    fn test_is_correct_phone_format_invalid() {
+        assert!(!is_correct_phone_format("+972505665636")); // missing dash
+        assert!(!is_correct_phone_format("0505665636")); // no country code
+        assert!(!is_correct_phone_format("+972-505-665636")); // extra dash
+        assert!(!is_correct_phone_format("+972 505665636")); // space instead of dash
+        assert!(!is_correct_phone_format("00972505665636")); // 00 prefix
+    }
+
+    #[test]
+    fn test_fix_phone_format() {
+        assert_eq!(fix_phone_format("+972505665636", "972"), "+972-505665636");
+        assert_eq!(fix_phone_format("+972-50-5665636", "972"), "+972-505665636");
+        assert_eq!(fix_phone_format("0505665636", "972"), "+972-505665636");
+        assert_eq!(fix_phone_format("00972505665636", "972"), "+972-505665636");
+        assert_eq!(fix_phone_format("+972 50 566 5636", "972"), "+972-505665636");
     }
 
     #[test]
