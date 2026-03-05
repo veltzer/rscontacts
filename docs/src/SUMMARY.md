@@ -28,3 +28,4 @@
     - [auth](commands/auth.md)
     - [version](commands/version.md)
     - [complete](commands/complete.md)
+- [Design Decisions](design-decisions.md)
