@@ -88,6 +88,11 @@ fn is_english_name(name: &str) -> bool {
     name.chars().all(|c| c.is_ascii() || c == '\u{200f}' || c == '\u{200e}')
 }
 
+fn is_real_phone(phone: &str) -> bool {
+    phone.chars().any(|c| c.is_ascii_digit())
+        && !phone.chars().any(|c| c.is_alphabetic())
+}
+
 fn has_country_code(phone: &str) -> bool {
     let trimmed = phone.trim();
     trimmed.starts_with('+') || trimmed.starts_with("00")
@@ -492,7 +497,7 @@ async fn cmd_check_phone(fix: bool, dry_run: bool, country: &str) -> Result<(), 
                     .phone_numbers
                     .as_ref()
                     .is_some_and(|nums| nums.iter().any(|p| {
-                        p.value.as_deref().is_some_and(|v| !has_country_code(v))
+                        p.value.as_deref().is_some_and(|v| is_real_phone(v) && !has_country_code(v))
                     }));
 
                 if has_bad_phone {
@@ -523,7 +528,7 @@ async fn cmd_check_phone(fix: bool, dry_run: bool, country: &str) -> Result<(), 
 
         let bad_phones: Vec<&str> = phones
             .iter()
-            .filter(|p| !has_country_code(p))
+            .filter(|p| is_real_phone(p) && !has_country_code(p))
             .copied()
             .collect();
 
@@ -546,7 +551,7 @@ async fn cmd_check_phone(fix: bool, dry_run: bool, country: &str) -> Result<(), 
             if let Some(ref mut nums) = updated.phone_numbers {
                 for pn in nums.iter_mut() {
                     if let Some(ref val) = pn.value {
-                        if !has_country_code(val) {
+                        if is_real_phone(val) && !has_country_code(val) {
                             pn.value = Some(add_country_code(val, country));
                         }
                     }
@@ -729,6 +734,26 @@ mod tests {
     #[test]
     fn test_add_country_code_us() {
         assert_eq!(add_country_code("5551234", "1"), "+15551234");
+    }
+
+    #[test]
+    fn test_is_real_phone_digits() {
+        assert!(is_real_phone("0501234567"));
+        assert!(is_real_phone("+972-50-123-4567"));
+        assert!(is_real_phone("(02) 555-1234"));
+    }
+
+    #[test]
+    fn test_is_real_phone_alpha() {
+        assert!(!is_real_phone("BHapoalim"));
+        assert!(!is_real_phone("HOME"));
+        assert!(!is_real_phone(""));
+    }
+
+    #[test]
+    fn test_is_real_phone_mixed() {
+        assert!(!is_real_phone("1800FLOWERS"));
+        assert!(!is_real_phone("P78"));
     }
 
     #[test]
