@@ -32,7 +32,11 @@ enum Commands {
     /// List all contacts
     List,
     /// Print contacts with non-English names
-    CheckEnglish,
+    CheckEnglish {
+        /// Interactively fix each non-English contact (rename/delete/skip)
+        #[arg(long)]
+        fix: bool,
+    },
     /// Generate shell completions
     Complete {
         /// Shell to generate completions for
@@ -202,16 +206,45 @@ async fn cmd_list() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_check_english() -> Result<(), Box<dyn std::error::Error>> {
+fn prompt_fix_action(_name: &str) -> Result<char, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    loop {
+        eprint!("  [r]ename / [d]elete / [s]kip? ");
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        match input.trim().chars().next() {
+            Some(c @ ('r' | 'd' | 's')) => return Ok(c),
+            _ => eprintln!("  Invalid choice. Enter r, d, or s."),
+        }
+    }
+}
+
+fn prompt_new_name(old_name: &str) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    eprint!("  New name for \"{}\": ", old_name);
+    std::io::stderr().flush()?;
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let new_name = input.trim().to_string();
+    if new_name.is_empty() {
+        return Err("Empty name not allowed".into());
+    }
+    Ok(new_name)
+}
+
+async fn cmd_check_english(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
 
+    // Collect all non-English contacts first (to avoid pagination issues during mutation)
+    let mut non_english: Vec<google_people1::api::Person> = Vec::new();
     let mut page_token: Option<String> = None;
 
     loop {
         let mut request = hub
             .people()
             .connections_list("people/me")
-            .person_fields(FieldMask::new::<&str>(&["names", "emailAddresses"]));
+            .person_fields(FieldMask::new::<&str>(&["names", "emailAddresses", "metadata"]));
 
         if let Some(ref token) = page_token {
             request = request.page_token(token);
@@ -220,7 +253,7 @@ async fn cmd_check_english() -> Result<(), Box<dyn std::error::Error>> {
         let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
 
         if let Some(connections) = result.connections {
-            for person in &connections {
+            for person in connections {
                 let name = person
                     .names
                     .as_ref()
@@ -229,18 +262,7 @@ async fn cmd_check_english() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or("");
 
                 if !name.is_empty() && !is_english_name(name) {
-                    let email = person
-                        .email_addresses
-                        .as_ref()
-                        .and_then(|emails| emails.first())
-                        .and_then(|e| e.value.as_deref())
-                        .unwrap_or("");
-
-                    if !email.is_empty() {
-                        println!("{} | {}", name, email);
-                    } else {
-                        println!("{}", name);
-                    }
+                    non_english.push(person);
                 }
             }
         }
@@ -248,6 +270,63 @@ async fn cmd_check_english() -> Result<(), Box<dyn std::error::Error>> {
         page_token = result.next_page_token;
         if page_token.is_none() {
             break;
+        }
+    }
+
+    for person in &non_english {
+        let name = person
+            .names
+            .as_ref()
+            .and_then(|names| names.first())
+            .and_then(|n| n.display_name.as_deref())
+            .unwrap_or("");
+
+        let email = person
+            .email_addresses
+            .as_ref()
+            .and_then(|emails| emails.first())
+            .and_then(|e| e.value.as_deref())
+            .unwrap_or("");
+
+        if !email.is_empty() {
+            println!("{} | {}", name, email);
+        } else {
+            println!("{}", name);
+        }
+
+        if fix {
+            let resource_name = person
+                .resource_name
+                .as_deref()
+                .ok_or("Contact missing resource name")?;
+
+            match prompt_fix_action(name)? {
+                'r' => {
+                    let new_name = prompt_new_name(name)?;
+                    let mut updated = person.clone();
+                    if let Some(ref mut names) = updated.names {
+                        if let Some(first) = names.first_mut() {
+                            first.given_name = Some(new_name.clone());
+                            first.family_name = None;
+                            first.unstructured_name = Some(new_name.clone());
+                        }
+                    }
+                    hub.people()
+                        .update_contact(updated, resource_name)
+                        .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                        .doit()
+                        .await?;
+                    eprintln!("  Renamed to \"{}\"", new_name);
+                }
+                'd' => {
+                    hub.people().delete_contact(resource_name).doit().await?;
+                    eprintln!("  Deleted.");
+                }
+                's' => {
+                    eprintln!("  Skipped.");
+                }
+                _ => unreachable!(),
+            }
         }
     }
 
@@ -265,7 +344,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Auth { no_browser } => cmd_auth(no_browser).await?,
         Commands::List => cmd_list().await?,
-        Commands::CheckEnglish => cmd_check_english().await?,
+        Commands::CheckEnglish { fix } => cmd_check_english(fix).await?,
         Commands::Complete { shell } => {
             clap_complete::generate(shell, &mut Cli::command(), "rscontacts", &mut std::io::stdout());
         }
@@ -310,7 +389,13 @@ mod tests {
     #[test]
     fn test_cli_check_english_subcommand() {
         let cli = Cli::parse_from(["rscontacts", "check-english"]);
-        assert!(matches!(cli.command, Commands::CheckEnglish));
+        assert!(matches!(cli.command, Commands::CheckEnglish { fix: false }));
+    }
+
+    #[test]
+    fn test_cli_check_english_fix() {
+        let cli = Cli::parse_from(["rscontacts", "check-english", "--fix"]);
+        assert!(matches!(cli.command, Commands::CheckEnglish { fix: true }));
     }
 
     #[test]
