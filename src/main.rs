@@ -37,6 +37,12 @@ enum Commands {
         #[arg(long)]
         fix: bool,
     },
+    /// Print contacts with all-caps names
+    CheckCaps {
+        /// Interactively fix each all-caps contact (rename/delete/skip)
+        #[arg(long)]
+        fix: bool,
+    },
     /// Print contacts with phone numbers missing a country code
     CheckPhone,
     /// Print version information
@@ -61,6 +67,11 @@ fn credentials_path() -> PathBuf {
 
 fn token_cache_path() -> PathBuf {
     config_dir().join("token_cache.json")
+}
+
+fn is_all_caps(name: &str) -> bool {
+    let alpha_chars: String = name.chars().filter(|c| c.is_alphabetic()).collect();
+    !alpha_chars.is_empty() && alpha_chars == alpha_chars.to_uppercase()
 }
 
 fn is_english_name(name: &str) -> bool {
@@ -342,6 +353,105 @@ async fn cmd_check_english(fix: bool) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
+async fn cmd_check_caps(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+
+    let mut all_caps: Vec<google_people1::api::Person> = Vec::new();
+    let mut page_token: Option<String> = None;
+
+    loop {
+        let mut request = hub
+            .people()
+            .connections_list("people/me")
+            .person_fields(FieldMask::new::<&str>(&["names", "emailAddresses", "metadata"]));
+
+        if let Some(ref token) = page_token {
+            request = request.page_token(token);
+        }
+
+        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
+
+        if let Some(connections) = result.connections {
+            for person in connections {
+                let name = person
+                    .names
+                    .as_ref()
+                    .and_then(|names| names.first())
+                    .and_then(|n| n.display_name.as_deref())
+                    .unwrap_or("");
+
+                if !name.is_empty() && is_all_caps(name) {
+                    all_caps.push(person);
+                }
+            }
+        }
+
+        page_token = result.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+
+    for person in &all_caps {
+        let name = person
+            .names
+            .as_ref()
+            .and_then(|names| names.first())
+            .and_then(|n| n.display_name.as_deref())
+            .unwrap_or("");
+
+        let email = person
+            .email_addresses
+            .as_ref()
+            .and_then(|emails| emails.first())
+            .and_then(|e| e.value.as_deref())
+            .unwrap_or("");
+
+        if !email.is_empty() {
+            println!("{} | {}", name, email);
+        } else {
+            println!("{}", name);
+        }
+
+        if fix {
+            let resource_name = person
+                .resource_name
+                .as_deref()
+                .ok_or("Contact missing resource name")?;
+
+            match prompt_fix_action(name)? {
+                'r' => {
+                    let new_name = prompt_new_name(name)?;
+                    let mut updated = person.clone();
+                    if let Some(ref mut names) = updated.names {
+                        if let Some(first) = names.first_mut() {
+                            first.given_name = Some(new_name.clone());
+                            first.family_name = None;
+                            first.unstructured_name = Some(new_name.clone());
+                        }
+                    }
+                    hub.people()
+                        .update_contact(updated, resource_name)
+                        .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                        .doit()
+                        .await?;
+                    eprintln!("  Renamed to \"{}\"", new_name);
+                }
+                'd' => {
+                    hub.people().delete_contact(resource_name).doit().await?;
+                    eprintln!("  Deleted.");
+                }
+                's' => {
+                    eprintln!("  Skipped.");
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn cmd_check_phone() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
 
@@ -409,6 +519,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Auth { no_browser } => cmd_auth(no_browser).await?,
         Commands::List => cmd_list().await?,
         Commands::CheckEnglish { fix } => cmd_check_english(fix).await?,
+        Commands::CheckCaps { fix } => cmd_check_caps(fix).await?,
         Commands::CheckPhone => cmd_check_phone().await?,
         Commands::Version => {
             let is_dirty = std::process::Command::new("git")
@@ -480,6 +591,38 @@ mod tests {
     fn test_cli_check_english_fix() {
         let cli = Cli::parse_from(["rscontacts", "check-english", "--fix"]);
         assert!(matches!(cli.command, Commands::CheckEnglish { fix: true }));
+    }
+
+    #[test]
+    fn test_cli_check_caps_subcommand() {
+        let cli = Cli::parse_from(["rscontacts", "check-caps"]);
+        assert!(matches!(cli.command, Commands::CheckCaps { fix: false }));
+    }
+
+    #[test]
+    fn test_cli_check_caps_fix() {
+        let cli = Cli::parse_from(["rscontacts", "check-caps", "--fix"]);
+        assert!(matches!(cli.command, Commands::CheckCaps { fix: true }));
+    }
+
+    #[test]
+    fn test_is_all_caps_true() {
+        assert!(is_all_caps("JOHN DOE"));
+        assert!(is_all_caps("MARK VELTZER"));
+        assert!(is_all_caps("JEAN-PIERRE"));
+    }
+
+    #[test]
+    fn test_is_all_caps_false() {
+        assert!(!is_all_caps("John Doe"));
+        assert!(!is_all_caps("john doe"));
+        assert!(!is_all_caps("JOHN doe"));
+    }
+
+    #[test]
+    fn test_is_all_caps_no_alpha() {
+        assert!(!is_all_caps("123"));
+        assert!(!is_all_caps(""));
     }
 
     #[test]
