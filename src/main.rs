@@ -623,66 +623,99 @@ async fn cmd_check_phone_minus(fix: bool, dry_run: bool) -> Result<(), Box<dyn s
     Ok(())
 }
 
-async fn cmd_check_duplicate_phones() -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
-
-    for person in &contacts {
+fn check_duplicate_phones(contacts: &[google_people1::api::Person], prefix: &str, header: Option<&str>) -> usize {
+    let mut count = 0;
+    for person in contacts {
         if let Some(nums) = &person.phone_numbers {
             let values: Vec<&str> = nums.iter().filter_map(|pn| pn.value.as_deref()).collect();
             let mut seen = std::collections::HashSet::new();
             let dupes: Vec<&str> = values.iter().filter(|v| !seen.insert(**v)).copied().collect();
             if !dupes.is_empty() {
+                if count == 0 {
+                    if let Some(header) = header {
+                        println!("=== {} ===", header);
+                    }
+                }
                 let name = person_display_name(person);
                 for phone in &dupes {
-                    println!("{} | {}", name, phone);
+                    println!("{}{} | {}", prefix, name, phone);
+                    count += 1;
                 }
             }
         }
     }
-
-    Ok(())
+    if count > 0 && header.is_some() { println!(); }
+    count
 }
 
-async fn cmd_check_email() -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
-
-    for person in &contacts {
+fn check_invalid_emails(contacts: &[google_people1::api::Person], prefix: &str, header: Option<&str>) -> usize {
+    let mut count = 0;
+    for person in contacts {
         if let Some(emails) = &person.email_addresses {
             for email in emails {
                 if let Some(val) = email.value.as_deref() {
                     if !is_valid_email(val) {
+                        if count == 0 {
+                            if let Some(header) = header {
+                                println!("=== {} ===", header);
+                            }
+                        }
                         let name = person_display_name(person);
-                        println!("{} | {}", name, val);
+                        println!("{}{} | {}", prefix, name, val);
+                        count += 1;
                     }
                 }
             }
         }
     }
-
-    Ok(())
+    if count > 0 && header.is_some() { println!(); }
+    count
 }
 
-async fn cmd_check_phone_no_label() -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
-
-    for person in &contacts {
+fn check_phone_no_label(contacts: &[google_people1::api::Person], prefix: &str, header: Option<&str>) -> usize {
+    let mut count = 0;
+    for person in contacts {
         if let Some(nums) = &person.phone_numbers {
             let unlabeled: Vec<&str> = nums.iter()
                 .filter(|pn| pn.type_.is_none())
                 .filter_map(|pn| pn.value.as_deref())
                 .collect();
             if !unlabeled.is_empty() {
+                if count == 0 {
+                    if let Some(header) = header {
+                        println!("=== {} ===", header);
+                    }
+                }
                 let name = person_display_name(person);
                 for phone in &unlabeled {
-                    println!("{} | {}", name, phone);
+                    println!("{}{} | {}", prefix, name, phone);
+                    count += 1;
                 }
             }
         }
     }
+    if count > 0 && header.is_some() { println!(); }
+    count
+}
 
+async fn cmd_check_duplicate_phones() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
+    check_duplicate_phones(&contacts, "", None);
+    Ok(())
+}
+
+async fn cmd_check_email() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
+    check_invalid_emails(&contacts, "", None);
+    Ok(())
+}
+
+async fn cmd_check_phone_no_label() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
+    check_phone_no_label(&contacts, "", None);
     Ok(())
 }
 
@@ -728,6 +761,16 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
         fix, dry_run, "  ", Some("Phones with whitespace"),
     ).await?;
     if with_ws > 0 { found_any = true; }
+
+    let first_cap = check_name_issues(
+        &hub, &all_contacts, |name| !starts_with_capital(name),
+        fix, dry_run, "  ", Some("Names not starting with capital letter"),
+    ).await?;
+    if first_cap > 0 { found_any = true; }
+
+    if check_phone_no_label(&all_contacts, "  ", Some("Phones without label")) > 0 { found_any = true; }
+    if check_invalid_emails(&all_contacts, "  ", Some("Invalid emails")) > 0 { found_any = true; }
+    if check_duplicate_phones(&all_contacts, "  ", Some("Duplicate phone numbers")) > 0 { found_any = true; }
 
     if !found_any {
         println!("All checks passed!");
