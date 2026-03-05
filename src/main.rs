@@ -759,6 +759,8 @@ async fn cmd_check_duplicate_phones(fix: bool, dry_run: bool) -> Result<(), Box<
                     println!("{} | {}", name, phone);
                 }
                 if fix && !dry_run {
+                    use std::io::Write;
+                    std::io::stdout().flush()?;
                     let name = person_display_name(person);
                     if prompt_remove_duplicate(name, &dupes.join(", "))? {
                         remove_duplicate_phones(&hub, person).await?;
