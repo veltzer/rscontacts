@@ -36,3 +36,5 @@ Total: 9
 ## Checks Run
 
 All individual check commands are run in sequence. Each section header includes the corresponding command name so you know which standalone command to use for fixing specific issues.
+
+With `--fix`, all checks support interactive fixing — the fix/dry-run flags are passed through to every check.
