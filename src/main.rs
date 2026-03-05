@@ -8,6 +8,11 @@ use std::time::Duration;
 
 const MUTATE_DELAY: Duration = Duration::from_millis(500);
 
+const VALID_PHONE_LABELS: &[&str] = &[
+    "mobile", "home", "work", "homeFax", "workFax", "otherFax",
+    "pager", "workMobile", "workPager", "main", "googleVoice", "other",
+];
+
 fn config_dir() -> PathBuf {
     let mut dir = dirs::home_dir().expect("Could not determine home directory");
     dir.push(".config");
@@ -104,7 +109,14 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contacts with phone numbers missing a label (type)
-    CheckPhoneNoLabel,
+    CheckPhoneNoLabel {
+        /// Interactively fix unlabeled phone numbers
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print contacts with invalid-looking email addresses
     CheckEmail,
     /// Print contacts that have the same phone number attached twice
@@ -705,6 +717,36 @@ fn check_phone_no_label(contacts: &[google_people1::api::Person], prefix: &str, 
     count
 }
 
+fn prompt_label_action(name: &str, phone: &str) -> Result<char, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    loop {
+        eprint!("  {} | {} — [l]abel / [d]elete / [s]kip? ", name, phone);
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        match input.trim().chars().next() {
+            Some(c @ ('l' | 'd' | 's')) => return Ok(c),
+            _ => eprintln!("  Invalid choice. Enter l, d, or s."),
+        }
+    }
+}
+
+fn prompt_phone_label() -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    eprintln!("  Valid labels: {}", VALID_PHONE_LABELS.join(", "));
+    loop {
+        eprint!("  Enter label: ");
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let label = input.trim().to_string();
+        if VALID_PHONE_LABELS.contains(&label.as_str()) {
+            return Ok(label);
+        }
+        eprintln!("  Invalid label. Must be one of: {}", VALID_PHONE_LABELS.join(", "));
+    }
+}
+
 fn prompt_remove_duplicate(name: &str, phone: &str) -> Result<bool, Box<dyn std::error::Error>> {
     use std::io::Write;
     loop {
@@ -782,10 +824,72 @@ async fn cmd_check_email() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_check_phone_no_label() -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_phone_no_label(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
-    check_phone_no_label(&contacts, "", None);
+
+    for person in &contacts {
+        if let Some(nums) = &person.phone_numbers {
+            let has_unlabeled = nums.iter().any(|pn| pn.type_.is_none() && pn.value.is_some());
+            if !has_unlabeled {
+                continue;
+            }
+            let name = person_display_name(person);
+            for pn in nums {
+                if pn.type_.is_none() {
+                    if let Some(val) = pn.value.as_deref() {
+                        println!("{} | {}", name, val);
+                    }
+                }
+            }
+
+            if fix && !dry_run {
+                use std::io::Write;
+                std::io::stdout().flush()?;
+                let resource_name = person
+                    .resource_name
+                    .as_deref()
+                    .ok_or("Contact missing resource name")?;
+                let mut updated = person.clone();
+                let mut modified = false;
+                if let Some(ref mut nums) = updated.phone_numbers {
+                    for pn in nums.iter_mut() {
+                        if pn.type_.is_none() {
+                            if let Some(val) = pn.value.as_deref() {
+                                match prompt_label_action(name, val)? {
+                                    'l' => {
+                                        let label = prompt_phone_label()?;
+                                        pn.type_ = Some(label.clone());
+                                        eprintln!("  Labeled as \"{}\"", label);
+                                        modified = true;
+                                    }
+                                    'd' => {
+                                        pn.value = None;
+                                        modified = true;
+                                        eprintln!("  Marked for deletion.");
+                                    }
+                                    's' => {
+                                        eprintln!("  Skipped.");
+                                    }
+                                    _ => unreachable!(),
+                                }
+                            }
+                        }
+                    }
+                    nums.retain(|pn| pn.value.is_some());
+                }
+                if modified {
+                    hub.people()
+                        .update_contact(updated, resource_name)
+                        .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                        .doit()
+                        .await?;
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -866,7 +970,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneMinus { fix, dry_run } => cmd_check_phone_minus(fix, dry_run).await?,
         Commands::CheckPhoneWhitespace { fix, dry_run } => cmd_check_phone_whitespace(fix, dry_run).await?,
-        Commands::CheckPhoneNoLabel => cmd_check_phone_no_label().await?,
+        Commands::CheckPhoneNoLabel { fix, dry_run } => cmd_check_phone_no_label(fix, dry_run).await?,
         Commands::CheckEmail => cmd_check_email().await?,
         Commands::CheckDuplicatePhones { fix, dry_run } => cmd_check_duplicate_phones(fix, dry_run).await?,
         Commands::CheckAll { fix, dry_run, ref country } => cmd_check_all(fix, dry_run, country).await?,
