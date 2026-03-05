@@ -646,7 +646,7 @@ async fn cmd_check_phone_whitespace(fix: bool, dry_run: bool) -> Result<(), Box<
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
     check_phone_issues(
         &hub, &contacts,
-        |v| v.contains(char::is_whitespace),
+        |v| is_fixable_phone(v) && v.contains(char::is_whitespace),
         |v| v.chars().filter(|c| !c.is_whitespace()).collect(),
         fix, dry_run, "", None,
     ).await?;
@@ -658,7 +658,7 @@ async fn cmd_check_phone_minus(fix: bool, dry_run: bool) -> Result<(), Box<dyn s
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
     check_phone_issues(
         &hub, &contacts,
-        |v| v.contains('-'),
+        |v| is_fixable_phone(v) && v.contains('-'),
         |v| v.replace('-', ""),
         fix, dry_run, "", None,
     ).await?;
@@ -954,7 +954,7 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
 
     let with_minus = check_phone_issues(
         &hub, &all_contacts,
-        |v| v.contains('-'),
+        |v| is_fixable_phone(v) && v.contains('-'),
         |v| v.replace('-', ""),
         fix, dry_run, "  ", Some("Phones with dashes"),
     ).await?;
@@ -962,7 +962,7 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
 
     let with_ws = check_phone_issues(
         &hub, &all_contacts,
-        |v| v.contains(char::is_whitespace),
+        |v| is_fixable_phone(v) && v.contains(char::is_whitespace),
         |v| v.chars().filter(|c| !c.is_whitespace()).collect(),
         fix, dry_run, "  ", Some("Phones with whitespace"),
     ).await?;
