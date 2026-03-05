@@ -37,6 +37,8 @@ enum Commands {
         #[arg(long)]
         fix: bool,
     },
+    /// Print version information
+    Version,
     /// Generate shell completions
     Complete {
         /// Shell to generate completions for
@@ -345,6 +347,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Auth { no_browser } => cmd_auth(no_browser).await?,
         Commands::List => cmd_list().await?,
         Commands::CheckEnglish { fix } => cmd_check_english(fix).await?,
+        Commands::Version => {
+            let is_dirty = std::process::Command::new("git")
+                .args(["diff", "--quiet", "HEAD"])
+                .status()
+                .is_ok_and(|s| !s.success());
+            let dirty_str = if is_dirty { "true" } else { "false" };
+            let describe = if is_dirty {
+                format!("{}-dirty", env!("GIT_DESCRIBE"))
+            } else {
+                env!("GIT_DESCRIBE").to_string()
+            };
+            println!("rscontacts {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
+            println!("GIT_DESCRIBE: {}", describe);
+            println!("GIT_SHA: {}", env!("GIT_SHA"));
+            println!("GIT_BRANCH: {}", env!("GIT_BRANCH"));
+            println!("GIT_DIRTY: {}", dirty_str);
+            println!("RUSTC_SEMVER: {}", env!("RUSTC_SEMVER"));
+            println!("RUST_EDITION: {}", env!("RUST_EDITION"));
+        }
         Commands::Complete { shell } => {
             clap_complete::generate(shell, &mut Cli::command(), "rscontacts", &mut std::io::stdout());
         }

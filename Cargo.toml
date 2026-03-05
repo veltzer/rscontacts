@@ -2,6 +2,7 @@
 name = "rscontacts"
 version = "0.1.0"
 edition = "2024"
+authors = ["Mark Veltzer <mark.veltzer@gmail.com>"]
 
 [dependencies]
 google-people1 = "6"
