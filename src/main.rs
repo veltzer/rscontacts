@@ -55,18 +55,22 @@ fn token_cache_path() -> PathBuf {
     config_dir().join("token_cache.json")
 }
 
-fn extract_access_token(token_info: &serde_json::Value) -> Option<String> {
-    token_info
-        .as_array()?
-        .first()?
-        .get("token")?
-        .get("access_token")?
-        .as_str()
-        .map(String::from)
-}
-
 fn is_english_name(name: &str) -> bool {
     name.chars().all(|c| c.is_ascii() || c == '\u{200f}' || c == '\u{200e}')
+}
+
+struct NoInteractionDelegate;
+
+impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for NoInteractionDelegate {
+    fn present_user_url<'a>(
+        &'a self,
+        _url: &'a str,
+        _need_code: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        Box::pin(async move {
+            Err("Not authenticated. Run 'rscontacts auth' first.".to_string())
+        })
+    }
 }
 
 struct BrowserFlowDelegate;
@@ -101,15 +105,16 @@ async fn build_hub() -> Result<PeopleService<hyper_rustls::HttpsConnector<hyper_
         std::process::exit(1);
     }
 
-    let data = std::fs::read_to_string(&cache_path)?;
-    let token_info: serde_json::Value = serde_json::from_str(&data)?;
+    let secret = yup_oauth2::read_application_secret(credentials_path()).await?;
 
-    let access_token = extract_access_token(&token_info)
-        .ok_or("Invalid token cache. Run 'rscontacts auth' again.")?;
-
-    let auth = yup_oauth2::AccessTokenAuthenticator::builder(access_token)
-        .build()
-        .await?;
+    let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
+        secret,
+        yup_oauth2::InstalledFlowReturnMethod::HTTPRedirect,
+    )
+    .persist_tokens_to_disk(cache_path)
+    .flow_delegate(Box::new(NoInteractionDelegate))
+    .build()
+    .await?;
 
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
         .build(build_connector()?);
@@ -300,43 +305,6 @@ mod tests {
     #[test]
     fn test_cli_unknown_subcommand_fails() {
         assert!(Cli::try_parse_from(["rscontacts", "foo"]).is_err());
-    }
-
-    #[test]
-    fn test_extract_access_token_valid() {
-        let json = serde_json::json!([
-            {
-                "scopes": ["https://www.googleapis.com/auth/contacts"],
-                "token": {
-                    "access_token": "ya29.test_token",
-                    "refresh_token": "1//refresh",
-                    "expires_at": [2026, 64, 8, 3, 7, 0, 0, 0, 0],
-                    "id_token": null
-                }
-            }
-        ]);
-        assert_eq!(
-            extract_access_token(&json),
-            Some("ya29.test_token".to_string())
-        );
-    }
-
-    #[test]
-    fn test_extract_access_token_empty_array() {
-        let json = serde_json::json!([]);
-        assert_eq!(extract_access_token(&json), None);
-    }
-
-    #[test]
-    fn test_extract_access_token_not_array() {
-        let json = serde_json::json!({"token": "foo"});
-        assert_eq!(extract_access_token(&json), None);
-    }
-
-    #[test]
-    fn test_extract_access_token_missing_token_field() {
-        let json = serde_json::json!([{"scopes": []}]);
-        assert_eq!(extract_access_token(&json), None);
     }
 
     #[test]
