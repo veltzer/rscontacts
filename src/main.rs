@@ -1046,6 +1046,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneNoLabel { fix, dry_run } => cmd_check_phone_no_label(fix, dry_run).await?,
         Commands::CheckEmail => cmd_check_email().await?,
         Commands::CheckDuplicatePhones { fix, dry_run } => cmd_check_duplicate_phones(fix, dry_run).await?,
+        Commands::CheckLabelsNophone { fix, dry_run } => cmd_check_labels_nophone(fix, dry_run).await?,
         Commands::CheckAll { fix, dry_run, ref country } => cmd_check_all(fix, dry_run, country).await?,
         Commands::Version => {
             let is_dirty = std::process::Command::new("git")
