@@ -4,6 +4,9 @@ use google_people1::{FieldMask, PeopleService};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::time::Duration;
+
+const MUTATE_DELAY: Duration = Duration::from_millis(500);
 
 fn config_dir() -> PathBuf {
     let mut dir = dirs::home_dir().expect("Could not determine home directory");
@@ -32,20 +35,38 @@ enum Commands {
     /// List all contacts
     List,
     /// Print contacts with non-English names
-    CheckEnglish {
+    CheckNameEnglish {
         /// Interactively fix each non-English contact (rename/delete/skip)
         #[arg(long)]
         fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Print contacts with all-caps names
-    CheckCaps {
+    CheckNameCaps {
         /// Interactively fix each all-caps contact (rename/delete/skip)
         #[arg(long)]
         fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Run all checks
+    CheckAll {
+        /// Fix all issues found
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+        /// Country code to prepend for phone country code check (without +)
+        #[arg(long, default_value = "972")]
+        country: String,
     },
     /// Print contacts with phone numbers missing a country code
-    CheckPhone {
-        /// Auto-fix by prepending country code
+    CheckPhoneCountrycode {
+        /// Fix by prepending country code
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
@@ -55,14 +76,20 @@ enum Commands {
         #[arg(long, default_value = "972")]
         country: String,
     },
-    /// Remove dashes/minuses from phone numbers
-    FixRemoveMinus {
+    /// Print contacts with dashes/minuses in phone numbers
+    CheckPhoneRemoveMinus {
+        /// Remove dashes from phone numbers
+        #[arg(long)]
+        fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
     },
-    /// Remove whitespace from phone numbers
-    FixPhoneRemoveWhitespace {
+    /// Print contacts with whitespace in phone numbers
+    CheckPhoneRemoveWhitespace {
+        /// Remove whitespace from phone numbers
+        #[arg(long)]
+        fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
@@ -290,7 +317,7 @@ fn prompt_new_name(old_name: &str) -> Result<String, Box<dyn std::error::Error>>
     Ok(new_name)
 }
 
-async fn cmd_check_english(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_english(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
 
     // Collect all non-English contacts first (to avoid pagination issues during mutation)
@@ -351,7 +378,7 @@ async fn cmd_check_english(fix: bool) -> Result<(), Box<dyn std::error::Error>> 
             println!("{}", name);
         }
 
-        if fix {
+        if fix && !dry_run {
             let resource_name = person
                 .resource_name
                 .as_deref()
@@ -374,10 +401,12 @@ async fn cmd_check_english(fix: bool) -> Result<(), Box<dyn std::error::Error>> 
                         .doit()
                         .await?;
                     eprintln!("  Renamed to \"{}\"", new_name);
+                    tokio::time::sleep(MUTATE_DELAY).await;
                 }
                 'd' => {
                     hub.people().delete_contact(resource_name).doit().await?;
                     eprintln!("  Deleted.");
+                    tokio::time::sleep(MUTATE_DELAY).await;
                 }
                 's' => {
                     eprintln!("  Skipped.");
@@ -390,7 +419,7 @@ async fn cmd_check_english(fix: bool) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-async fn cmd_check_caps(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_caps(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
 
     let mut all_caps: Vec<google_people1::api::Person> = Vec::new();
@@ -450,7 +479,7 @@ async fn cmd_check_caps(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", name);
         }
 
-        if fix {
+        if fix && !dry_run {
             let resource_name = person
                 .resource_name
                 .as_deref()
@@ -473,10 +502,12 @@ async fn cmd_check_caps(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
                         .doit()
                         .await?;
                     eprintln!("  Renamed to \"{}\"", new_name);
+                    tokio::time::sleep(MUTATE_DELAY).await;
                 }
                 'd' => {
                     hub.people().delete_contact(resource_name).doit().await?;
                     eprintln!("  Deleted.");
+                    tokio::time::sleep(MUTATE_DELAY).await;
                 }
                 's' => {
                     eprintln!("  Skipped.");
@@ -489,7 +520,7 @@ async fn cmd_check_caps(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_check_phone(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_phone_countrycode(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
 
     let mut contacts: Vec<google_people1::api::Person> = Vec::new();
@@ -579,13 +610,14 @@ async fn cmd_check_phone(fix: bool, dry_run: bool, country: &str) -> Result<(), 
                 .doit()
                 .await?;
             eprintln!("  Fixed: {}", name);
+            tokio::time::sleep(MUTATE_DELAY).await;
         }
     }
 
     Ok(())
 }
 
-async fn cmd_fix_phone_remove_whitespace(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_phone_remove_whitespace(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
 
     let mut contacts: Vec<google_people1::api::Person> = Vec::new();
@@ -637,13 +669,17 @@ async fn cmd_fix_phone_remove_whitespace(dry_run: bool) -> Result<(), Box<dyn st
                 if let Some(val) = pn.value.as_deref() {
                     if val.contains(char::is_whitespace) {
                         let fixed: String = val.chars().filter(|c| !c.is_whitespace()).collect();
-                        println!("{} | {} -> {}", name, val, fixed);
+                        if fix || dry_run {
+                            println!("{} | {} -> {}", name, val, fixed);
+                        } else {
+                            println!("{} | {}", name, val);
+                        }
                     }
                 }
             }
         }
 
-        if !dry_run {
+        if fix && !dry_run {
             let resource_name = person
                 .resource_name
                 .as_deref()
@@ -665,13 +701,14 @@ async fn cmd_fix_phone_remove_whitespace(dry_run: bool) -> Result<(), Box<dyn st
                 .doit()
                 .await?;
             eprintln!("  Fixed: {}", name);
+            tokio::time::sleep(MUTATE_DELAY).await;
         }
     }
 
     Ok(())
 }
 
-async fn cmd_fix_remove_minus(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_phone_remove_minus(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
 
     let mut contacts: Vec<google_people1::api::Person> = Vec::new();
@@ -723,13 +760,17 @@ async fn cmd_fix_remove_minus(dry_run: bool) -> Result<(), Box<dyn std::error::E
                 if let Some(val) = pn.value.as_deref() {
                     if val.contains('-') {
                         let fixed = val.replace('-', "");
-                        println!("{} | {} -> {}", name, val, fixed);
+                        if fix || dry_run {
+                            println!("{} | {} -> {}", name, val, fixed);
+                        } else {
+                            println!("{} | {}", name, val);
+                        }
                     }
                 }
             }
         }
 
-        if !dry_run {
+        if fix && !dry_run {
             let resource_name = person
                 .resource_name
                 .as_deref()
@@ -751,7 +792,284 @@ async fn cmd_fix_remove_minus(dry_run: bool) -> Result<(), Box<dyn std::error::E
                 .doit()
                 .await?;
             eprintln!("  Fixed: {}", name);
+            tokio::time::sleep(MUTATE_DELAY).await;
         }
+    }
+
+    Ok(())
+}
+
+async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+
+    let mut all_contacts: Vec<google_people1::api::Person> = Vec::new();
+    let mut page_token: Option<String> = None;
+
+    loop {
+        let mut request = hub
+            .people()
+            .connections_list("people/me")
+            .person_fields(FieldMask::new::<&str>(&["names", "emailAddresses", "phoneNumbers", "metadata"]));
+
+        if let Some(ref token) = page_token {
+            request = request.page_token(token);
+        }
+
+        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
+
+        if let Some(connections) = result.connections {
+            all_contacts.extend(connections);
+        }
+
+        page_token = result.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+
+    let mut found_any = false;
+
+    // Check non-English names
+    let non_english: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
+        p.names.as_ref()
+            .and_then(|names| names.first())
+            .and_then(|n| n.display_name.as_deref())
+            .is_some_and(|name| !name.is_empty() && !is_english_name(name))
+    }).collect();
+    if !non_english.is_empty() {
+        found_any = true;
+        println!("=== Non-English names ({}) ===", non_english.len());
+        for person in &non_english {
+            let name = person.names.as_ref().and_then(|n| n.first()).and_then(|n| n.display_name.as_deref()).unwrap_or("");
+            let email = person.email_addresses.as_ref().and_then(|e| e.first()).and_then(|e| e.value.as_deref()).unwrap_or("");
+            if !email.is_empty() {
+                println!("  {} | {}", name, email);
+            } else {
+                println!("  {}", name);
+            }
+            if fix && !dry_run {
+                let resource_name = person.resource_name.as_deref().ok_or("Contact missing resource name")?;
+                match prompt_fix_action(name)? {
+                    'r' => {
+                        let new_name = prompt_new_name(name)?;
+                        let mut updated = (*person).clone();
+                        if let Some(ref mut names) = updated.names {
+                            if let Some(first) = names.first_mut() {
+                                first.given_name = Some(new_name.clone());
+                                first.family_name = None;
+                                first.unstructured_name = Some(new_name.clone());
+                            }
+                        }
+                        hub.people().update_contact(updated, resource_name)
+                            .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                            .doit().await?;
+                        eprintln!("  Renamed to \"{}\"", new_name);
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    }
+                    'd' => {
+                        hub.people().delete_contact(resource_name).doit().await?;
+                        eprintln!("  Deleted.");
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    }
+                    's' => { eprintln!("  Skipped."); }
+                    _ => unreachable!(),
+                }
+            }
+        }
+        println!();
+    }
+
+    // Check all-caps names
+    let all_caps: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
+        p.names.as_ref()
+            .and_then(|names| names.first())
+            .and_then(|n| n.display_name.as_deref())
+            .is_some_and(|name| !name.is_empty() && is_all_caps(name))
+    }).collect();
+    if !all_caps.is_empty() {
+        found_any = true;
+        println!("=== All-caps names ({}) ===", all_caps.len());
+        for person in &all_caps {
+            let name = person.names.as_ref().and_then(|n| n.first()).and_then(|n| n.display_name.as_deref()).unwrap_or("");
+            let email = person.email_addresses.as_ref().and_then(|e| e.first()).and_then(|e| e.value.as_deref()).unwrap_or("");
+            if !email.is_empty() {
+                println!("  {} | {}", name, email);
+            } else {
+                println!("  {}", name);
+            }
+            if fix && !dry_run {
+                let resource_name = person.resource_name.as_deref().ok_or("Contact missing resource name")?;
+                match prompt_fix_action(name)? {
+                    'r' => {
+                        let new_name = prompt_new_name(name)?;
+                        let mut updated = (*person).clone();
+                        if let Some(ref mut names) = updated.names {
+                            if let Some(first) = names.first_mut() {
+                                first.given_name = Some(new_name.clone());
+                                first.family_name = None;
+                                first.unstructured_name = Some(new_name.clone());
+                            }
+                        }
+                        hub.people().update_contact(updated, resource_name)
+                            .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                            .doit().await?;
+                        eprintln!("  Renamed to \"{}\"", new_name);
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    }
+                    'd' => {
+                        hub.people().delete_contact(resource_name).doit().await?;
+                        eprintln!("  Deleted.");
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    }
+                    's' => { eprintln!("  Skipped."); }
+                    _ => unreachable!(),
+                }
+            }
+        }
+        println!();
+    }
+
+    // Check phones without country code
+    let no_country: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
+        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
+            pn.value.as_deref().is_some_and(|v| is_fixable_phone(v) && !has_country_code(v))
+        }))
+    }).collect();
+    if !no_country.is_empty() {
+        found_any = true;
+        println!("=== Phones missing country code ({}) ===", no_country.len());
+        for person in &no_country {
+            let name = person.names.as_ref().and_then(|n| n.first()).and_then(|n| n.display_name.as_deref()).unwrap_or("<no name>");
+            let phones: Vec<&str> = person.phone_numbers.as_ref()
+                .map(|nums| nums.iter().filter_map(|p| p.value.as_deref())
+                    .filter(|v| is_fixable_phone(v) && !has_country_code(v)).collect())
+                .unwrap_or_default();
+            for phone in &phones {
+                let fixed = add_country_code(phone, country);
+                if fix || dry_run {
+                    println!("  {} | {} -> {}", name, phone, fixed);
+                } else {
+                    println!("  {} | {}", name, phone);
+                }
+            }
+            if fix && !dry_run {
+                let resource_name = person.resource_name.as_deref().ok_or("Contact missing resource name")?;
+                let mut updated = (*person).clone();
+                if let Some(ref mut nums) = updated.phone_numbers {
+                    for pn in nums.iter_mut() {
+                        if let Some(ref val) = pn.value {
+                            if is_fixable_phone(val) && !has_country_code(val) {
+                                pn.value = Some(add_country_code(val, country));
+                            }
+                        }
+                    }
+                }
+                hub.people().update_contact(updated, resource_name)
+                    .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                    .doit().await?;
+                eprintln!("  Fixed: {}", name);
+                tokio::time::sleep(MUTATE_DELAY).await;
+            }
+        }
+        println!();
+    }
+
+    // Check phones with dashes
+    let with_minus: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
+        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
+            pn.value.as_deref().is_some_and(|v| v.contains('-'))
+        }))
+    }).collect();
+    if !with_minus.is_empty() {
+        found_any = true;
+        println!("=== Phones with dashes ({}) ===", with_minus.len());
+        for person in &with_minus {
+            let name = person.names.as_ref().and_then(|n| n.first()).and_then(|n| n.display_name.as_deref()).unwrap_or("<no name>");
+            if let Some(nums) = &person.phone_numbers {
+                for pn in nums {
+                    if let Some(val) = pn.value.as_deref() {
+                        if val.contains('-') {
+                            let fixed = val.replace('-', "");
+                            if fix || dry_run {
+                                println!("  {} | {} -> {}", name, val, fixed);
+                            } else {
+                                println!("  {} | {}", name, val);
+                            }
+                        }
+                    }
+                }
+            }
+            if fix && !dry_run {
+                let resource_name = person.resource_name.as_deref().ok_or("Contact missing resource name")?;
+                let mut updated = (*person).clone();
+                if let Some(ref mut nums) = updated.phone_numbers {
+                    for pn in nums.iter_mut() {
+                        if let Some(ref val) = pn.value {
+                            if val.contains('-') {
+                                pn.value = Some(val.replace('-', ""));
+                            }
+                        }
+                    }
+                }
+                hub.people().update_contact(updated, resource_name)
+                    .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                    .doit().await?;
+                eprintln!("  Fixed: {}", name);
+                tokio::time::sleep(MUTATE_DELAY).await;
+            }
+        }
+        println!();
+    }
+
+    // Check phones with whitespace
+    let with_ws: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
+        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
+            pn.value.as_deref().is_some_and(|v| v.contains(char::is_whitespace))
+        }))
+    }).collect();
+    if !with_ws.is_empty() {
+        found_any = true;
+        println!("=== Phones with whitespace ({}) ===", with_ws.len());
+        for person in &with_ws {
+            let name = person.names.as_ref().and_then(|n| n.first()).and_then(|n| n.display_name.as_deref()).unwrap_or("<no name>");
+            if let Some(nums) = &person.phone_numbers {
+                for pn in nums {
+                    if let Some(val) = pn.value.as_deref() {
+                        if val.contains(char::is_whitespace) {
+                            let fixed: String = val.chars().filter(|c| !c.is_whitespace()).collect();
+                            if fix || dry_run {
+                                println!("  {} | {} -> {}", name, val, fixed);
+                            } else {
+                                println!("  {} | {}", name, val);
+                            }
+                        }
+                    }
+                }
+            }
+            if fix && !dry_run {
+                let resource_name = person.resource_name.as_deref().ok_or("Contact missing resource name")?;
+                let mut updated = (*person).clone();
+                if let Some(ref mut nums) = updated.phone_numbers {
+                    for pn in nums.iter_mut() {
+                        if let Some(ref val) = pn.value {
+                            if val.contains(char::is_whitespace) {
+                                pn.value = Some(val.chars().filter(|c| !c.is_whitespace()).collect());
+                            }
+                        }
+                    }
+                }
+                hub.people().update_contact(updated, resource_name)
+                    .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                    .doit().await?;
+                eprintln!("  Fixed: {}", name);
+                tokio::time::sleep(MUTATE_DELAY).await;
+            }
+        }
+        println!();
+    }
+
+    if !found_any {
+        println!("All checks passed!");
     }
 
     Ok(())
@@ -768,11 +1086,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Auth { no_browser } => cmd_auth(no_browser).await?,
         Commands::List => cmd_list().await?,
-        Commands::CheckEnglish { fix } => cmd_check_english(fix).await?,
-        Commands::CheckCaps { fix } => cmd_check_caps(fix).await?,
-        Commands::CheckPhone { fix, dry_run, ref country } => cmd_check_phone(fix, dry_run, country).await?,
-        Commands::FixRemoveMinus { dry_run } => cmd_fix_remove_minus(dry_run).await?,
-        Commands::FixPhoneRemoveWhitespace { dry_run } => cmd_fix_phone_remove_whitespace(dry_run).await?,
+        Commands::CheckNameEnglish { fix, dry_run } => cmd_check_english(fix, dry_run).await?,
+        Commands::CheckNameCaps { fix, dry_run } => cmd_check_caps(fix, dry_run).await?,
+        Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => cmd_check_phone_countrycode(fix, dry_run, country).await?,
+        Commands::CheckPhoneRemoveMinus { fix, dry_run } => cmd_check_phone_remove_minus(fix, dry_run).await?,
+        Commands::CheckPhoneRemoveWhitespace { fix, dry_run } => cmd_check_phone_remove_whitespace(fix, dry_run).await?,
+        Commands::CheckAll { fix, dry_run, ref country } => cmd_check_all(fix, dry_run, country).await?,
         Commands::Version => {
             let is_dirty = std::process::Command::new("git")
                 .args(["diff", "--quiet", "HEAD"])
@@ -834,27 +1153,67 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_check_english_subcommand() {
-        let cli = Cli::parse_from(["rscontacts", "check-english"]);
-        assert!(matches!(cli.command, Commands::CheckEnglish { fix: false }));
+    fn test_cli_check_name_english_subcommand() {
+        let cli = Cli::parse_from(["rscontacts", "check-name-english"]);
+        assert!(matches!(cli.command, Commands::CheckNameEnglish { fix: false, dry_run: false }));
     }
 
     #[test]
-    fn test_cli_check_english_fix() {
-        let cli = Cli::parse_from(["rscontacts", "check-english", "--fix"]);
-        assert!(matches!(cli.command, Commands::CheckEnglish { fix: true }));
+    fn test_cli_check_name_english_fix() {
+        let cli = Cli::parse_from(["rscontacts", "check-name-english", "--fix"]);
+        assert!(matches!(cli.command, Commands::CheckNameEnglish { fix: true, dry_run: false }));
     }
 
     #[test]
-    fn test_cli_check_caps_subcommand() {
-        let cli = Cli::parse_from(["rscontacts", "check-caps"]);
-        assert!(matches!(cli.command, Commands::CheckCaps { fix: false }));
+    fn test_cli_check_name_english_dry_run() {
+        let cli = Cli::parse_from(["rscontacts", "check-name-english", "--fix", "--dry-run"]);
+        assert!(matches!(cli.command, Commands::CheckNameEnglish { fix: true, dry_run: true }));
     }
 
     #[test]
-    fn test_cli_check_caps_fix() {
-        let cli = Cli::parse_from(["rscontacts", "check-caps", "--fix"]);
-        assert!(matches!(cli.command, Commands::CheckCaps { fix: true }));
+    fn test_cli_check_name_caps_subcommand() {
+        let cli = Cli::parse_from(["rscontacts", "check-name-caps"]);
+        assert!(matches!(cli.command, Commands::CheckNameCaps { fix: false, dry_run: false }));
+    }
+
+    #[test]
+    fn test_cli_check_name_caps_fix() {
+        let cli = Cli::parse_from(["rscontacts", "check-name-caps", "--fix"]);
+        assert!(matches!(cli.command, Commands::CheckNameCaps { fix: true, dry_run: false }));
+    }
+
+    #[test]
+    fn test_cli_check_name_caps_dry_run() {
+        let cli = Cli::parse_from(["rscontacts", "check-name-caps", "--fix", "--dry-run"]);
+        assert!(matches!(cli.command, Commands::CheckNameCaps { fix: true, dry_run: true }));
+    }
+
+    #[test]
+    fn test_cli_check_all_subcommand() {
+        let cli = Cli::parse_from(["rscontacts", "check-all"]);
+        assert!(matches!(cli.command, Commands::CheckAll { fix: false, dry_run: false, .. }));
+    }
+
+    #[test]
+    fn test_cli_check_all_fix() {
+        let cli = Cli::parse_from(["rscontacts", "check-all", "--fix"]);
+        assert!(matches!(cli.command, Commands::CheckAll { fix: true, dry_run: false, .. }));
+    }
+
+    #[test]
+    fn test_cli_check_all_dry_run() {
+        let cli = Cli::parse_from(["rscontacts", "check-all", "--fix", "--dry-run"]);
+        assert!(matches!(cli.command, Commands::CheckAll { fix: true, dry_run: true, .. }));
+    }
+
+    #[test]
+    fn test_cli_check_all_custom_country() {
+        let cli = Cli::parse_from(["rscontacts", "check-all", "--country", "1"]);
+        if let Commands::CheckAll { country, .. } = cli.command {
+            assert_eq!(country, "1");
+        } else {
+            panic!("wrong command");
+        }
     }
 
     #[test]
@@ -885,26 +1244,26 @@ mod tests {
 
     #[test]
     fn test_cli_check_phone_subcommand() {
-        let cli = Cli::parse_from(["rscontacts", "check-phone"]);
-        assert!(matches!(cli.command, Commands::CheckPhone { fix: false, dry_run: false, .. }));
+        let cli = Cli::parse_from(["rscontacts", "check-phone-countrycode"]);
+        assert!(matches!(cli.command, Commands::CheckPhoneCountrycode { fix: false, dry_run: false, .. }));
     }
 
     #[test]
     fn test_cli_check_phone_fix() {
-        let cli = Cli::parse_from(["rscontacts", "check-phone", "--fix"]);
-        assert!(matches!(cli.command, Commands::CheckPhone { fix: true, dry_run: false, .. }));
+        let cli = Cli::parse_from(["rscontacts", "check-phone-countrycode", "--fix"]);
+        assert!(matches!(cli.command, Commands::CheckPhoneCountrycode { fix: true, dry_run: false, .. }));
     }
 
     #[test]
     fn test_cli_check_phone_dry_run() {
-        let cli = Cli::parse_from(["rscontacts", "check-phone", "--fix", "--dry-run"]);
-        assert!(matches!(cli.command, Commands::CheckPhone { fix: true, dry_run: true, .. }));
+        let cli = Cli::parse_from(["rscontacts", "check-phone-countrycode", "--fix", "--dry-run"]);
+        assert!(matches!(cli.command, Commands::CheckPhoneCountrycode { fix: true, dry_run: true, .. }));
     }
 
     #[test]
     fn test_cli_check_phone_custom_country() {
-        let cli = Cli::parse_from(["rscontacts", "check-phone", "--country", "1"]);
-        if let Commands::CheckPhone { country, .. } = cli.command {
+        let cli = Cli::parse_from(["rscontacts", "check-phone-countrycode", "--country", "1"]);
+        if let Commands::CheckPhoneCountrycode { country, .. } = cli.command {
             assert_eq!(country, "1");
         } else {
             panic!("wrong command");
