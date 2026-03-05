@@ -169,6 +169,11 @@ enum Commands {
     ShowPhoneLabels,
     /// Show all contact labels (contact groups) in use
     ShowContactLabels,
+    /// Show all details about a specific contact
+    ShowContact {
+        /// Name (or part of name) to search for
+        name: String,
+    },
     /// Print version information
     Version,
     /// Generate shell completions
@@ -1177,6 +1182,224 @@ async fn cmd_check_labels_nophone(fix: bool, dry_run: bool) -> Result<(), Box<dy
     Ok(())
 }
 
+async fn cmd_show_contact(search: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let all_fields = &[
+        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
+        "organizations", "memberships", "biographies", "urls", "events",
+        "relations", "nicknames", "occupations", "interests", "skills",
+        "userDefined", "imClients", "sipAddresses", "locations",
+        "externalIds", "clientData", "metadata",
+    ];
+    let contacts = fetch_all_contacts(&hub, all_fields).await?;
+    let search_lower = search.to_lowercase();
+    let matches: Vec<_> = contacts.iter().filter(|p| {
+        person_name(p).to_lowercase().contains(&search_lower)
+    }).collect();
+
+    if matches.is_empty() {
+        println!("No contacts found matching \"{}\"", search);
+        return Ok(());
+    }
+
+    for (i, person) in matches.iter().enumerate() {
+        if i > 0 { println!("\n{}", "=".repeat(60)); }
+        print_person_details(person);
+    }
+    Ok(())
+}
+
+fn print_person_details(person: &google_people1::api::Person) {
+    let name = person_display_name(person);
+    println!("Name: {}", name);
+
+    if let Some(names) = &person.names {
+        for n in names {
+            if let Some(given) = &n.given_name { println!("  Given name: {}", given); }
+            if let Some(family) = &n.family_name { println!("  Family name: {}", family); }
+            if let Some(middle) = &n.middle_name { println!("  Middle name: {}", middle); }
+            if let Some(prefix) = &n.honorific_prefix { println!("  Prefix: {}", prefix); }
+            if let Some(suffix) = &n.honorific_suffix { println!("  Suffix: {}", suffix); }
+        }
+    }
+
+    if let Some(nicknames) = &person.nicknames {
+        for n in nicknames {
+            if let Some(val) = &n.value { println!("Nickname: {}", val); }
+        }
+    }
+
+    if let Some(emails) = &person.email_addresses {
+        for e in emails {
+            let val = e.value.as_deref().unwrap_or("");
+            let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
+            if t.is_empty() { println!("Email: {}", val); }
+            else { println!("Email: {} [{}]", val, t); }
+        }
+    }
+
+    if let Some(phones) = &person.phone_numbers {
+        for p in phones {
+            let val = p.value.as_deref().unwrap_or("");
+            let t = p.formatted_type.as_deref().or(p.type_.as_deref()).unwrap_or("");
+            if t.is_empty() { println!("Phone: {}", val); }
+            else { println!("Phone: {} [{}]", val, t); }
+        }
+    }
+
+    if let Some(addrs) = &person.addresses {
+        for a in addrs {
+            let t = a.formatted_type.as_deref().or(a.type_.as_deref()).unwrap_or("");
+            if let Some(formatted) = &a.formatted_value {
+                if t.is_empty() { println!("Address: {}", formatted); }
+                else { println!("Address [{}]: {}", t, formatted); }
+            }
+        }
+    }
+
+    if let Some(orgs) = &person.organizations {
+        for o in orgs {
+            let org_name = o.name.as_deref().unwrap_or("");
+            let title = o.title.as_deref().unwrap_or("");
+            let dept = o.department.as_deref().unwrap_or("");
+            let mut parts = Vec::new();
+            if !title.is_empty() { parts.push(title.to_string()); }
+            if !org_name.is_empty() { parts.push(org_name.to_string()); }
+            if !dept.is_empty() { parts.push(format!("({})", dept)); }
+            if !parts.is_empty() { println!("Organization: {}", parts.join(", ")); }
+        }
+    }
+
+    if let Some(bdays) = &person.birthdays {
+        for b in bdays {
+            if let Some(date) = &b.date {
+                let y = date.year.unwrap_or(0);
+                let m = date.month.unwrap_or(0);
+                let d = date.day.unwrap_or(0);
+                if y > 0 { println!("Birthday: {}-{:02}-{:02}", y, m, d); }
+                else { println!("Birthday: {:02}-{:02}", m, d); }
+            }
+            if let Some(text) = &b.text { println!("Birthday: {}", text); }
+        }
+    }
+
+    if let Some(relations) = &person.relations {
+        for r in relations {
+            let val = r.person.as_deref().unwrap_or("");
+            let t = r.formatted_type.as_deref().or(r.type_.as_deref()).unwrap_or("");
+            if t.is_empty() { println!("Relation: {}", val); }
+            else { println!("Relation: {} [{}]", val, t); }
+        }
+    }
+
+    if let Some(events) = &person.events {
+        for e in events {
+            let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("event");
+            if let Some(date) = &e.date {
+                let y = date.year.unwrap_or(0);
+                let m = date.month.unwrap_or(0);
+                let d = date.day.unwrap_or(0);
+                if y > 0 { println!("Event [{}]: {}-{:02}-{:02}", t, y, m, d); }
+                else { println!("Event [{}]: {:02}-{:02}", t, m, d); }
+            }
+        }
+    }
+
+    if let Some(bios) = &person.biographies {
+        for b in bios {
+            if let Some(val) = &b.value { println!("Biography: {}", val); }
+        }
+    }
+
+    if let Some(urls) = &person.urls {
+        for u in urls {
+            let val = u.value.as_deref().unwrap_or("");
+            let t = u.formatted_type.as_deref().or(u.type_.as_deref()).unwrap_or("");
+            if t.is_empty() { println!("URL: {}", val); }
+            else { println!("URL: {} [{}]", val, t); }
+        }
+    }
+
+    if let Some(ims) = &person.im_clients {
+        for im in ims {
+            let val = im.username.as_deref().unwrap_or("");
+            let proto = im.formatted_protocol.as_deref().or(im.protocol.as_deref()).unwrap_or("");
+            if proto.is_empty() { println!("IM: {}", val); }
+            else { println!("IM: {} [{}]", val, proto); }
+        }
+    }
+
+    if let Some(sips) = &person.sip_addresses {
+        for s in sips {
+            if let Some(val) = &s.value { println!("SIP: {}", val); }
+        }
+    }
+
+    if let Some(occupations) = &person.occupations {
+        for o in occupations {
+            if let Some(val) = &o.value { println!("Occupation: {}", val); }
+        }
+    }
+
+    if let Some(interests) = &person.interests {
+        for i in interests {
+            if let Some(val) = &i.value { println!("Interest: {}", val); }
+        }
+    }
+
+    if let Some(skills) = &person.skills {
+        for s in skills {
+            if let Some(val) = &s.value { println!("Skill: {}", val); }
+        }
+    }
+
+    if let Some(locations) = &person.locations {
+        for l in locations {
+            if let Some(val) = &l.value { println!("Location: {}", val); }
+        }
+    }
+
+    if let Some(ext_ids) = &person.external_ids {
+        for e in ext_ids {
+            let val = e.value.as_deref().unwrap_or("");
+            let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
+            if t.is_empty() { println!("External ID: {}", val); }
+            else { println!("External ID: {} [{}]", val, t); }
+        }
+    }
+
+    if let Some(user_defined) = &person.user_defined {
+        for u in user_defined {
+            let key = u.key.as_deref().unwrap_or("");
+            let val = u.value.as_deref().unwrap_or("");
+            println!("Custom: {} = {}", key, val);
+        }
+    }
+
+    if let Some(client_data) = &person.client_data {
+        for c in client_data {
+            let key = c.key.as_deref().unwrap_or("");
+            let val = c.value.as_deref().unwrap_or("");
+            println!("Client data: {} = {}", key, val);
+        }
+    }
+
+    if let Some(memberships) = &person.memberships {
+        let labels: Vec<&str> = memberships.iter().filter_map(|m| {
+            m.contact_group_membership.as_ref().and_then(|cgm| {
+                cgm.contact_group_resource_name.as_deref()
+            })
+        }).filter(|rn| *rn != "contactGroups/myContacts").collect();
+        if !labels.is_empty() {
+            println!("Labels: {}", labels.join(", "));
+        }
+    }
+
+    if let Some(rn) = &person.resource_name {
+        println!("Resource: {}", rn);
+    }
+}
+
 async fn cmd_check_contact_label_space(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let mut all_groups: Vec<google_people1::api::ContactGroup> = Vec::new();
@@ -1437,6 +1660,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckDuplicatePhones { fix, dry_run } => cmd_check_duplicate_phones(fix, dry_run).await?,
         Commands::CheckLabelsNophone { fix, dry_run } => cmd_check_labels_nophone(fix, dry_run).await?,
         Commands::CheckContactLabelSpace { fix, dry_run } => cmd_check_contact_label_space(fix, dry_run).await?,
+        Commands::ShowContact { ref name } => cmd_show_contact(name).await?,
         Commands::ShowPhoneLabels => cmd_show_phone_labels().await?,
         Commands::ShowContactLabels => cmd_show_contact_labels().await?,
         Commands::CheckAll { fix, dry_run, ref country } => cmd_check_all(fix, dry_run, country).await?,
