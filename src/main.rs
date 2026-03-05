@@ -89,6 +89,9 @@ enum Commands {
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
+        /// Only show error counts per check, no details
+        #[arg(long)]
+        stats: bool,
         /// Country code to prepend for phone country code check (without +)
         #[arg(long, default_value = "972")]
         country: String,
@@ -1757,107 +1760,211 @@ async fn cmd_show_contact_labels() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers", "memberships", "metadata"]).await?;
 
-    let mut found_any = false;
+    let mut results: Vec<(&str, usize)> = Vec::new();
 
-    let non_english = check_name_issues(
-        &hub, &all_contacts, |name| !is_english_name(name),
-        fix, dry_run, "  ", Some("Non-English names (check-name-english)"),
-    ).await?;
-    if non_english > 0 { found_any = true; }
+    if stats {
+        // Count-only mode: compute counts without printing individual items
+        let count_names = |pred: &dyn Fn(&str) -> bool| -> usize {
+            all_contacts.iter().filter(|p| {
+                let name = person_name(p);
+                !name.is_empty() && pred(name)
+            }).count()
+        };
+        let count_phones = |pred: &dyn Fn(&str) -> bool| -> usize {
+            let mut count = 0;
+            for person in &all_contacts {
+                if let Some(nums) = &person.phone_numbers {
+                    count += nums.iter().filter(|pn| {
+                        pn.value.as_deref().is_some_and(|v| pred(v))
+                    }).count();
+                }
+            }
+            count
+        };
 
-    let all_caps = check_name_issues(
-        &hub, &all_contacts, |name| is_all_caps(name),
-        fix, dry_run, "  ", Some("All-caps names (check-name-caps)"),
-    ).await?;
-    if all_caps > 0 { found_any = true; }
+        results.push(("check-name-english", count_names(&|name| !is_english_name(name))));
+        results.push(("check-name-caps", count_names(&|name| is_all_caps(name))));
+        results.push(("check-phone-countrycode", count_phones(&|v| is_fixable_phone(v) && !has_country_code(v))));
+        results.push(("check-phone-format", count_phones(&|v| is_fixable_phone(v) && !is_correct_phone_format(v))));
+        results.push(("check-name-first-capital-letter", count_names(&|name| !starts_with_capital(name))));
+        results.push(("check-name-order", all_contacts.iter().filter(|p| has_reversed_name(p)).count()));
+        results.push(("check-contact-no-label", all_contacts.iter().filter(|p| !has_user_label(p)).count()));
+        results.push(("check-phone-no-label", {
+            let mut c = 0;
+            for p in &all_contacts {
+                if let Some(nums) = &p.phone_numbers {
+                    c += nums.iter().filter(|pn| !phone_has_type(pn)).count();
+                }
+            }
+            c
+        }));
+        results.push(("check-phone-label-english", {
+            let mut c = 0;
+            for p in &all_contacts {
+                if let Some(nums) = &p.phone_numbers {
+                    for pn in nums {
+                        let label = pn.formatted_type.as_deref().or(pn.type_.as_deref()).unwrap_or("");
+                        if !label.is_empty() && !label.chars().all(|ch| ch.is_ascii()) { c += 1; }
+                    }
+                }
+            }
+            c
+        }));
+        results.push(("check-email", {
+            let mut c = 0;
+            for p in &all_contacts {
+                if let Some(emails) = &p.email_addresses {
+                    c += emails.iter().filter(|e| e.value.as_deref().is_some_and(|v| !is_valid_email(v))).count();
+                }
+            }
+            c
+        }));
+        results.push(("check-email-caps", {
+            let mut c = 0;
+            for p in &all_contacts {
+                if let Some(emails) = &p.email_addresses {
+                    c += emails.iter().filter(|e| e.value.as_deref().is_some_and(|v| v != v.to_lowercase().as_str())).count();
+                }
+            }
+            c
+        }));
+        results.push(("check-duplicate-phones", {
+            let mut c = 0;
+            for p in &all_contacts {
+                if let Some(nums) = &p.phone_numbers {
+                    let values: Vec<&str> = nums.iter().filter_map(|pn| pn.value.as_deref()).collect();
+                    let mut seen = std::collections::HashSet::new();
+                    c += values.iter().filter(|v| !seen.insert(**v)).count();
+                }
+            }
+            c
+        }));
+        results.push(("check-duplicate-emails", {
+            let mut c = 0;
+            for p in &all_contacts {
+                if let Some(emails) = &p.email_addresses {
+                    let values: Vec<&str> = emails.iter().filter_map(|e| e.value.as_deref()).collect();
+                    let mut seen = std::collections::HashSet::new();
+                    c += values.iter().filter(|v| !seen.insert(**v)).count();
+                }
+            }
+            c
+        }));
+    } else {
+        let non_english = check_name_issues(
+            &hub, &all_contacts, |name| !is_english_name(name),
+            fix, dry_run, "  ", Some("Non-English names (check-name-english)"),
+        ).await?;
+        results.push(("check-name-english", non_english));
 
-    let country_owned = country.to_string();
-    let no_country = check_phone_issues(
-        &hub, &all_contacts,
-        |v| is_fixable_phone(v) && !has_country_code(v),
-        move |v| add_country_code(v, &country_owned),
-        fix, dry_run, "  ", Some("Phones missing country code (check-phone-countrycode)"),
-    ).await?;
-    if no_country > 0 { found_any = true; }
+        let all_caps = check_name_issues(
+            &hub, &all_contacts, |name| is_all_caps(name),
+            fix, dry_run, "  ", Some("All-caps names (check-name-caps)"),
+        ).await?;
+        results.push(("check-name-caps", all_caps));
 
-    let country_owned2 = country.to_string();
-    let bad_format = check_phone_issues(
-        &hub, &all_contacts,
-        |v| is_fixable_phone(v) && !is_correct_phone_format(v),
-        move |v| fix_phone_format(v, &country_owned2),
-        fix, dry_run, "  ", Some("Phones not in +CC-NUMBER format (check-phone-format)"),
-    ).await?;
-    if bad_format > 0 { found_any = true; }
+        let country_owned = country.to_string();
+        let no_country = check_phone_issues(
+            &hub, &all_contacts,
+            |v| is_fixable_phone(v) && !has_country_code(v),
+            move |v| add_country_code(v, &country_owned),
+            fix, dry_run, "  ", Some("Phones missing country code (check-phone-countrycode)"),
+        ).await?;
+        results.push(("check-phone-countrycode", no_country));
 
-    let first_cap = check_name_issues(
-        &hub, &all_contacts, |name| !starts_with_capital(name),
-        fix, dry_run, "  ", Some("Names not starting with capital letter (check-name-first-capital-letter)"),
-    ).await?;
-    if first_cap > 0 { found_any = true; }
+        let country_owned2 = country.to_string();
+        let bad_format = check_phone_issues(
+            &hub, &all_contacts,
+            |v| is_fixable_phone(v) && !is_correct_phone_format(v),
+            move |v| fix_phone_format(v, &country_owned2),
+            fix, dry_run, "  ", Some("Phones not in +CC-NUMBER format (check-phone-format)"),
+        ).await?;
+        results.push(("check-phone-format", bad_format));
 
-    if check_name_order(&all_contacts, "  ", Some("Reversed name order (check-name-order)")) > 0 { found_any = true; }
+        let first_cap = check_name_issues(
+            &hub, &all_contacts, |name| !starts_with_capital(name),
+            fix, dry_run, "  ", Some("Names not starting with capital letter (check-name-first-capital-letter)"),
+        ).await?;
+        results.push(("check-name-first-capital-letter", first_cap));
 
-    if check_no_label(&all_contacts, "  ", Some("Contacts without label (check-contact-no-label)")) > 0 { found_any = true; }
-    if check_phone_no_label(&all_contacts, "  ", Some("Phones without label (check-phone-no-label)")) > 0 { found_any = true; }
-    if check_phone_label_english(&all_contacts, "  ", Some("Non-English phone labels (check-phone-label-english)")) > 0 { found_any = true; }
-    if check_invalid_emails(&all_contacts, "  ", Some("Invalid emails (check-email)")) > 0 { found_any = true; }
-    if check_email_caps(&all_contacts, "  ", Some("Emails with uppercase (check-email-caps)")) > 0 { found_any = true; }
-    if check_duplicate_phones(&all_contacts, "  ", Some("Duplicate phone numbers (check-duplicate-phones)")) > 0 { found_any = true; }
-    if check_duplicate_emails(&all_contacts, "  ", Some("Duplicate email addresses (check-duplicate-emails)")) > 0 { found_any = true; }
+        results.push(("check-name-order", check_name_order(&all_contacts, "  ", Some("Reversed name order (check-name-order)"))));
+        results.push(("check-contact-no-label", check_no_label(&all_contacts, "  ", Some("Contacts without label (check-contact-no-label)"))));
+        results.push(("check-phone-no-label", check_phone_no_label(&all_contacts, "  ", Some("Phones without label (check-phone-no-label)"))));
+        results.push(("check-phone-label-english", check_phone_label_english(&all_contacts, "  ", Some("Non-English phone labels (check-phone-label-english)"))));
+        results.push(("check-email", check_invalid_emails(&all_contacts, "  ", Some("Invalid emails (check-email)"))));
+        results.push(("check-email-caps", check_email_caps(&all_contacts, "  ", Some("Emails with uppercase (check-email-caps)"))));
+        results.push(("check-duplicate-phones", check_duplicate_phones(&all_contacts, "  ", Some("Duplicate phone numbers (check-duplicate-phones)"))));
+        results.push(("check-duplicate-emails", check_duplicate_emails(&all_contacts, "  ", Some("Duplicate email addresses (check-duplicate-emails)"))));
+    }
 
     // Check for empty labels (contact groups) — separate API call
-    {
-        let mut all_groups: Vec<google_people1::api::ContactGroup> = Vec::new();
-        let mut page_token: Option<String> = None;
-        loop {
-            let mut request = hub.contact_groups().list();
-            if let Some(ref token) = page_token {
-                request = request.page_token(token);
-            }
-            let (_response, result) = request.doit().await?;
-            if let Some(groups) = result.contact_groups {
-                all_groups.extend(groups);
-            }
-            page_token = result.next_page_token;
-            if page_token.is_none() {
-                break;
-            }
+    let mut all_groups: Vec<google_people1::api::ContactGroup> = Vec::new();
+    let mut page_token: Option<String> = None;
+    loop {
+        let mut request = hub.contact_groups().list();
+        if let Some(ref token) = page_token {
+            request = request.page_token(token);
         }
-        let empty: Vec<_> = all_groups.iter().filter(|g| {
-            g.member_count.unwrap_or(0) == 0
-                && g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-        }).collect();
-        if !empty.is_empty() {
-            found_any = true;
-            println!("=== Empty labels (check-labels-nophone) ({}) ===", empty.len());
-            for group in &empty {
-                let name = group.name.as_deref().unwrap_or("<unnamed>");
-                println!("  {}", name);
-            }
-            println!();
+        let (_response, result) = request.doit().await?;
+        if let Some(groups) = result.contact_groups {
+            all_groups.extend(groups);
         }
-
-        let with_space: Vec<_> = all_groups.iter().filter(|g| {
-            g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-                && g.name.as_deref().unwrap_or("").contains(' ')
-        }).collect();
-        if !with_space.is_empty() {
-            found_any = true;
-            println!("=== Labels with spaces (check-contact-label-space) ({}) ===", with_space.len());
-            for group in &with_space {
-                let name = group.name.as_deref().unwrap_or("<unnamed>");
-                println!("  {}", name);
-            }
-            println!();
+        page_token = result.next_page_token;
+        if page_token.is_none() {
+            break;
         }
     }
 
-    if !found_any {
-        println!("All checks passed!");
+    let empty: Vec<_> = all_groups.iter().filter(|g| {
+        g.member_count.unwrap_or(0) == 0
+            && g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+    }).collect();
+    if !stats && !empty.is_empty() {
+        println!("=== Empty labels (check-labels-nophone) ({}) ===", empty.len());
+        for group in &empty {
+            let name = group.name.as_deref().unwrap_or("<unnamed>");
+            println!("  {}", name);
+        }
+        println!();
+    }
+    results.push(("check-labels-nophone", empty.len()));
+
+    let with_space: Vec<_> = all_groups.iter().filter(|g| {
+        g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+            && g.name.as_deref().unwrap_or("").contains(' ')
+    }).collect();
+    if !stats && !with_space.is_empty() {
+        println!("=== Labels with spaces (check-contact-label-space) ({}) ===", with_space.len());
+        for group in &with_space {
+            let name = group.name.as_deref().unwrap_or("<unnamed>");
+            println!("  {}", name);
+        }
+        println!();
+    }
+    results.push(("check-contact-label-space", with_space.len()));
+
+    if stats {
+        let total: usize = results.iter().map(|(_, c)| c).sum();
+        for (name, count) in &results {
+            if *count > 0 {
+                println!("{}: {}", name, count);
+            }
+        }
+        if total == 0 {
+            println!("All checks passed!");
+        } else {
+            println!("---");
+            println!("Total: {}", total);
+        }
+    } else {
+        let found_any = results.iter().any(|(_, c)| *c > 0);
+        if !found_any {
+            println!("All checks passed!");
+        }
     }
 
     Ok(())
@@ -1892,7 +1999,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::ShowContact { ref name } => cmd_show_contact(name).await?,
         Commands::ShowPhoneLabels => cmd_show_phone_labels().await?,
         Commands::ShowContactLabels => cmd_show_contact_labels().await?,
-        Commands::CheckAll { fix, dry_run, ref country } => cmd_check_all(fix, dry_run, country).await?,
+        Commands::CheckAll { fix, dry_run, stats, ref country } => cmd_check_all(fix, dry_run, stats, country).await?,
         Commands::Version => {
             let is_dirty = std::process::Command::new("git")
                 .args(["diff", "--quiet", "HEAD"])
