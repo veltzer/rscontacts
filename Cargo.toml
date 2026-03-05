@@ -18,3 +18,4 @@ clap_complete = "4.5"
 dirs = "6"
 open = "5"
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
+rustyline = { version = "15", features = ["derive"] }

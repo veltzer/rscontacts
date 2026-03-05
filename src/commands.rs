@@ -721,11 +721,163 @@ async fn fix_phone_labels_english(hub: &HubType, person: &google_people1::api::P
     Ok(())
 }
 
-pub async fn cmd_check_contact_no_label() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "memberships"]).await?;
-    check_no_label(&contacts, "", None, false);
+    let all_fields = &[
+        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
+        "organizations", "memberships", "biographies", "urls", "events",
+        "relations", "nicknames", "occupations", "interests", "skills",
+        "userDefined", "imClients", "sipAddresses", "locations",
+        "externalIds", "clientData",
+    ];
+    let contacts = if fix {
+        fetch_all_contacts(&hub, all_fields).await?
+    } else {
+        fetch_all_contacts(&hub, &["names", "emailAddresses", "memberships"]).await?
+    };
+
+    if !fix {
+        check_no_label(&contacts, "", None, false);
+        return Ok(());
+    }
+
+    // Fetch contact groups for label assignment
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let user_groups: Vec<(&str, &str)> = all_groups.iter()
+        .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+        .filter_map(|g| {
+            let name = g.name.as_deref()?;
+            let rn = g.resource_name.as_deref()?;
+            Some((name, rn))
+        })
+        .collect();
+    let label_names: Vec<String> = user_groups.iter().map(|(name, _)| name.to_string()).collect();
+
+    let unlabeled: Vec<_> = contacts.iter().filter(|p| !has_user_label(p)).collect();
+    if unlabeled.is_empty() {
+        println!("All contacts have labels.");
+        return Ok(());
+    }
+    println!("{} contact(s) without labels:\n", unlabeled.len());
+
+    for person in &unlabeled {
+        println!("{}", "=".repeat(60));
+        print_person_details(person);
+        println!("{}", "-".repeat(60));
+
+        if dry_run {
+            eprintln!("(dry-run) would prompt for action\n");
+            continue;
+        }
+
+        let resource_name = match person.resource_name.as_deref() {
+            Some(rn) => rn,
+            None => continue,
+        };
+
+        use std::io::Write;
+        loop {
+            eprint!("[l]abel / [d]elete / [s]kip: ");
+            std::io::stderr().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            match input.trim().chars().next() {
+                Some('l') => {
+                    if let Some(group_rn) = prompt_label_autocomplete(&label_names, &user_groups)? {
+                        let req = google_people1::api::ModifyContactGroupMembersRequest {
+                            resource_names_to_add: Some(vec![resource_name.to_string()]),
+                            resource_names_to_remove: None,
+                        };
+                        hub.contact_groups().members_modify(req, &group_rn).doit().await?;
+                        eprintln!("  Assigned label.");
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    } else {
+                        eprintln!("  Skipped.");
+                    }
+                    break;
+                }
+                Some('d') => {
+                    if prompt_yes_no(&format!("Delete {}?", person_display_name(person)))? {
+                        hub.people().delete_contact(resource_name).doit().await?;
+                        eprintln!("  Deleted.");
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    } else {
+                        eprintln!("  Skipped.");
+                    }
+                    break;
+                }
+                Some('s') => {
+                    eprintln!("  Skipped.");
+                    break;
+                }
+                _ => eprintln!("  Invalid choice. Enter l, d, or s."),
+            }
+        }
+        println!();
+    }
     Ok(())
+}
+
+fn prompt_label_autocomplete(
+    label_names: &[String],
+    user_groups: &[(&str, &str)],
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    use rustyline::completion::{Completer, Pair};
+    use rustyline::Editor;
+    use rustyline::highlight::Highlighter;
+    use rustyline::hint::Hinter;
+    use rustyline::validate::Validator;
+    use rustyline::Helper;
+
+    struct LabelCompleter {
+        labels: Vec<String>,
+    }
+
+    impl Helper for LabelCompleter {}
+    impl Highlighter for LabelCompleter {}
+    impl Hinter for LabelCompleter {
+        type Hint = String;
+    }
+    impl Validator for LabelCompleter {}
+
+    impl Completer for LabelCompleter {
+        type Candidate = Pair;
+        fn complete(
+            &self,
+            line: &str,
+            pos: usize,
+            _ctx: &rustyline::Context<'_>,
+        ) -> rustyline::Result<(usize, Vec<Pair>)> {
+            let input = &line[..pos].to_lowercase();
+            let matches: Vec<Pair> = self.labels.iter()
+                .filter(|l| l.to_lowercase().starts_with(input))
+                .map(|l| Pair { display: l.clone(), replacement: l.clone() })
+                .collect();
+            Ok((0, matches))
+        }
+    }
+
+    let completer = LabelCompleter { labels: label_names.to_vec() };
+    let mut rl = Editor::new()?;
+    rl.set_helper(Some(completer));
+    match rl.readline("  Label (tab to complete): ") {
+        Ok(line) => {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            // Find matching group (case-insensitive)
+            let lower = trimmed.to_lowercase();
+            if let Some((_, rn)) = user_groups.iter().find(|(name, _)| name.to_lowercase() == lower) {
+                Ok(Some(rn.to_string()))
+            } else {
+                eprintln!("  Unknown label \"{}\". Available: {}", trimmed,
+                    label_names.join(", "));
+                Ok(None)
+            }
+        }
+        Err(_) => Ok(None),
+    }
 }
 
 pub async fn cmd_check_labels_nophone(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {

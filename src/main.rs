@@ -107,7 +107,14 @@ enum Commands {
         country: String,
     },
     /// Print contacts not assigned to any label (contact group)
-    CheckContactNoLabel,
+    CheckContactNoLabel {
+        /// Interactively fix: delete contact or assign a label
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print contacts with phone numbers missing a label (mobile/home/work/etc)
     CheckPhoneNoLabel,
     /// Print contacts with non-English phone labels
@@ -213,7 +220,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckNameOrder { fix, dry_run } => commands::cmd_check_name_order(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
-        Commands::CheckContactNoLabel => commands::cmd_check_contact_no_label().await?,
+        Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
         Commands::CheckPhoneNoLabel => commands::cmd_check_phone_no_label().await?,
         Commands::CheckPhoneLabelEnglish { fix, dry_run } => commands::cmd_check_phone_label_english(fix, dry_run).await?,
         Commands::CheckEmail => commands::cmd_check_email().await?,
