@@ -1,7 +1,15 @@
 use clap::{Parser, Subcommand};
 use google_people1::api::ListConnectionsResponse;
 use google_people1::{FieldMask, PeopleService};
-use std::path::Path;
+use std::path::PathBuf;
+
+fn config_dir() -> PathBuf {
+    let mut dir = dirs::home_dir().expect("Could not determine home directory");
+    dir.push(".config");
+    dir.push("rscontacts");
+    std::fs::create_dir_all(&dir).expect("Could not create config directory");
+    dir
+}
 
 #[derive(Parser)]
 #[command(name = "rscontacts")]
@@ -19,25 +27,28 @@ enum Commands {
     List,
 }
 
-fn get_credentials_path() -> &'static Path {
-    let path = Path::new("credentials.json");
+fn credentials_path() -> PathBuf {
+    let path = config_dir().join("credentials.json");
     if !path.exists() {
-        eprintln!("Error: credentials.json not found in current directory.");
-        eprintln!("Download OAuth2 credentials from Google Cloud Console and place them here.");
+        eprintln!("Error: credentials.json not found at {}", path.display());
+        eprintln!("Download OAuth2 credentials from Google Cloud Console and place them there.");
         std::process::exit(1);
     }
     path
 }
 
+fn token_cache_path() -> PathBuf {
+    config_dir().join("token_cache.json")
+}
+
 async fn build_hub() -> Result<PeopleService<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>, Box<dyn std::error::Error>> {
-    let credentials_path = get_credentials_path();
-    let secret = yup_oauth2::read_application_secret(credentials_path).await?;
+    let secret = yup_oauth2::read_application_secret(credentials_path()).await?;
 
     let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
         secret,
         yup_oauth2::InstalledFlowReturnMethod::HTTPRedirect,
     )
-    .persist_tokens_to_disk("token_cache.json")
+    .persist_tokens_to_disk(token_cache_path())
     .build()
     .await?;
 
@@ -56,7 +67,7 @@ async fn build_hub() -> Result<PeopleService<hyper_rustls::HttpsConnector<hyper_
 async fn cmd_auth() -> Result<(), Box<dyn std::error::Error>> {
     // Just trigger the OAuth flow — build_hub will open browser if no cached token
     let _hub = build_hub().await?;
-    eprintln!("Authentication successful. Token cached to token_cache.json");
+    eprintln!("Authentication successful. Token cached to {}", token_cache_path().display());
     Ok(())
 }
 
