@@ -41,6 +41,16 @@ fn token_cache_path() -> PathBuf {
     config_dir().join("token_cache.json")
 }
 
+fn extract_access_token(token_info: &serde_json::Value) -> Option<String> {
+    token_info
+        .as_array()?
+        .first()?
+        .get("token")?
+        .get("access_token")?
+        .as_str()
+        .map(String::from)
+}
+
 fn build_connector() -> Result<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, Box<dyn std::error::Error>> {
     Ok(hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()?
@@ -59,15 +69,10 @@ async fn build_hub() -> Result<PeopleService<hyper_rustls::HttpsConnector<hyper_
     let data = std::fs::read_to_string(&cache_path)?;
     let token_info: serde_json::Value = serde_json::from_str(&data)?;
 
-    let access_token = token_info
-        .as_array()
-        .and_then(|arr| arr.first())
-        .and_then(|v| v.get("token"))
-        .and_then(|v| v.get("access_token"))
-        .and_then(|v| v.as_str())
+    let access_token = extract_access_token(&token_info)
         .ok_or("Invalid token cache. Run 'rscontacts auth' again.")?;
 
-    let auth = yup_oauth2::AccessTokenAuthenticator::builder(access_token.to_string())
+    let auth = yup_oauth2::AccessTokenAuthenticator::builder(access_token)
         .build()
         .await?;
 
@@ -89,7 +94,7 @@ async fn cmd_auth() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
 
     // Actually request a token so it gets persisted
-    let scopes = &["https://www.googleapis.com/auth/contacts.readonly"];
+    let scopes = &["https://www.googleapis.com/auth/contacts"];
     let _token = auth.token(scopes).await?;
 
     eprintln!("Authentication successful. Token cached to {}", token_cache_path().display());
@@ -170,4 +175,83 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_cli_auth_subcommand() {
+        let cli = Cli::parse_from(["rscontacts", "auth"]);
+        assert!(matches!(cli.command, Commands::Auth));
+    }
+
+    #[test]
+    fn test_cli_list_subcommand() {
+        let cli = Cli::parse_from(["rscontacts", "list"]);
+        assert!(matches!(cli.command, Commands::List));
+    }
+
+    #[test]
+    fn test_cli_no_subcommand_fails() {
+        assert!(Cli::try_parse_from(["rscontacts"]).is_err());
+    }
+
+    #[test]
+    fn test_cli_unknown_subcommand_fails() {
+        assert!(Cli::try_parse_from(["rscontacts", "foo"]).is_err());
+    }
+
+    #[test]
+    fn test_extract_access_token_valid() {
+        let json = serde_json::json!([
+            {
+                "scopes": ["https://www.googleapis.com/auth/contacts"],
+                "token": {
+                    "access_token": "ya29.test_token",
+                    "refresh_token": "1//refresh",
+                    "expires_at": [2026, 64, 8, 3, 7, 0, 0, 0, 0],
+                    "id_token": null
+                }
+            }
+        ]);
+        assert_eq!(
+            extract_access_token(&json),
+            Some("ya29.test_token".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_access_token_empty_array() {
+        let json = serde_json::json!([]);
+        assert_eq!(extract_access_token(&json), None);
+    }
+
+    #[test]
+    fn test_extract_access_token_not_array() {
+        let json = serde_json::json!({"token": "foo"});
+        assert_eq!(extract_access_token(&json), None);
+    }
+
+    #[test]
+    fn test_extract_access_token_missing_token_field() {
+        let json = serde_json::json!([{"scopes": []}]);
+        assert_eq!(extract_access_token(&json), None);
+    }
+
+    #[test]
+    fn test_config_dir_ends_with_rscontacts() {
+        let dir = config_dir();
+        assert!(dir.ends_with("rscontacts"));
+        assert!(dir.to_str().unwrap().contains(".config"));
+    }
+
+    #[test]
+    fn test_token_cache_path_is_in_config_dir() {
+        let path = token_cache_path();
+        assert!(path.ends_with("token_cache.json"));
+        assert!(path.to_str().unwrap().contains(".config/rscontacts"));
+    }
 }
