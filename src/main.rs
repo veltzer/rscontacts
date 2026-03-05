@@ -61,6 +61,12 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Remove whitespace from phone numbers
+    FixPhoneRemoveWhitespace {
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print version information
     Version,
     /// Generate shell completions
@@ -579,6 +585,92 @@ async fn cmd_check_phone(fix: bool, dry_run: bool, country: &str) -> Result<(), 
     Ok(())
 }
 
+async fn cmd_fix_phone_remove_whitespace(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+
+    let mut contacts: Vec<google_people1::api::Person> = Vec::new();
+    let mut page_token: Option<String> = None;
+
+    loop {
+        let mut request = hub
+            .people()
+            .connections_list("people/me")
+            .person_fields(FieldMask::new::<&str>(&["names", "phoneNumbers", "metadata"]));
+
+        if let Some(ref token) = page_token {
+            request = request.page_token(token);
+        }
+
+        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
+
+        if let Some(connections) = result.connections {
+            for person in connections {
+                let has_whitespace = person
+                    .phone_numbers
+                    .as_ref()
+                    .is_some_and(|nums| nums.iter().any(|p| {
+                        p.value.as_deref().is_some_and(|v| v.contains(char::is_whitespace))
+                    }));
+
+                if has_whitespace {
+                    contacts.push(person);
+                }
+            }
+        }
+
+        page_token = result.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+
+    for person in &contacts {
+        let name = person
+            .names
+            .as_ref()
+            .and_then(|names| names.first())
+            .and_then(|n| n.display_name.as_deref())
+            .unwrap_or("<no name>");
+
+        if let Some(nums) = &person.phone_numbers {
+            for pn in nums {
+                if let Some(val) = pn.value.as_deref() {
+                    if val.contains(char::is_whitespace) {
+                        let fixed: String = val.chars().filter(|c| !c.is_whitespace()).collect();
+                        println!("{} | {} -> {}", name, val, fixed);
+                    }
+                }
+            }
+        }
+
+        if !dry_run {
+            let resource_name = person
+                .resource_name
+                .as_deref()
+                .ok_or("Contact missing resource name")?;
+
+            let mut updated = person.clone();
+            if let Some(ref mut nums) = updated.phone_numbers {
+                for pn in nums.iter_mut() {
+                    if let Some(ref val) = pn.value {
+                        if val.contains(char::is_whitespace) {
+                            pn.value = Some(val.chars().filter(|c| !c.is_whitespace()).collect());
+                        }
+                    }
+                }
+            }
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                .doit()
+                .await?;
+            eprintln!("  Fixed: {}", name);
+        }
+    }
+
+    Ok(())
+}
+
 async fn cmd_fix_remove_minus(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
 
@@ -680,6 +772,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckCaps { fix } => cmd_check_caps(fix).await?,
         Commands::CheckPhone { fix, dry_run, ref country } => cmd_check_phone(fix, dry_run, country).await?,
         Commands::FixRemoveMinus { dry_run } => cmd_fix_remove_minus(dry_run).await?,
+        Commands::FixPhoneRemoveWhitespace { dry_run } => cmd_fix_phone_remove_whitespace(dry_run).await?,
         Commands::Version => {
             let is_dirty = std::process::Command::new("git")
                 .args(["diff", "--quiet", "HEAD"])
