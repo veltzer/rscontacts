@@ -27,7 +27,7 @@ enum Commands {
         /// Also show email addresses
         #[arg(long)]
         emails: bool,
-        /// Also show phone labels (type)
+        /// Also show contact labels (contact group memberships)
         #[arg(long)]
         labels: bool,
     },

@@ -36,51 +36,63 @@ pub async fn cmd_list(emails: bool, labels: bool) -> Result<(), Box<dyn std::err
     let hub = build_hub().await?;
     let mut fields = vec!["names", "phoneNumbers"];
     if emails { fields.push("emailAddresses"); }
+    if labels { fields.push("memberships"); }
     let contacts = fetch_all_contacts(&hub, &fields).await?;
+
+    // Build group resource name -> display name map when showing labels
+    let group_names: std::collections::HashMap<String, String> = if labels {
+        let all_groups = fetch_all_contact_groups(&hub).await?;
+        all_groups.iter()
+            .filter_map(|g| {
+                let rn = g.resource_name.as_deref()?;
+                let name = g.name.as_deref()?;
+                Some((rn.to_string(), name.to_string()))
+            })
+            .collect()
+    } else {
+        std::collections::HashMap::new()
+    };
 
     for person in &contacts {
         let name = person_display_name(person);
 
-        if labels {
-            if let Some(nums) = &person.phone_numbers {
-                for pn in nums {
-                    let phone = pn.value.as_deref().unwrap_or("");
-                    let label = {
-                        let l = get_phone_label(pn);
-                        if l.is_empty() { "<no label>" } else { l }
-                    };
-                    if emails {
-                        println!("{} | {} | {} [{}]", name, person_email(person), phone, label);
-                    } else {
-                        println!("{} | {} [{}]", name, phone, label);
-                    }
-                }
-            } else if emails {
-                println!("{} | {}", name, person_email(person));
-            } else {
-                println!("{}", name);
-            }
-        } else {
-            let phone = person
-                .phone_numbers
-                .as_ref()
-                .and_then(|phones| phones.first())
-                .and_then(|p| p.value.as_deref())
-                .unwrap_or("");
+        let phone = person
+            .phone_numbers
+            .as_ref()
+            .and_then(|phones| phones.first())
+            .and_then(|p| p.value.as_deref())
+            .unwrap_or("");
 
-            if emails {
-                let email = person_email(person);
-                if !email.is_empty() || !phone.is_empty() {
-                    println!("{} | {} | {}", name, email, phone);
-                } else {
-                    println!("{}", name);
-                }
-            } else if !phone.is_empty() {
-                println!("{} | {}", name, phone);
-            } else {
-                println!("{}", name);
+        let mut parts = vec![name.to_string()];
+
+        if emails {
+            let email = person_email(person);
+            if !email.is_empty() {
+                parts.push(email.to_string());
             }
         }
+
+        if !phone.is_empty() {
+            parts.push(phone.to_string());
+        }
+
+        if labels {
+            let contact_labels: Vec<&str> = person.memberships.as_ref()
+                .map(|memberships| {
+                    memberships.iter().filter_map(|m| {
+                        let rn = m.contact_group_membership.as_ref()?
+                            .contact_group_resource_name.as_deref()?;
+                        if rn == "contactGroups/myContacts" { return None; }
+                        group_names.get(rn).map(|s| s.as_str())
+                    }).collect()
+                })
+                .unwrap_or_default();
+            if !contact_labels.is_empty() {
+                parts.push(format!("[{}]", contact_labels.join(", ")));
+            }
+        }
+
+        println!("{}", parts.join(" | "));
     }
 
     Ok(())

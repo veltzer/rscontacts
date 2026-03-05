@@ -16,7 +16,7 @@ rscontacts list --emails --labels
 | Flag | Description |
 |------|-------------|
 | `--emails` | Also show email addresses |
-| `--labels` | Also show phone labels (mobile/home/work) |
+| `--labels` | Also show contact labels (contact group memberships) |
 
 ## Output Format
 
@@ -36,6 +36,6 @@ Mark Veltzer | mark@example.com | +972-505665636
 With `--labels`:
 
 ```
-Mark Veltzer | +972-505665636 [mobile]
-Mark Veltzer | +972-501234567 [work]
+Mark Veltzer | +972-505665636 | [Friends, Work]
+John Doe | +972-501234567 | [Family]
 ```
