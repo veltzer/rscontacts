@@ -156,6 +156,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Print contact labels (groups) that have a space in their name
+    CheckContactLabelSpace {
+        /// Interactively rename labels with spaces
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Show all distinct phone labels in use
     ShowPhoneLabels,
     /// Show all contact labels (contact groups) in use
@@ -1168,6 +1177,82 @@ async fn cmd_check_labels_nophone(fix: bool, dry_run: bool) -> Result<(), Box<dy
     Ok(())
 }
 
+async fn cmd_check_contact_label_space(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let mut all_groups: Vec<google_people1::api::ContactGroup> = Vec::new();
+    let mut page_token: Option<String> = None;
+    loop {
+        let mut request = hub.contact_groups().list();
+        if let Some(ref token) = page_token {
+            request = request.page_token(token);
+        }
+        let (_response, result) = request.doit().await?;
+        if let Some(groups) = result.contact_groups {
+            all_groups.extend(groups);
+        }
+        page_token = result.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+
+    let with_space: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
+        g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+            && g.name.as_deref().unwrap_or("").contains(' ')
+    }).collect();
+
+    for group in &with_space {
+        let name = group.name.as_deref().unwrap_or("<unnamed>");
+        println!("{}", name);
+
+        if fix && !dry_run {
+            use std::io::Write;
+            std::io::stdout().flush()?;
+            if let Some(new_name) = prompt_rename_label(name)? {
+                let resource_name = group.resource_name.as_deref()
+                    .ok_or("Contact group missing resource name")?;
+                let mut updated_group = (*group).clone();
+                updated_group.name = Some(new_name.clone());
+                let req = google_people1::api::UpdateContactGroupRequest {
+                    contact_group: Some(updated_group),
+                    read_group_fields: None,
+                    update_group_fields: None,
+                };
+                hub.contact_groups().update(req, resource_name).doit().await?;
+                eprintln!("  Renamed \"{}\" -> \"{}\"", name, new_name);
+                tokio::time::sleep(MUTATE_DELAY).await;
+            } else {
+                eprintln!("  Skipped.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn prompt_rename_label(name: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    loop {
+        eprint!("  New name for \"{}\" (or [s]kip): ", name);
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim();
+        if trimmed.eq_ignore_ascii_case("s") {
+            return Ok(None);
+        }
+        if trimmed.is_empty() {
+            eprintln!("  Name cannot be empty.");
+            continue;
+        }
+        if trimmed.contains(' ') {
+            eprintln!("  Name must not contain spaces.");
+            continue;
+        }
+        return Ok(Some(trimmed.to_string()));
+    }
+}
+
 async fn cmd_show_phone_labels() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["phoneNumbers"]).await?;
@@ -1304,6 +1389,20 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
             }
             println!();
         }
+
+        let with_space: Vec<_> = all_groups.iter().filter(|g| {
+            g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+                && g.name.as_deref().unwrap_or("").contains(' ')
+        }).collect();
+        if !with_space.is_empty() {
+            found_any = true;
+            println!("=== Labels with spaces (check-contact-label-space) ({}) ===", with_space.len());
+            for group in &with_space {
+                let name = group.name.as_deref().unwrap_or("<unnamed>");
+                println!("  {}", name);
+            }
+            println!();
+        }
     }
 
     if !found_any {
@@ -1337,6 +1436,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckDuplicateEmails { fix, dry_run } => cmd_check_duplicate_emails(fix, dry_run).await?,
         Commands::CheckDuplicatePhones { fix, dry_run } => cmd_check_duplicate_phones(fix, dry_run).await?,
         Commands::CheckLabelsNophone { fix, dry_run } => cmd_check_labels_nophone(fix, dry_run).await?,
+        Commands::CheckContactLabelSpace { fix, dry_run } => cmd_check_contact_label_space(fix, dry_run).await?,
         Commands::ShowPhoneLabels => cmd_show_phone_labels().await?,
         Commands::ShowContactLabels => cmd_show_contact_labels().await?,
         Commands::CheckAll { fix, dry_run, ref country } => cmd_check_all(fix, dry_run, country).await?,
