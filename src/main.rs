@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use google_people1::api::ListConnectionsResponse;
 use google_people1::{FieldMask, PeopleService};
 use std::future::Future;
@@ -33,6 +33,12 @@ enum Commands {
     List,
     /// Print contacts with non-English names
     CheckEnglish,
+    /// Generate shell completions
+    Complete {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 fn credentials_path() -> PathBuf {
@@ -255,6 +261,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Auth { no_browser } => cmd_auth(no_browser).await?,
         Commands::List => cmd_list().await?,
         Commands::CheckEnglish => cmd_check_english().await?,
+        Commands::Complete { shell } => {
+            clap_complete::generate(shell, &mut Cli::command(), "rscontacts", &mut std::io::stdout());
+        }
     }
 
     Ok(())
