@@ -242,21 +242,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::ShowContactLabels => commands::cmd_show_contact_labels().await?,
         Commands::CheckAll { fix, dry_run, stats, ref country } => commands::cmd_check_all(fix, dry_run, stats, country).await?,
         Commands::Version => {
-            let is_dirty = std::process::Command::new("git")
-                .args(["diff", "--quiet", "HEAD"])
-                .status()
-                .is_ok_and(|s| !s.success());
-            let dirty_str = if is_dirty { "true" } else { "false" };
-            let describe = if is_dirty {
-                format!("{}-dirty", env!("GIT_DESCRIBE"))
-            } else {
-                env!("GIT_DESCRIBE").to_string()
-            };
             println!("rscontacts {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
-            println!("GIT_DESCRIBE: {}", describe);
+            println!("GIT_DESCRIBE: {}", env!("GIT_DESCRIBE"));
             println!("GIT_SHA: {}", env!("GIT_SHA"));
             println!("GIT_BRANCH: {}", env!("GIT_BRANCH"));
-            println!("GIT_DIRTY: {}", dirty_str);
+            println!("GIT_DIRTY: {}", env!("GIT_DIRTY"));
             println!("RUSTC_SEMVER: {}", env!("RUSTC_SEMVER"));
             println!("RUST_EDITION: {}", env!("RUST_EDITION"));
         }

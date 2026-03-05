@@ -33,9 +33,23 @@ fn main() {
             .and_then(|l| l.split('=').nth(1))
             .map(|v| v.trim().trim_matches('"').to_owned()))
         .unwrap_or_else(|| "unknown".to_owned());
+    let is_dirty = Command::new("git")
+        .args(["diff", "--quiet", "HEAD"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| !s.success());
+    let dirty_str = if is_dirty { "true" } else { "false" };
+    let describe = if is_dirty {
+        format!("{describe}-dirty")
+    } else {
+        describe
+    };
+
     println!("cargo:rustc-env=RUST_EDITION={edition}");
     println!("cargo:rustc-env=GIT_SHA={sha}");
     println!("cargo:rustc-env=GIT_BRANCH={branch}");
+    println!("cargo:rustc-env=GIT_DIRTY={dirty_str}");
     println!("cargo:rustc-env=RUSTC_SEMVER={rustc_ver}");
     println!("cargo:rustc-env=GIT_DESCRIBE={describe}");
 
