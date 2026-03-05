@@ -52,6 +52,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Print contacts whose name doesn't start with a capital letter
+    CheckNameFirstCapitalLetter {
+        /// Interactively fix each contact (rename/delete/skip)
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Run all checks
     CheckAll {
         /// Fix all issues found
@@ -143,6 +152,10 @@ fn is_valid_email(email: &str) -> bool {
         return false;
     }
     true
+}
+
+fn starts_with_capital(name: &str) -> bool {
+    name.chars().next().is_some_and(|c| c.is_uppercase())
 }
 
 fn is_all_caps(name: &str) -> bool {
@@ -558,6 +571,13 @@ async fn cmd_check_caps(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
+async fn cmd_check_first_capital_letter(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
+    check_name_issues(&hub, &contacts, |name| !starts_with_capital(name), fix, dry_run, "", None).await?;
+    Ok(())
+}
+
 fn print_phone_fix(name: &str, phone: &str, fixed: &str, fix: bool, dry_run: bool, prefix: &str) {
     if fix || dry_run {
         println!("{}{} | {} -> {}", prefix, name, phone, fixed);
@@ -729,6 +749,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::List => cmd_list().await?,
         Commands::CheckNameEnglish { fix, dry_run } => cmd_check_english(fix, dry_run).await?,
         Commands::CheckNameCaps { fix, dry_run } => cmd_check_caps(fix, dry_run).await?,
+        Commands::CheckNameFirstCapitalLetter { fix, dry_run } => cmd_check_first_capital_letter(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneMinus { fix, dry_run } => cmd_check_phone_minus(fix, dry_run).await?,
         Commands::CheckPhoneWhitespace { fix, dry_run } => cmd_check_phone_whitespace(fix, dry_run).await?,
