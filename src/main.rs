@@ -147,6 +147,128 @@ fn add_country_code(phone: &str, country: &str) -> String {
     format!("+{}{}", country, without_leading_zero)
 }
 
+// --- Helper functions ---
+
+type HubType = PeopleService<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>;
+
+async fn fetch_all_contacts(hub: &HubType, fields: &[&str]) -> Result<Vec<google_people1::api::Person>, Box<dyn std::error::Error>> {
+    let mut all: Vec<google_people1::api::Person> = Vec::new();
+    let mut page_token: Option<String> = None;
+
+    loop {
+        let mut request = hub
+            .people()
+            .connections_list("people/me")
+            .person_fields(FieldMask::new::<&str>(fields));
+
+        if let Some(ref token) = page_token {
+            request = request.page_token(token);
+        }
+
+        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
+
+        if let Some(connections) = result.connections {
+            all.extend(connections);
+        }
+
+        page_token = result.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+
+    Ok(all)
+}
+
+fn person_name(person: &google_people1::api::Person) -> &str {
+    person
+        .names
+        .as_ref()
+        .and_then(|names| names.first())
+        .and_then(|n| n.display_name.as_deref())
+        .unwrap_or("")
+}
+
+fn person_email(person: &google_people1::api::Person) -> &str {
+    person
+        .email_addresses
+        .as_ref()
+        .and_then(|emails| emails.first())
+        .and_then(|e| e.value.as_deref())
+        .unwrap_or("")
+}
+
+async fn interactive_name_fix(hub: &HubType, person: &google_people1::api::Person, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let resource_name = person
+        .resource_name
+        .as_deref()
+        .ok_or("Contact missing resource name")?;
+
+    match prompt_fix_action(name)? {
+        'r' => {
+            let new_name = prompt_new_name(name)?;
+            let mut updated = person.clone();
+            if let Some(ref mut names) = updated.names {
+                if let Some(first) = names.first_mut() {
+                    first.given_name = Some(new_name.clone());
+                    first.family_name = None;
+                    first.unstructured_name = Some(new_name.clone());
+                }
+            }
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                .doit()
+                .await?;
+            eprintln!("  Renamed to \"{}\"", new_name);
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        'd' => {
+            hub.people().delete_contact(resource_name).doit().await?;
+            eprintln!("  Deleted.");
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        's' => {
+            eprintln!("  Skipped.");
+        }
+        _ => unreachable!(),
+    }
+    Ok(())
+}
+
+async fn update_phone_numbers<F>(hub: &HubType, person: &google_people1::api::Person, transform: F) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let resource_name = person
+        .resource_name
+        .as_deref()
+        .ok_or("Contact missing resource name")?;
+
+    let mut updated = person.clone();
+    if let Some(ref mut nums) = updated.phone_numbers {
+        for pn in nums.iter_mut() {
+            if let Some(ref val) = pn.value {
+                if let Some(new_val) = transform(val) {
+                    pn.value = Some(new_val);
+                }
+            }
+        }
+    }
+    hub.people()
+        .update_contact(updated, resource_name)
+        .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+        .doit()
+        .await?;
+    let name = person_name(person);
+    let display = if name.is_empty() { "<no name>" } else { name };
+    eprintln!("  Fixed: {}", display);
+    tokio::time::sleep(MUTATE_DELAY).await;
+    Ok(())
+}
+
+// --- End helper functions ---
+
 struct NoInteractionDelegate;
 
 impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for NoInteractionDelegate {
@@ -186,7 +308,7 @@ fn build_connector() -> Result<hyper_rustls::HttpsConnector<hyper_util::client::
         .build())
 }
 
-async fn build_hub() -> Result<PeopleService<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>, Box<dyn std::error::Error>> {
+async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
     let cache_path = token_cache_path();
     if !cache_path.exists() {
         eprintln!("Error: not authenticated. Run 'rscontacts auth' first.");
@@ -235,55 +357,24 @@ async fn cmd_auth(no_browser: bool) -> Result<(), Box<dyn std::error::Error>> {
 
 async fn cmd_list() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers"]).await?;
 
-    let mut page_token: Option<String> = None;
+    for person in &contacts {
+        let name = person_name(person);
+        let name = if name.is_empty() { "<no name>" } else { name };
+        let email = person_email(person);
 
-    loop {
-        let mut request = hub
-            .people()
-            .connections_list("people/me")
-            .person_fields(FieldMask::new::<&str>(&["names", "emailAddresses", "phoneNumbers"]));
+        let phone = person
+            .phone_numbers
+            .as_ref()
+            .and_then(|phones| phones.first())
+            .and_then(|p| p.value.as_deref())
+            .unwrap_or("");
 
-        if let Some(ref token) = page_token {
-            request = request.page_token(token);
-        }
-
-        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
-
-        if let Some(connections) = result.connections {
-            for person in &connections {
-                let name = person
-                    .names
-                    .as_ref()
-                    .and_then(|names| names.first())
-                    .and_then(|n| n.display_name.as_deref())
-                    .unwrap_or("<no name>");
-
-                let email = person
-                    .email_addresses
-                    .as_ref()
-                    .and_then(|emails| emails.first())
-                    .and_then(|e| e.value.as_deref())
-                    .unwrap_or("");
-
-                let phone = person
-                    .phone_numbers
-                    .as_ref()
-                    .and_then(|phones| phones.first())
-                    .and_then(|p| p.value.as_deref())
-                    .unwrap_or("");
-
-                if !email.is_empty() || !phone.is_empty() {
-                    println!("{} | {} | {}", name, email, phone);
-                } else {
-                    println!("{}", name);
-                }
-            }
-        }
-
-        page_token = result.next_page_token;
-        if page_token.is_none() {
-            break;
+        if !email.is_empty() || !phone.is_empty() {
+            println!("{} | {} | {}", name, email, phone);
+        } else {
+            println!("{}", name);
         }
     }
 
@@ -317,102 +408,30 @@ fn prompt_new_name(old_name: &str) -> Result<String, Box<dyn std::error::Error>>
     Ok(new_name)
 }
 
+fn print_name_with_email(name: &str, email: &str, prefix: &str) {
+    if !email.is_empty() {
+        println!("{}{} | {}", prefix, name, email);
+    } else {
+        println!("{}{}", prefix, name);
+    }
+}
+
 async fn cmd_check_english(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
 
-    // Collect all non-English contacts first (to avoid pagination issues during mutation)
-    let mut non_english: Vec<google_people1::api::Person> = Vec::new();
-    let mut page_token: Option<String> = None;
-
-    loop {
-        let mut request = hub
-            .people()
-            .connections_list("people/me")
-            .person_fields(FieldMask::new::<&str>(&["names", "emailAddresses", "metadata"]));
-
-        if let Some(ref token) = page_token {
-            request = request.page_token(token);
-        }
-
-        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
-
-        if let Some(connections) = result.connections {
-            for person in connections {
-                let name = person
-                    .names
-                    .as_ref()
-                    .and_then(|names| names.first())
-                    .and_then(|n| n.display_name.as_deref())
-                    .unwrap_or("");
-
-                if !name.is_empty() && !is_english_name(name) {
-                    non_english.push(person);
-                }
-            }
-        }
-
-        page_token = result.next_page_token;
-        if page_token.is_none() {
-            break;
-        }
-    }
+    let non_english: Vec<_> = contacts.into_iter().filter(|p| {
+        let name = person_name(p);
+        !name.is_empty() && !is_english_name(name)
+    }).collect();
 
     for person in &non_english {
-        let name = person
-            .names
-            .as_ref()
-            .and_then(|names| names.first())
-            .and_then(|n| n.display_name.as_deref())
-            .unwrap_or("");
-
-        let email = person
-            .email_addresses
-            .as_ref()
-            .and_then(|emails| emails.first())
-            .and_then(|e| e.value.as_deref())
-            .unwrap_or("");
-
-        if !email.is_empty() {
-            println!("{} | {}", name, email);
-        } else {
-            println!("{}", name);
-        }
+        let name = person_name(person);
+        let email = person_email(person);
+        print_name_with_email(name, email, "");
 
         if fix && !dry_run {
-            let resource_name = person
-                .resource_name
-                .as_deref()
-                .ok_or("Contact missing resource name")?;
-
-            match prompt_fix_action(name)? {
-                'r' => {
-                    let new_name = prompt_new_name(name)?;
-                    let mut updated = person.clone();
-                    if let Some(ref mut names) = updated.names {
-                        if let Some(first) = names.first_mut() {
-                            first.given_name = Some(new_name.clone());
-                            first.family_name = None;
-                            first.unstructured_name = Some(new_name.clone());
-                        }
-                    }
-                    hub.people()
-                        .update_contact(updated, resource_name)
-                        .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                        .doit()
-                        .await?;
-                    eprintln!("  Renamed to \"{}\"", new_name);
-                    tokio::time::sleep(MUTATE_DELAY).await;
-                }
-                'd' => {
-                    hub.people().delete_contact(resource_name).doit().await?;
-                    eprintln!("  Deleted.");
-                    tokio::time::sleep(MUTATE_DELAY).await;
-                }
-                's' => {
-                    eprintln!("  Skipped.");
-                }
-                _ => unreachable!(),
-            }
+            interactive_name_fix(&hub, person, name).await?;
         }
     }
 
@@ -421,196 +440,70 @@ async fn cmd_check_english(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::
 
 async fn cmd_check_caps(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
 
-    let mut all_caps: Vec<google_people1::api::Person> = Vec::new();
-    let mut page_token: Option<String> = None;
-
-    loop {
-        let mut request = hub
-            .people()
-            .connections_list("people/me")
-            .person_fields(FieldMask::new::<&str>(&["names", "emailAddresses", "metadata"]));
-
-        if let Some(ref token) = page_token {
-            request = request.page_token(token);
-        }
-
-        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
-
-        if let Some(connections) = result.connections {
-            for person in connections {
-                let name = person
-                    .names
-                    .as_ref()
-                    .and_then(|names| names.first())
-                    .and_then(|n| n.display_name.as_deref())
-                    .unwrap_or("");
-
-                if !name.is_empty() && is_all_caps(name) {
-                    all_caps.push(person);
-                }
-            }
-        }
-
-        page_token = result.next_page_token;
-        if page_token.is_none() {
-            break;
-        }
-    }
+    let all_caps: Vec<_> = contacts.into_iter().filter(|p| {
+        let name = person_name(p);
+        !name.is_empty() && is_all_caps(name)
+    }).collect();
 
     for person in &all_caps {
-        let name = person
-            .names
-            .as_ref()
-            .and_then(|names| names.first())
-            .and_then(|n| n.display_name.as_deref())
-            .unwrap_or("");
-
-        let email = person
-            .email_addresses
-            .as_ref()
-            .and_then(|emails| emails.first())
-            .and_then(|e| e.value.as_deref())
-            .unwrap_or("");
-
-        if !email.is_empty() {
-            println!("{} | {}", name, email);
-        } else {
-            println!("{}", name);
-        }
+        let name = person_name(person);
+        let email = person_email(person);
+        print_name_with_email(name, email, "");
 
         if fix && !dry_run {
-            let resource_name = person
-                .resource_name
-                .as_deref()
-                .ok_or("Contact missing resource name")?;
-
-            match prompt_fix_action(name)? {
-                'r' => {
-                    let new_name = prompt_new_name(name)?;
-                    let mut updated = person.clone();
-                    if let Some(ref mut names) = updated.names {
-                        if let Some(first) = names.first_mut() {
-                            first.given_name = Some(new_name.clone());
-                            first.family_name = None;
-                            first.unstructured_name = Some(new_name.clone());
-                        }
-                    }
-                    hub.people()
-                        .update_contact(updated, resource_name)
-                        .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                        .doit()
-                        .await?;
-                    eprintln!("  Renamed to \"{}\"", new_name);
-                    tokio::time::sleep(MUTATE_DELAY).await;
-                }
-                'd' => {
-                    hub.people().delete_contact(resource_name).doit().await?;
-                    eprintln!("  Deleted.");
-                    tokio::time::sleep(MUTATE_DELAY).await;
-                }
-                's' => {
-                    eprintln!("  Skipped.");
-                }
-                _ => unreachable!(),
-            }
+            interactive_name_fix(&hub, person, name).await?;
         }
     }
 
     Ok(())
 }
 
+fn print_phone_fix(name: &str, phone: &str, fixed: &str, fix: bool, dry_run: bool, prefix: &str) {
+    if fix || dry_run {
+        println!("{}{} | {} -> {}", prefix, name, phone, fixed);
+    } else {
+        println!("{}{} | {}", prefix, name, phone);
+    }
+}
+
 async fn cmd_check_phone_countrycode(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
 
-    let mut contacts: Vec<google_people1::api::Person> = Vec::new();
-    let mut page_token: Option<String> = None;
+    let filtered: Vec<_> = contacts.into_iter().filter(|p| {
+        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
+            pn.value.as_deref().is_some_and(|v| is_fixable_phone(v) && !has_country_code(v))
+        }))
+    }).collect();
 
-    loop {
-        let mut request = hub
-            .people()
-            .connections_list("people/me")
-            .person_fields(FieldMask::new::<&str>(&["names", "phoneNumbers", "metadata"]));
+    for person in &filtered {
+        let name = person_name(person);
+        let name = if name.is_empty() { "<no name>" } else { name };
 
-        if let Some(ref token) = page_token {
-            request = request.page_token(token);
-        }
-
-        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
-
-        if let Some(connections) = result.connections {
-            for person in connections {
-                let has_bad_phone = person
-                    .phone_numbers
-                    .as_ref()
-                    .is_some_and(|nums| nums.iter().any(|p| {
-                        p.value.as_deref().is_some_and(|v| is_fixable_phone(v) && !has_country_code(v))
-                    }));
-
-                if has_bad_phone {
-                    contacts.push(person);
-                }
-            }
-        }
-
-        page_token = result.next_page_token;
-        if page_token.is_none() {
-            break;
-        }
-    }
-
-    for person in &contacts {
-        let name = person
-            .names
-            .as_ref()
-            .and_then(|names| names.first())
-            .and_then(|n| n.display_name.as_deref())
-            .unwrap_or("<no name>");
-
-        let phones: Vec<&str> = person
-            .phone_numbers
-            .as_ref()
+        let phones: Vec<&str> = person.phone_numbers.as_ref()
             .map(|nums| nums.iter().filter_map(|p| p.value.as_deref()).collect())
             .unwrap_or_default();
 
-        let bad_phones: Vec<&str> = phones
-            .iter()
+        let bad_phones: Vec<&str> = phones.iter()
             .filter(|p| is_fixable_phone(p) && !has_country_code(p))
-            .copied()
-            .collect();
+            .copied().collect();
 
         for phone in &bad_phones {
             let fixed = add_country_code(phone, country);
-            if fix || dry_run {
-                println!("{} | {} -> {}", name, phone, fixed);
-            } else {
-                println!("{} | {}", name, phone);
-            }
+            print_phone_fix(name, phone, &fixed, fix, dry_run, "");
         }
 
         if fix && !dry_run {
-            let resource_name = person
-                .resource_name
-                .as_deref()
-                .ok_or("Contact missing resource name")?;
-
-            let mut updated = person.clone();
-            if let Some(ref mut nums) = updated.phone_numbers {
-                for pn in nums.iter_mut() {
-                    if let Some(ref val) = pn.value {
-                        if is_fixable_phone(val) && !has_country_code(val) {
-                            pn.value = Some(add_country_code(val, country));
-                        }
-                    }
+            let country = country.to_string();
+            update_phone_numbers(&hub, person, |val| {
+                if is_fixable_phone(val) && !has_country_code(val) {
+                    Some(add_country_code(val, &country))
+                } else {
+                    None
                 }
-            }
-            hub.people()
-                .update_contact(updated, resource_name)
-                .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
-                .doit()
-                .await?;
-            eprintln!("  Fixed: {}", name);
-            tokio::time::sleep(MUTATE_DELAY).await;
+            }).await?;
         }
     }
 
@@ -619,89 +512,37 @@ async fn cmd_check_phone_countrycode(fix: bool, dry_run: bool, country: &str) ->
 
 async fn cmd_check_phone_remove_whitespace(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
 
-    let mut contacts: Vec<google_people1::api::Person> = Vec::new();
-    let mut page_token: Option<String> = None;
+    let filtered: Vec<_> = contacts.into_iter().filter(|p| {
+        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
+            pn.value.as_deref().is_some_and(|v| v.contains(char::is_whitespace))
+        }))
+    }).collect();
 
-    loop {
-        let mut request = hub
-            .people()
-            .connections_list("people/me")
-            .person_fields(FieldMask::new::<&str>(&["names", "phoneNumbers", "metadata"]));
-
-        if let Some(ref token) = page_token {
-            request = request.page_token(token);
-        }
-
-        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
-
-        if let Some(connections) = result.connections {
-            for person in connections {
-                let has_whitespace = person
-                    .phone_numbers
-                    .as_ref()
-                    .is_some_and(|nums| nums.iter().any(|p| {
-                        p.value.as_deref().is_some_and(|v| v.contains(char::is_whitespace))
-                    }));
-
-                if has_whitespace {
-                    contacts.push(person);
-                }
-            }
-        }
-
-        page_token = result.next_page_token;
-        if page_token.is_none() {
-            break;
-        }
-    }
-
-    for person in &contacts {
-        let name = person
-            .names
-            .as_ref()
-            .and_then(|names| names.first())
-            .and_then(|n| n.display_name.as_deref())
-            .unwrap_or("<no name>");
+    for person in &filtered {
+        let name = person_name(person);
+        let name = if name.is_empty() { "<no name>" } else { name };
 
         if let Some(nums) = &person.phone_numbers {
             for pn in nums {
                 if let Some(val) = pn.value.as_deref() {
                     if val.contains(char::is_whitespace) {
                         let fixed: String = val.chars().filter(|c| !c.is_whitespace()).collect();
-                        if fix || dry_run {
-                            println!("{} | {} -> {}", name, val, fixed);
-                        } else {
-                            println!("{} | {}", name, val);
-                        }
+                        print_phone_fix(name, val, &fixed, fix, dry_run, "");
                     }
                 }
             }
         }
 
         if fix && !dry_run {
-            let resource_name = person
-                .resource_name
-                .as_deref()
-                .ok_or("Contact missing resource name")?;
-
-            let mut updated = person.clone();
-            if let Some(ref mut nums) = updated.phone_numbers {
-                for pn in nums.iter_mut() {
-                    if let Some(ref val) = pn.value {
-                        if val.contains(char::is_whitespace) {
-                            pn.value = Some(val.chars().filter(|c| !c.is_whitespace()).collect());
-                        }
-                    }
+            update_phone_numbers(&hub, person, |val| {
+                if val.contains(char::is_whitespace) {
+                    Some(val.chars().filter(|c| !c.is_whitespace()).collect())
+                } else {
+                    None
                 }
-            }
-            hub.people()
-                .update_contact(updated, resource_name)
-                .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
-                .doit()
-                .await?;
-            eprintln!("  Fixed: {}", name);
-            tokio::time::sleep(MUTATE_DELAY).await;
+            }).await?;
         }
     }
 
@@ -710,89 +551,37 @@ async fn cmd_check_phone_remove_whitespace(fix: bool, dry_run: bool) -> Result<(
 
 async fn cmd_check_phone_remove_minus(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
 
-    let mut contacts: Vec<google_people1::api::Person> = Vec::new();
-    let mut page_token: Option<String> = None;
+    let filtered: Vec<_> = contacts.into_iter().filter(|p| {
+        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
+            pn.value.as_deref().is_some_and(|v| v.contains('-'))
+        }))
+    }).collect();
 
-    loop {
-        let mut request = hub
-            .people()
-            .connections_list("people/me")
-            .person_fields(FieldMask::new::<&str>(&["names", "phoneNumbers", "metadata"]));
-
-        if let Some(ref token) = page_token {
-            request = request.page_token(token);
-        }
-
-        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
-
-        if let Some(connections) = result.connections {
-            for person in connections {
-                let has_minus = person
-                    .phone_numbers
-                    .as_ref()
-                    .is_some_and(|nums| nums.iter().any(|p| {
-                        p.value.as_deref().is_some_and(|v| v.contains('-'))
-                    }));
-
-                if has_minus {
-                    contacts.push(person);
-                }
-            }
-        }
-
-        page_token = result.next_page_token;
-        if page_token.is_none() {
-            break;
-        }
-    }
-
-    for person in &contacts {
-        let name = person
-            .names
-            .as_ref()
-            .and_then(|names| names.first())
-            .and_then(|n| n.display_name.as_deref())
-            .unwrap_or("<no name>");
+    for person in &filtered {
+        let name = person_name(person);
+        let name = if name.is_empty() { "<no name>" } else { name };
 
         if let Some(nums) = &person.phone_numbers {
             for pn in nums {
                 if let Some(val) = pn.value.as_deref() {
                     if val.contains('-') {
                         let fixed = val.replace('-', "");
-                        if fix || dry_run {
-                            println!("{} | {} -> {}", name, val, fixed);
-                        } else {
-                            println!("{} | {}", name, val);
-                        }
+                        print_phone_fix(name, val, &fixed, fix, dry_run, "");
                     }
                 }
             }
         }
 
         if fix && !dry_run {
-            let resource_name = person
-                .resource_name
-                .as_deref()
-                .ok_or("Contact missing resource name")?;
-
-            let mut updated = person.clone();
-            if let Some(ref mut nums) = updated.phone_numbers {
-                for pn in nums.iter_mut() {
-                    if let Some(ref val) = pn.value {
-                        if val.contains('-') {
-                            pn.value = Some(val.replace('-', ""));
-                        }
-                    }
+            update_phone_numbers(&hub, person, |val| {
+                if val.contains('-') {
+                    Some(val.replace('-', ""))
+                } else {
+                    None
                 }
-            }
-            hub.people()
-                .update_contact(updated, resource_name)
-                .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
-                .doit()
-                .await?;
-            eprintln!("  Fixed: {}", name);
-            tokio::time::sleep(MUTATE_DELAY).await;
+            }).await?;
         }
     }
 
@@ -801,79 +590,24 @@ async fn cmd_check_phone_remove_minus(fix: bool, dry_run: bool) -> Result<(), Bo
 
 async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
-
-    let mut all_contacts: Vec<google_people1::api::Person> = Vec::new();
-    let mut page_token: Option<String> = None;
-
-    loop {
-        let mut request = hub
-            .people()
-            .connections_list("people/me")
-            .person_fields(FieldMask::new::<&str>(&["names", "emailAddresses", "phoneNumbers", "metadata"]));
-
-        if let Some(ref token) = page_token {
-            request = request.page_token(token);
-        }
-
-        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
-
-        if let Some(connections) = result.connections {
-            all_contacts.extend(connections);
-        }
-
-        page_token = result.next_page_token;
-        if page_token.is_none() {
-            break;
-        }
-    }
+    let all_contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers", "metadata"]).await?;
 
     let mut found_any = false;
 
     // Check non-English names
     let non_english: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
-        p.names.as_ref()
-            .and_then(|names| names.first())
-            .and_then(|n| n.display_name.as_deref())
-            .is_some_and(|name| !name.is_empty() && !is_english_name(name))
+        let name = person_name(p);
+        !name.is_empty() && !is_english_name(name)
     }).collect();
     if !non_english.is_empty() {
         found_any = true;
         println!("=== Non-English names ({}) ===", non_english.len());
         for person in &non_english {
-            let name = person.names.as_ref().and_then(|n| n.first()).and_then(|n| n.display_name.as_deref()).unwrap_or("");
-            let email = person.email_addresses.as_ref().and_then(|e| e.first()).and_then(|e| e.value.as_deref()).unwrap_or("");
-            if !email.is_empty() {
-                println!("  {} | {}", name, email);
-            } else {
-                println!("  {}", name);
-            }
+            let name = person_name(person);
+            let email = person_email(person);
+            print_name_with_email(name, email, "  ");
             if fix && !dry_run {
-                let resource_name = person.resource_name.as_deref().ok_or("Contact missing resource name")?;
-                match prompt_fix_action(name)? {
-                    'r' => {
-                        let new_name = prompt_new_name(name)?;
-                        let mut updated = (*person).clone();
-                        if let Some(ref mut names) = updated.names {
-                            if let Some(first) = names.first_mut() {
-                                first.given_name = Some(new_name.clone());
-                                first.family_name = None;
-                                first.unstructured_name = Some(new_name.clone());
-                            }
-                        }
-                        hub.people().update_contact(updated, resource_name)
-                            .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                            .doit().await?;
-                        eprintln!("  Renamed to \"{}\"", new_name);
-                        tokio::time::sleep(MUTATE_DELAY).await;
-                    }
-                    'd' => {
-                        hub.people().delete_contact(resource_name).doit().await?;
-                        eprintln!("  Deleted.");
-                        tokio::time::sleep(MUTATE_DELAY).await;
-                    }
-                    's' => { eprintln!("  Skipped."); }
-                    _ => unreachable!(),
-                }
+                interactive_name_fix(&hub, person, name).await?;
             }
         }
         println!();
@@ -881,49 +615,18 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
 
     // Check all-caps names
     let all_caps: Vec<&google_people1::api::Person> = all_contacts.iter().filter(|p| {
-        p.names.as_ref()
-            .and_then(|names| names.first())
-            .and_then(|n| n.display_name.as_deref())
-            .is_some_and(|name| !name.is_empty() && is_all_caps(name))
+        let name = person_name(p);
+        !name.is_empty() && is_all_caps(name)
     }).collect();
     if !all_caps.is_empty() {
         found_any = true;
         println!("=== All-caps names ({}) ===", all_caps.len());
         for person in &all_caps {
-            let name = person.names.as_ref().and_then(|n| n.first()).and_then(|n| n.display_name.as_deref()).unwrap_or("");
-            let email = person.email_addresses.as_ref().and_then(|e| e.first()).and_then(|e| e.value.as_deref()).unwrap_or("");
-            if !email.is_empty() {
-                println!("  {} | {}", name, email);
-            } else {
-                println!("  {}", name);
-            }
+            let name = person_name(person);
+            let email = person_email(person);
+            print_name_with_email(name, email, "  ");
             if fix && !dry_run {
-                let resource_name = person.resource_name.as_deref().ok_or("Contact missing resource name")?;
-                match prompt_fix_action(name)? {
-                    'r' => {
-                        let new_name = prompt_new_name(name)?;
-                        let mut updated = (*person).clone();
-                        if let Some(ref mut names) = updated.names {
-                            if let Some(first) = names.first_mut() {
-                                first.given_name = Some(new_name.clone());
-                                first.family_name = None;
-                                first.unstructured_name = Some(new_name.clone());
-                            }
-                        }
-                        hub.people().update_contact(updated, resource_name)
-                            .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                            .doit().await?;
-                        eprintln!("  Renamed to \"{}\"", new_name);
-                        tokio::time::sleep(MUTATE_DELAY).await;
-                    }
-                    'd' => {
-                        hub.people().delete_contact(resource_name).doit().await?;
-                        eprintln!("  Deleted.");
-                        tokio::time::sleep(MUTATE_DELAY).await;
-                    }
-                    's' => { eprintln!("  Skipped."); }
-                    _ => unreachable!(),
-                }
+                interactive_name_fix(&hub, person, name).await?;
             }
         }
         println!();
@@ -939,36 +642,25 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
         found_any = true;
         println!("=== Phones missing country code ({}) ===", no_country.len());
         for person in &no_country {
-            let name = person.names.as_ref().and_then(|n| n.first()).and_then(|n| n.display_name.as_deref()).unwrap_or("<no name>");
+            let name = person_name(person);
+            let name = if name.is_empty() { "<no name>" } else { name };
             let phones: Vec<&str> = person.phone_numbers.as_ref()
                 .map(|nums| nums.iter().filter_map(|p| p.value.as_deref())
                     .filter(|v| is_fixable_phone(v) && !has_country_code(v)).collect())
                 .unwrap_or_default();
             for phone in &phones {
                 let fixed = add_country_code(phone, country);
-                if fix || dry_run {
-                    println!("  {} | {} -> {}", name, phone, fixed);
-                } else {
-                    println!("  {} | {}", name, phone);
-                }
+                print_phone_fix(name, phone, &fixed, fix, dry_run, "  ");
             }
             if fix && !dry_run {
-                let resource_name = person.resource_name.as_deref().ok_or("Contact missing resource name")?;
-                let mut updated = (*person).clone();
-                if let Some(ref mut nums) = updated.phone_numbers {
-                    for pn in nums.iter_mut() {
-                        if let Some(ref val) = pn.value {
-                            if is_fixable_phone(val) && !has_country_code(val) {
-                                pn.value = Some(add_country_code(val, country));
-                            }
-                        }
+                let country = country.to_string();
+                update_phone_numbers(&hub, person, |val| {
+                    if is_fixable_phone(val) && !has_country_code(val) {
+                        Some(add_country_code(val, &country))
+                    } else {
+                        None
                     }
-                }
-                hub.people().update_contact(updated, resource_name)
-                    .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
-                    .doit().await?;
-                eprintln!("  Fixed: {}", name);
-                tokio::time::sleep(MUTATE_DELAY).await;
+                }).await?;
             }
         }
         println!();
@@ -984,38 +676,26 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
         found_any = true;
         println!("=== Phones with dashes ({}) ===", with_minus.len());
         for person in &with_minus {
-            let name = person.names.as_ref().and_then(|n| n.first()).and_then(|n| n.display_name.as_deref()).unwrap_or("<no name>");
+            let name = person_name(person);
+            let name = if name.is_empty() { "<no name>" } else { name };
             if let Some(nums) = &person.phone_numbers {
                 for pn in nums {
                     if let Some(val) = pn.value.as_deref() {
                         if val.contains('-') {
                             let fixed = val.replace('-', "");
-                            if fix || dry_run {
-                                println!("  {} | {} -> {}", name, val, fixed);
-                            } else {
-                                println!("  {} | {}", name, val);
-                            }
+                            print_phone_fix(name, val, &fixed, fix, dry_run, "  ");
                         }
                     }
                 }
             }
             if fix && !dry_run {
-                let resource_name = person.resource_name.as_deref().ok_or("Contact missing resource name")?;
-                let mut updated = (*person).clone();
-                if let Some(ref mut nums) = updated.phone_numbers {
-                    for pn in nums.iter_mut() {
-                        if let Some(ref val) = pn.value {
-                            if val.contains('-') {
-                                pn.value = Some(val.replace('-', ""));
-                            }
-                        }
+                update_phone_numbers(&hub, person, |val| {
+                    if val.contains('-') {
+                        Some(val.replace('-', ""))
+                    } else {
+                        None
                     }
-                }
-                hub.people().update_contact(updated, resource_name)
-                    .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
-                    .doit().await?;
-                eprintln!("  Fixed: {}", name);
-                tokio::time::sleep(MUTATE_DELAY).await;
+                }).await?;
             }
         }
         println!();
@@ -1031,38 +711,26 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
         found_any = true;
         println!("=== Phones with whitespace ({}) ===", with_ws.len());
         for person in &with_ws {
-            let name = person.names.as_ref().and_then(|n| n.first()).and_then(|n| n.display_name.as_deref()).unwrap_or("<no name>");
+            let name = person_name(person);
+            let name = if name.is_empty() { "<no name>" } else { name };
             if let Some(nums) = &person.phone_numbers {
                 for pn in nums {
                     if let Some(val) = pn.value.as_deref() {
                         if val.contains(char::is_whitespace) {
                             let fixed: String = val.chars().filter(|c| !c.is_whitespace()).collect();
-                            if fix || dry_run {
-                                println!("  {} | {} -> {}", name, val, fixed);
-                            } else {
-                                println!("  {} | {}", name, val);
-                            }
+                            print_phone_fix(name, val, &fixed, fix, dry_run, "  ");
                         }
                     }
                 }
             }
             if fix && !dry_run {
-                let resource_name = person.resource_name.as_deref().ok_or("Contact missing resource name")?;
-                let mut updated = (*person).clone();
-                if let Some(ref mut nums) = updated.phone_numbers {
-                    for pn in nums.iter_mut() {
-                        if let Some(ref val) = pn.value {
-                            if val.contains(char::is_whitespace) {
-                                pn.value = Some(val.chars().filter(|c| !c.is_whitespace()).collect());
-                            }
-                        }
+                update_phone_numbers(&hub, person, |val| {
+                    if val.contains(char::is_whitespace) {
+                        Some(val.chars().filter(|c| !c.is_whitespace()).collect())
+                    } else {
+                        None
                     }
-                }
-                hub.people().update_contact(updated, resource_name)
-                    .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
-                    .doit().await?;
-                eprintln!("  Fixed: {}", name);
-                tokio::time::sleep(MUTATE_DELAY).await;
+                }).await?;
             }
         }
         println!();
