@@ -25,6 +25,8 @@ enum Commands {
     Auth,
     /// List all contacts
     List,
+    /// Print contacts with non-English names
+    CheckEnglish,
 }
 
 fn credentials_path() -> PathBuf {
@@ -49,6 +51,10 @@ fn extract_access_token(token_info: &serde_json::Value) -> Option<String> {
         .get("access_token")?
         .as_str()
         .map(String::from)
+}
+
+fn is_english_name(name: &str) -> bool {
+    name.chars().all(|c| c.is_ascii() || c == '\u{200f}' || c == '\u{200e}')
 }
 
 fn build_connector() -> Result<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, Box<dyn std::error::Error>> {
@@ -105,7 +111,6 @@ async fn cmd_list() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
 
     let mut page_token: Option<String> = None;
-    let mut total = 0;
 
     loop {
         let mut request = hub
@@ -147,7 +152,6 @@ async fn cmd_list() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     println!("{}", name);
                 }
-                total += 1;
             }
         }
 
@@ -157,7 +161,58 @@ async fn cmd_list() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    eprintln!("\nTotal contacts: {}", total);
+    Ok(())
+}
+
+async fn cmd_check_english() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+
+    let mut page_token: Option<String> = None;
+
+    loop {
+        let mut request = hub
+            .people()
+            .connections_list("people/me")
+            .person_fields(FieldMask::new::<&str>(&["names", "emailAddresses"]));
+
+        if let Some(ref token) = page_token {
+            request = request.page_token(token);
+        }
+
+        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
+
+        if let Some(connections) = result.connections {
+            for person in &connections {
+                let name = person
+                    .names
+                    .as_ref()
+                    .and_then(|names| names.first())
+                    .and_then(|n| n.display_name.as_deref())
+                    .unwrap_or("");
+
+                if !name.is_empty() && !is_english_name(name) {
+                    let email = person
+                        .email_addresses
+                        .as_ref()
+                        .and_then(|emails| emails.first())
+                        .and_then(|e| e.value.as_deref())
+                        .unwrap_or("");
+
+                    if !email.is_empty() {
+                        println!("{} | {}", name, email);
+                    } else {
+                        println!("{}", name);
+                    }
+                }
+            }
+        }
+
+        page_token = result.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+
     Ok(())
 }
 
@@ -172,6 +227,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Auth => cmd_auth().await?,
         Commands::List => cmd_list().await?,
+        Commands::CheckEnglish => cmd_check_english().await?,
     }
 
     Ok(())
@@ -239,6 +295,44 @@ mod tests {
     fn test_extract_access_token_missing_token_field() {
         let json = serde_json::json!([{"scopes": []}]);
         assert_eq!(extract_access_token(&json), None);
+    }
+
+    #[test]
+    fn test_cli_check_english_subcommand() {
+        let cli = Cli::parse_from(["rscontacts", "check-english"]);
+        assert!(matches!(cli.command, Commands::CheckEnglish));
+    }
+
+    #[test]
+    fn test_is_english_name_ascii() {
+        assert!(is_english_name("John Doe"));
+        assert!(is_english_name("O'Brien"));
+        assert!(is_english_name("Jean-Pierre"));
+    }
+
+    #[test]
+    fn test_is_english_name_hebrew() {
+        assert!(!is_english_name("יוסי כהן"));
+    }
+
+    #[test]
+    fn test_is_english_name_arabic() {
+        assert!(!is_english_name("محمد"));
+    }
+
+    #[test]
+    fn test_is_english_name_chinese() {
+        assert!(!is_english_name("张伟"));
+    }
+
+    #[test]
+    fn test_is_english_name_mixed() {
+        assert!(!is_english_name("John דוד"));
+    }
+
+    #[test]
+    fn test_is_english_name_empty() {
+        assert!(is_english_name(""));
     }
 
     #[test]
