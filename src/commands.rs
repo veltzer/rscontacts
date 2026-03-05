@@ -1036,6 +1036,89 @@ pub async fn cmd_show_phone_labels() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+pub async fn cmd_review_phone_label(label: &str, fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers"]).await?;
+    let label_lower = label.to_lowercase();
+    let mut count = 0;
+    for person in &contacts {
+        if let Some(nums) = &person.phone_numbers {
+            let matching: Vec<_> = nums.iter().enumerate()
+                .filter(|(_, pn)| get_phone_label(pn).to_lowercase() == label_lower)
+                .collect();
+            if matching.is_empty() { continue; }
+            let name = person_display_name(person);
+            for (idx, pn) in &matching {
+                let phone = pn.value.as_deref().unwrap_or("");
+                let pn_label = get_phone_label(pn);
+                println!("{} | {} [{}]", name, phone, pn_label);
+                count += 1;
+                if fix {
+                    if dry_run {
+                        eprintln!("  (dry-run) would prompt for action");
+                        continue;
+                    }
+                    use std::io::Write;
+                    loop {
+                        eprint!("  [d]elete / [r]elabel / [s]kip: ");
+                        std::io::stderr().flush()?;
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input)?;
+                        match input.trim().chars().next() {
+                            Some('d') => {
+                                let resource_name = person.resource_name.as_deref()
+                                    .ok_or("Contact missing resource name")?;
+                                let mut updated = person.clone();
+                                if let Some(ref mut phone_nums) = updated.phone_numbers {
+                                    phone_nums.remove(*idx);
+                                }
+                                hub.people()
+                                    .update_contact(updated, resource_name)
+                                    .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                                    .doit()
+                                    .await?;
+                                eprintln!("  Deleted phone {} from {}", phone, name);
+                                tokio::time::sleep(MUTATE_DELAY).await;
+                                break;
+                            }
+                            Some('r') => {
+                                if let Some(new_label) = prompt_phone_label_fix(name)? {
+                                    let resource_name = person.resource_name.as_deref()
+                                        .ok_or("Contact missing resource name")?;
+                                    let mut updated = person.clone();
+                                    if let Some(ref mut phone_nums) = updated.phone_numbers {
+                                        phone_nums[*idx].type_ = Some(new_label.clone());
+                                        phone_nums[*idx].formatted_type = Some(new_label);
+                                    }
+                                    hub.people()
+                                        .update_contact(updated, resource_name)
+                                        .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                                        .doit()
+                                        .await?;
+                                    eprintln!("  Relabeled phone for {}", name);
+                                    tokio::time::sleep(MUTATE_DELAY).await;
+                                }
+                                break;
+                            }
+                            Some('s') => {
+                                eprintln!("  Skipped.");
+                                break;
+                            }
+                            _ => eprintln!("  Invalid choice. Enter d, r, or s."),
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if count == 0 {
+        println!("No phones found with label \"{}\"", label);
+    } else {
+        println!("{} phone(s) with label \"{}\"", count, label);
+    }
+    Ok(())
+}
+
 pub async fn cmd_show_contact_labels() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;

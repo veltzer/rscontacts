@@ -166,6 +166,17 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Review all phones with a specific label (e.g. "Work Fax")
+    ReviewPhoneLabel {
+        /// The phone label to review (case-insensitive)
+        label: String,
+        /// Interactively fix each phone (delete/relabel/skip)
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Show all distinct phone labels in use
     ShowPhoneLabels,
     /// Show all contact labels (contact groups) in use
@@ -212,6 +223,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckLabelsNophone { fix, dry_run } => commands::cmd_check_labels_nophone(fix, dry_run).await?,
         Commands::CheckContactLabelSpace { fix, dry_run } => commands::cmd_check_contact_label_space(fix, dry_run).await?,
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
+        Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
         Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,
         Commands::ShowContactLabels => commands::cmd_show_contact_labels().await?,
         Commands::CheckAll { fix, dry_run, stats, ref country } => commands::cmd_check_all(fix, dry_run, stats, country).await?,
