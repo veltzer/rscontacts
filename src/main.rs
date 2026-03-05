@@ -72,6 +72,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Print contacts with reversed name order (e.g. "Family, Given")
+    CheckNameOrder {
+        /// Interactively fix each contact (rename/delete/skip)
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Run all checks
     CheckAll {
         /// Fix all issues found
@@ -681,6 +690,114 @@ async fn cmd_check_first_capital_letter(fix: bool, dry_run: bool) -> Result<(), 
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
     check_name_issues(&hub, &contacts, |name| !starts_with_capital(name), fix, dry_run, "", None).await?;
     Ok(())
+}
+
+fn has_reversed_name(person: &google_people1::api::Person) -> bool {
+    person_name(person).contains(',')
+}
+
+fn compute_fixed_name(display_name: &str) -> String {
+    if let Some((family, given)) = display_name.split_once(',') {
+        let given = given.trim();
+        let family = family.trim();
+        if !given.is_empty() && !family.is_empty() {
+            return format!("{} {}", given, family);
+        }
+    }
+    display_name.to_string()
+}
+
+fn check_name_order(contacts: &[google_people1::api::Person], prefix: &str, header: Option<&str>) -> usize {
+    let mut count = 0;
+    for person in contacts {
+        if has_reversed_name(person) {
+            if count == 0 {
+                if let Some(header) = header {
+                    println!("=== {} ===", header);
+                }
+            }
+            let name = person_display_name(person);
+            let fixed = compute_fixed_name(name);
+            println!("{}{} -> {}", prefix, name, fixed);
+            count += 1;
+        }
+    }
+    if count > 0 && header.is_some() { println!(); }
+    count
+}
+
+async fn cmd_check_name_order(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "metadata"]).await?;
+
+    for person in &contacts {
+        if has_reversed_name(person) {
+            let name = person_display_name(person);
+            let fixed = compute_fixed_name(name);
+            println!("{} -> {}", name, fixed);
+
+            if fix && !dry_run {
+                use std::io::Write;
+                std::io::stdout().flush()?;
+                let resource_name = person
+                    .resource_name
+                    .as_deref()
+                    .ok_or("Contact missing resource name")?;
+
+                match prompt_fix_action(name)? {
+                    'r' => {
+                        let new_name = prompt_new_name_with_default(name, &fixed)?;
+                        let mut updated = person.clone();
+                        if let Some(ref mut names) = updated.names {
+                            if let Some(first) = names.first_mut() {
+                                if let Some((given, family)) = new_name.split_once(' ') {
+                                    first.given_name = Some(given.to_string());
+                                    first.family_name = Some(family.to_string());
+                                } else {
+                                    first.given_name = Some(new_name.clone());
+                                    first.family_name = None;
+                                }
+                                first.unstructured_name = Some(new_name.clone());
+                            }
+                        }
+                        hub.people()
+                            .update_contact(updated, resource_name)
+                            .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                            .doit()
+                            .await?;
+                        eprintln!("  Renamed to \"{}\"", new_name);
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    }
+                    'd' => {
+                        hub.people().delete_contact(resource_name).doit().await?;
+                        eprintln!("  Deleted.");
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    }
+                    's' => {
+                        eprintln!("  Skipped.");
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn prompt_new_name_with_default(old_name: &str, suggested: &str) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    loop {
+        eprint!("  New name for \"{}\" [Enter for \"{}\"]: ", old_name, suggested);
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            return Ok(suggested.to_string());
+        }
+        return Ok(trimmed.to_string());
+    }
 }
 
 fn print_phone_fix(name: &str, phone: &str, fixed: &str, fix: bool, dry_run: bool, prefix: &str) {
@@ -1574,6 +1691,8 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
     ).await?;
     if first_cap > 0 { found_any = true; }
 
+    if check_name_order(&all_contacts, "  ", Some("Reversed name order (check-name-order)")) > 0 { found_any = true; }
+
     if check_no_label(&all_contacts, "  ", Some("Contacts without label (check-contact-no-label)")) > 0 { found_any = true; }
     if check_phone_no_label(&all_contacts, "  ", Some("Phones without label (check-phone-no-label)")) > 0 { found_any = true; }
     if check_phone_label_english(&all_contacts, "  ", Some("Non-English phone labels (check-phone-label-english)")) > 0 { found_any = true; }
@@ -1649,6 +1768,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckNameEnglish { fix, dry_run } => cmd_check_english(fix, dry_run).await?,
         Commands::CheckNameCaps { fix, dry_run } => cmd_check_caps(fix, dry_run).await?,
         Commands::CheckNameFirstCapitalLetter { fix, dry_run } => cmd_check_first_capital_letter(fix, dry_run).await?,
+        Commands::CheckNameOrder { fix, dry_run } => cmd_check_name_order(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneMinus { fix, dry_run } => cmd_check_phone_minus(fix, dry_run).await?,
         Commands::CheckPhoneWhitespace { fix, dry_run } => cmd_check_phone_whitespace(fix, dry_run).await?,
