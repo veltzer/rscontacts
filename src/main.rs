@@ -108,7 +108,14 @@ enum Commands {
     /// Print contacts with invalid-looking email addresses
     CheckEmail,
     /// Print contacts that have the same phone number attached twice
-    CheckDuplicatePhones,
+    CheckDuplicatePhones {
+        /// Interactively remove duplicate phone numbers
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print version information
     Version,
     /// Generate shell completions
@@ -698,10 +705,71 @@ fn check_phone_no_label(contacts: &[google_people1::api::Person], prefix: &str, 
     count
 }
 
-async fn cmd_check_duplicate_phones() -> Result<(), Box<dyn std::error::Error>> {
+fn prompt_remove_duplicate(name: &str, phone: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    loop {
+        eprint!("  Remove duplicate \"{}\" from {}? [y/n] ", phone, name);
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        match input.trim().chars().next() {
+            Some('y') => return Ok(true),
+            Some('n') => return Ok(false),
+            _ => eprintln!("  Invalid choice. Enter y or n."),
+        }
+    }
+}
+
+async fn remove_duplicate_phones(hub: &HubType, person: &google_people1::api::Person) -> Result<(), Box<dyn std::error::Error>> {
+    let resource_name = person
+        .resource_name
+        .as_deref()
+        .ok_or("Contact missing resource name")?;
+
+    let mut updated = person.clone();
+    if let Some(ref mut nums) = updated.phone_numbers {
+        let mut seen = std::collections::HashSet::new();
+        nums.retain(|pn| {
+            let val = pn.value.as_deref().unwrap_or("");
+            seen.insert(val.to_string())
+        });
+    }
+    hub.people()
+        .update_contact(updated, resource_name)
+        .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+        .doit()
+        .await?;
+    eprintln!("  Removed duplicates for {}", person_display_name(person));
+    tokio::time::sleep(MUTATE_DELAY).await;
+    Ok(())
+}
+
+async fn cmd_check_duplicate_phones(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
-    check_duplicate_phones(&contacts, "", None);
+
+    for person in &contacts {
+        if let Some(nums) = &person.phone_numbers {
+            let values: Vec<&str> = nums.iter().filter_map(|pn| pn.value.as_deref()).collect();
+            let mut seen = std::collections::HashSet::new();
+            let dupes: Vec<&str> = values.iter().filter(|v| !seen.insert(**v)).copied().collect();
+            if !dupes.is_empty() {
+                let name = person_display_name(person);
+                for phone in &dupes {
+                    println!("{} | {}", name, phone);
+                }
+                if fix && !dry_run {
+                    let name = person_display_name(person);
+                    if prompt_remove_duplicate(name, &dupes.join(", "))? {
+                        remove_duplicate_phones(&hub, person).await?;
+                    } else {
+                        eprintln!("  Skipped.");
+                    }
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -798,7 +866,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneWhitespace { fix, dry_run } => cmd_check_phone_whitespace(fix, dry_run).await?,
         Commands::CheckPhoneNoLabel => cmd_check_phone_no_label().await?,
         Commands::CheckEmail => cmd_check_email().await?,
-        Commands::CheckDuplicatePhones => cmd_check_duplicate_phones().await?,
+        Commands::CheckDuplicatePhones { fix, dry_run } => cmd_check_duplicate_phones(fix, dry_run).await?,
         Commands::CheckAll { fix, dry_run, ref country } => cmd_check_all(fix, dry_run, country).await?,
         Commands::Version => {
             let is_dirty = std::process::Command::new("git")
