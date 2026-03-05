@@ -420,6 +420,8 @@ async fn check_no_label(
                     std::io::stdin().read_line(&mut input)?;
                     match input.trim().chars().next() {
                         Some('l') => {
+                            print_person_details(person);
+                            println!("{}", "-".repeat(60));
                             if let Some(group_rn) = prompt_label_autocomplete(hub, label_names, user_groups).await? {
                                 let req = google_people1::api::ModifyContactGroupMembersRequest {
                                     resource_names_to_add: Some(vec![resource_name.to_string()]),
