@@ -119,7 +119,14 @@ enum Commands {
     /// Print contacts with phone numbers missing a label (mobile/home/work/etc)
     CheckPhoneNoLabel,
     /// Print contacts with non-English phone labels
-    CheckPhoneLabelEnglish,
+    CheckPhoneLabelEnglish {
+        /// Interactively fix non-English phone labels
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print contacts with invalid-looking email addresses
     CheckEmail,
     /// Print contacts that have the same email address attached twice
@@ -998,10 +1005,91 @@ fn check_phone_label_english(contacts: &[google_people1::api::Person], prefix: &
     count
 }
 
-async fn cmd_check_phone_label_english() -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_phone_label_english(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
-    check_phone_label_english(&contacts, "", None);
+
+    for person in &contacts {
+        if let Some(nums) = &person.phone_numbers {
+            let has_non_english = nums.iter().any(|pn| {
+                let label = pn.formatted_type.as_deref()
+                    .or(pn.type_.as_deref())
+                    .unwrap_or("");
+                !label.is_empty() && !label.chars().all(|c| c.is_ascii())
+            });
+            if has_non_english {
+                let name = person_display_name(person);
+                for pn in nums {
+                    let label = pn.formatted_type.as_deref()
+                        .or(pn.type_.as_deref())
+                        .unwrap_or("");
+                    if !label.is_empty() && !label.chars().all(|c| c.is_ascii()) {
+                        let phone = pn.value.as_deref().unwrap_or("");
+                        println!("{} | {} [{}]", name, phone, label);
+                    }
+                }
+                if fix && !dry_run {
+                    use std::io::Write;
+                    std::io::stdout().flush()?;
+                    let new_label = prompt_phone_label_fix(name)?;
+                    if let Some(new_label) = new_label {
+                        fix_phone_labels_english(&hub, person, &new_label).await?;
+                    } else {
+                        eprintln!("  Skipped.");
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn prompt_phone_label_fix(name: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    let options = ["mobile", "home", "work", "main", "other"];
+    loop {
+        eprint!("  Label for {}'s phone? [m]obile/[h]ome/[w]ork/m[a]in/[o]ther/[s]kip: ", name);
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        match input.trim().chars().next() {
+            Some('m') => return Ok(Some(options[0].to_string())),
+            Some('h') => return Ok(Some(options[1].to_string())),
+            Some('w') => return Ok(Some(options[2].to_string())),
+            Some('a') => return Ok(Some(options[3].to_string())),
+            Some('o') => return Ok(Some(options[4].to_string())),
+            Some('s') => return Ok(None),
+            _ => eprintln!("  Invalid choice. Enter m, h, w, a, o, or s."),
+        }
+    }
+}
+
+async fn fix_phone_labels_english(hub: &HubType, person: &google_people1::api::Person, new_label: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let resource_name = person
+        .resource_name
+        .as_deref()
+        .ok_or("Contact missing resource name")?;
+
+    let mut updated = person.clone();
+    if let Some(ref mut nums) = updated.phone_numbers {
+        for pn in nums.iter_mut() {
+            let label = pn.formatted_type.as_deref()
+                .or(pn.type_.as_deref())
+                .unwrap_or("");
+            if !label.is_empty() && !label.chars().all(|c| c.is_ascii()) {
+                pn.type_ = Some(new_label.to_string());
+                pn.formatted_type = Some(new_label.to_string());
+            }
+        }
+    }
+    hub.people()
+        .update_contact(updated, resource_name)
+        .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+        .doit()
+        .await?;
+    eprintln!("  Fixed labels for {}", person_display_name(person));
+    tokio::time::sleep(MUTATE_DELAY).await;
     Ok(())
 }
 
@@ -1191,7 +1279,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneWhitespace { fix, dry_run } => cmd_check_phone_whitespace(fix, dry_run).await?,
         Commands::CheckContactNoLabel => cmd_check_contact_no_label().await?,
         Commands::CheckPhoneNoLabel => cmd_check_phone_no_label().await?,
-        Commands::CheckPhoneLabelEnglish => cmd_check_phone_label_english().await?,
+        Commands::CheckPhoneLabelEnglish { fix, dry_run } => cmd_check_phone_label_english(fix, dry_run).await?,
         Commands::CheckEmail => cmd_check_email().await?,
         Commands::CheckDuplicateEmails { fix, dry_run } => cmd_check_duplicate_emails(fix, dry_run).await?,
         Commands::CheckDuplicatePhones { fix, dry_run } => cmd_check_duplicate_phones(fix, dry_run).await?,
