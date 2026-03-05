@@ -1,7 +1,9 @@
 use clap::{Parser, Subcommand};
 use google_people1::api::ListConnectionsResponse;
 use google_people1::{FieldMask, PeopleService};
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 
 fn config_dir() -> PathBuf {
     let mut dir = dirs::home_dir().expect("Could not determine home directory");
@@ -22,7 +24,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Authenticate with Google (opens browser for OAuth2 consent)
-    Auth,
+    Auth {
+        /// Don't open browser automatically; print URL instead
+        #[arg(long)]
+        no_browser: bool,
+    },
     /// List all contacts
     List,
     /// Print contacts with non-English names
@@ -57,6 +63,23 @@ fn is_english_name(name: &str) -> bool {
     name.chars().all(|c| c.is_ascii() || c == '\u{200f}' || c == '\u{200e}')
 }
 
+struct BrowserFlowDelegate;
+
+impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for BrowserFlowDelegate {
+    fn present_user_url<'a>(
+        &'a self,
+        url: &'a str,
+        _need_code: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        Box::pin(async move {
+            if let Err(e) = open::that(url) {
+                eprintln!("Failed to open browser: {}. Please open this URL manually:\n{}", e, url);
+            }
+            Ok(String::new())
+        })
+    }
+}
+
 fn build_connector() -> Result<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, Box<dyn std::error::Error>> {
     Ok(hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()?
@@ -88,16 +111,20 @@ async fn build_hub() -> Result<PeopleService<hyper_rustls::HttpsConnector<hyper_
     Ok(PeopleService::new(client, auth))
 }
 
-async fn cmd_auth() -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_auth(no_browser: bool) -> Result<(), Box<dyn std::error::Error>> {
     let secret = yup_oauth2::read_application_secret(credentials_path()).await?;
 
-    let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
+    let mut builder = yup_oauth2::InstalledFlowAuthenticator::builder(
         secret,
         yup_oauth2::InstalledFlowReturnMethod::HTTPRedirect,
     )
-    .persist_tokens_to_disk(token_cache_path())
-    .build()
-    .await?;
+    .persist_tokens_to_disk(token_cache_path());
+
+    if !no_browser {
+        builder = builder.flow_delegate(Box::new(BrowserFlowDelegate));
+    }
+
+    let auth = builder.build().await?;
 
     // Actually request a token so it gets persisted
     let scopes = &["https://www.googleapis.com/auth/contacts"];
@@ -225,7 +252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Auth => cmd_auth().await?,
+        Commands::Auth { no_browser } => cmd_auth(no_browser).await?,
         Commands::List => cmd_list().await?,
         Commands::CheckEnglish => cmd_check_english().await?,
     }
@@ -241,7 +268,13 @@ mod tests {
     #[test]
     fn test_cli_auth_subcommand() {
         let cli = Cli::parse_from(["rscontacts", "auth"]);
-        assert!(matches!(cli.command, Commands::Auth));
+        assert!(matches!(cli.command, Commands::Auth { no_browser: false }));
+    }
+
+    #[test]
+    fn test_cli_auth_no_browser() {
+        let cli = Cli::parse_from(["rscontacts", "auth", "--no-browser"]);
+        assert!(matches!(cli.command, Commands::Auth { no_browser: true }));
     }
 
     #[test]
