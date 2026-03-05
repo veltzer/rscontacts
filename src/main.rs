@@ -182,6 +182,11 @@ fn is_valid_email(email: &str) -> bool {
     true
 }
 
+fn phone_has_label(pn: &google_people1::api::PhoneNumber) -> bool {
+    !pn.type_.as_deref().unwrap_or("").is_empty()
+        || !pn.formatted_type.as_deref().unwrap_or("").is_empty()
+}
+
 fn starts_with_capital(name: &str) -> bool {
     name.chars().next().is_some_and(|c| c.is_uppercase())
 }
@@ -705,7 +710,7 @@ fn check_phone_no_label(contacts: &[google_people1::api::Person], prefix: &str, 
     for person in contacts {
         if let Some(nums) = &person.phone_numbers {
             let unlabeled: Vec<&str> = nums.iter()
-                .filter(|pn| pn.type_.is_none() && pn.formatted_type.is_none())
+                .filter(|pn| !phone_has_label(pn))
                 .filter_map(|pn| pn.value.as_deref())
                 .collect();
             if !unlabeled.is_empty() {
@@ -839,13 +844,13 @@ async fn cmd_check_phone_no_label(fix: bool, dry_run: bool) -> Result<(), Box<dy
 
     for person in &contacts {
         if let Some(nums) = &person.phone_numbers {
-            let has_unlabeled = nums.iter().any(|pn| pn.type_.is_none() && pn.formatted_type.is_none() && pn.value.is_some());
+            let has_unlabeled = nums.iter().any(|pn| !phone_has_label(pn) && pn.value.is_some());
             if !has_unlabeled {
                 continue;
             }
             let name = person_display_name(person);
             for pn in nums {
-                if pn.type_.is_none() && pn.formatted_type.is_none() {
+                if !phone_has_label(pn) {
                     if let Some(val) = pn.value.as_deref() {
                         println!("{} | {}", name, val);
                     }
@@ -863,7 +868,7 @@ async fn cmd_check_phone_no_label(fix: bool, dry_run: bool) -> Result<(), Box<dy
                 let mut modified = false;
                 if let Some(ref mut nums) = updated.phone_numbers {
                     for pn in nums.iter_mut() {
-                        if pn.type_.is_none() && pn.formatted_type.is_none() {
+                        if !phone_has_label(pn) {
                             if let Some(val) = pn.value.as_deref() {
                                 match prompt_label_action(name, val)? {
                                     'l' => {
