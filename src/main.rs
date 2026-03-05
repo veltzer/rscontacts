@@ -41,7 +41,43 @@ fn token_cache_path() -> PathBuf {
     config_dir().join("token_cache.json")
 }
 
+fn build_connector() -> Result<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, Box<dyn std::error::Error>> {
+    Ok(hyper_rustls::HttpsConnectorBuilder::new()
+        .with_native_roots()?
+        .https_or_http()
+        .enable_http2()
+        .build())
+}
+
 async fn build_hub() -> Result<PeopleService<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>, Box<dyn std::error::Error>> {
+    let cache_path = token_cache_path();
+    if !cache_path.exists() {
+        eprintln!("Error: not authenticated. Run 'rscontacts auth' first.");
+        std::process::exit(1);
+    }
+
+    let data = std::fs::read_to_string(&cache_path)?;
+    let token_info: serde_json::Value = serde_json::from_str(&data)?;
+
+    let access_token = token_info
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("token"))
+        .and_then(|v| v.get("access_token"))
+        .and_then(|v| v.as_str())
+        .ok_or("Invalid token cache. Run 'rscontacts auth' again.")?;
+
+    let auth = yup_oauth2::AccessTokenAuthenticator::builder(access_token.to_string())
+        .build()
+        .await?;
+
+    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .build(build_connector()?);
+
+    Ok(PeopleService::new(client, auth))
+}
+
+async fn cmd_auth() -> Result<(), Box<dyn std::error::Error>> {
     let secret = yup_oauth2::read_application_secret(credentials_path()).await?;
 
     let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
@@ -52,21 +88,10 @@ async fn build_hub() -> Result<PeopleService<hyper_rustls::HttpsConnector<hyper_
     .build()
     .await?;
 
-    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-        .build(
-            hyper_rustls::HttpsConnectorBuilder::new()
-                .with_native_roots()?
-                .https_or_http()
-                .enable_http2()
-                .build(),
-        );
+    // Actually request a token so it gets persisted
+    let scopes = &["https://www.googleapis.com/auth/contacts.readonly"];
+    let _token = auth.token(scopes).await?;
 
-    Ok(PeopleService::new(client, auth))
-}
-
-async fn cmd_auth() -> Result<(), Box<dyn std::error::Error>> {
-    // Just trigger the OAuth flow — build_hub will open browser if no cached token
-    let _hub = build_hub().await?;
     eprintln!("Authentication successful. Token cached to {}", token_cache_path().display());
     Ok(())
 }
