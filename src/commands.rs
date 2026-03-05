@@ -400,8 +400,12 @@ async fn check_no_label(
             count += 1;
 
             if fix && !quiet {
+                println!("{}", "=".repeat(60));
+                print_person_details(person);
+                println!("{}", "-".repeat(60));
+
                 if dry_run {
-                    eprintln!("(dry-run) would prompt for action");
+                    eprintln!("(dry-run) would prompt for action\n");
                     continue;
                 }
                 let resource_name = match person.resource_name.as_deref() {
@@ -768,7 +772,18 @@ async fn fix_phone_labels_english(hub: &HubType, person: &google_people1::api::P
 
 pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "memberships"]).await?;
+    let all_fields = &[
+        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
+        "organizations", "memberships", "biographies", "urls", "events",
+        "relations", "nicknames", "occupations", "interests", "skills",
+        "userDefined", "imClients", "sipAddresses", "locations",
+        "externalIds", "clientData",
+    ];
+    let contacts = if fix {
+        fetch_all_contacts(&hub, all_fields).await?
+    } else {
+        fetch_all_contacts(&hub, &["names", "emailAddresses", "memberships"]).await?
+    };
 
     let (user_groups_owned, label_names) = if fix {
         let all_groups = fetch_all_contact_groups(&hub).await?;
