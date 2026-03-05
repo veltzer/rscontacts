@@ -1084,13 +1084,13 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
 
     let non_english = check_name_issues(
         &hub, &all_contacts, |name| !is_english_name(name),
-        fix, dry_run, "  ", Some("Non-English names"),
+        fix, dry_run, "  ", Some("Non-English names (check-name-english)"),
     ).await?;
     if non_english > 0 { found_any = true; }
 
     let all_caps = check_name_issues(
         &hub, &all_contacts, |name| is_all_caps(name),
-        fix, dry_run, "  ", Some("All-caps names"),
+        fix, dry_run, "  ", Some("All-caps names (check-name-caps)"),
     ).await?;
     if all_caps > 0 { found_any = true; }
 
@@ -1099,7 +1099,7 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
         &hub, &all_contacts,
         |v| is_fixable_phone(v) && !has_country_code(v),
         move |v| add_country_code(v, &country_owned),
-        fix, dry_run, "  ", Some("Phones missing country code"),
+        fix, dry_run, "  ", Some("Phones missing country code (check-phone-countrycode)"),
     ).await?;
     if no_country > 0 { found_any = true; }
 
@@ -1107,7 +1107,7 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
         &hub, &all_contacts,
         |v| is_fixable_phone(v) && v.contains('-'),
         |v| v.replace('-', ""),
-        fix, dry_run, "  ", Some("Phones with dashes"),
+        fix, dry_run, "  ", Some("Phones with dashes (check-phone-minus)"),
     ).await?;
     if with_minus > 0 { found_any = true; }
 
@@ -1115,22 +1115,22 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
         &hub, &all_contacts,
         |v| is_fixable_phone(v) && v.contains(char::is_whitespace),
         |v| v.chars().filter(|c| !c.is_whitespace()).collect(),
-        fix, dry_run, "  ", Some("Phones with whitespace"),
+        fix, dry_run, "  ", Some("Phones with whitespace (check-phone-whitespace)"),
     ).await?;
     if with_ws > 0 { found_any = true; }
 
     let first_cap = check_name_issues(
         &hub, &all_contacts, |name| !starts_with_capital(name),
-        fix, dry_run, "  ", Some("Names not starting with capital letter"),
+        fix, dry_run, "  ", Some("Names not starting with capital letter (check-name-first-capital-letter)"),
     ).await?;
     if first_cap > 0 { found_any = true; }
 
-    if check_no_label(&all_contacts, "  ", Some("Contacts without label")) > 0 { found_any = true; }
-    if check_phone_no_label(&all_contacts, "  ", Some("Phones without label")) > 0 { found_any = true; }
-    if check_phone_label_english(&all_contacts, "  ", Some("Non-English phone labels")) > 0 { found_any = true; }
-    if check_invalid_emails(&all_contacts, "  ", Some("Invalid emails")) > 0 { found_any = true; }
-    if check_duplicate_phones(&all_contacts, "  ", Some("Duplicate phone numbers")) > 0 { found_any = true; }
-    if check_duplicate_emails(&all_contacts, "  ", Some("Duplicate email addresses")) > 0 { found_any = true; }
+    if check_no_label(&all_contacts, "  ", Some("Contacts without label (check-contact-no-label)")) > 0 { found_any = true; }
+    if check_phone_no_label(&all_contacts, "  ", Some("Phones without label (check-phone-no-label)")) > 0 { found_any = true; }
+    if check_phone_label_english(&all_contacts, "  ", Some("Non-English phone labels (check-phone-label-english)")) > 0 { found_any = true; }
+    if check_invalid_emails(&all_contacts, "  ", Some("Invalid emails (check-email)")) > 0 { found_any = true; }
+    if check_duplicate_phones(&all_contacts, "  ", Some("Duplicate phone numbers (check-duplicate-phones)")) > 0 { found_any = true; }
+    if check_duplicate_emails(&all_contacts, "  ", Some("Duplicate email addresses (check-duplicate-emails)")) > 0 { found_any = true; }
 
     // Check for empty labels (contact groups) — separate API call
     {
@@ -1156,7 +1156,7 @@ async fn cmd_check_all(fix: bool, dry_run: bool, country: &str) -> Result<(), Bo
         }).collect();
         if !empty.is_empty() {
             found_any = true;
-            println!("=== Empty labels ({}) ===", empty.len());
+            println!("=== Empty labels (check-labels-nophone) ({}) ===", empty.len());
             for group in &empty {
                 let name = group.name.as_deref().unwrap_or("<unnamed>");
                 println!("  {}", name);
