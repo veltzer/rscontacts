@@ -77,7 +77,7 @@ enum Commands {
         country: String,
     },
     /// Print contacts with dashes/minuses in phone numbers
-    CheckPhoneRemoveMinus {
+    CheckPhoneMinus {
         /// Remove dashes from phone numbers
         #[arg(long)]
         fix: bool,
@@ -86,7 +86,7 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contacts with whitespace in phone numbers
-    CheckPhoneRemoveWhitespace {
+    CheckPhoneWhitespace {
         /// Remove whitespace from phone numbers
         #[arg(long)]
         fix: bool,
@@ -552,7 +552,7 @@ async fn cmd_check_phone_countrycode(fix: bool, dry_run: bool, country: &str) ->
     Ok(())
 }
 
-async fn cmd_check_phone_remove_whitespace(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_phone_whitespace(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
     check_phone_issues(
@@ -564,7 +564,7 @@ async fn cmd_check_phone_remove_whitespace(fix: bool, dry_run: bool) -> Result<(
     Ok(())
 }
 
-async fn cmd_check_phone_remove_minus(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_check_phone_minus(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers", "metadata"]).await?;
     check_phone_issues(
@@ -640,8 +640,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckNameEnglish { fix, dry_run } => cmd_check_english(fix, dry_run).await?,
         Commands::CheckNameCaps { fix, dry_run } => cmd_check_caps(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => cmd_check_phone_countrycode(fix, dry_run, country).await?,
-        Commands::CheckPhoneRemoveMinus { fix, dry_run } => cmd_check_phone_remove_minus(fix, dry_run).await?,
-        Commands::CheckPhoneRemoveWhitespace { fix, dry_run } => cmd_check_phone_remove_whitespace(fix, dry_run).await?,
+        Commands::CheckPhoneMinus { fix, dry_run } => cmd_check_phone_minus(fix, dry_run).await?,
+        Commands::CheckPhoneWhitespace { fix, dry_run } => cmd_check_phone_whitespace(fix, dry_run).await?,
         Commands::CheckAll { fix, dry_run, ref country } => cmd_check_all(fix, dry_run, country).await?,
         Commands::Version => {
             let is_dirty = std::process::Command::new("git")
