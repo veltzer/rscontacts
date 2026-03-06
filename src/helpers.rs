@@ -549,7 +549,14 @@ pub fn split_name_suffix(display_name: &str) -> (&str, Option<u32>) {
 }
 
 pub fn has_reversed_name(person: &google_people1::api::Person) -> bool {
-    person_name(person).contains(',')
+    let name = person_name(person);
+    if let Some((_, after)) = name.split_once(',') {
+        let after = after.trim();
+        // Don't flag "Name, 2" — that's a numeric suffix, not a reversed name
+        !is_numeric_string(after)
+    } else {
+        false
+    }
 }
 
 pub fn compute_fixed_name(display_name: &str) -> String {
