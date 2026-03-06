@@ -1195,16 +1195,16 @@ pub async fn cmd_check_labels_camelcase(fix: bool, dry_run: bool) -> Result<(), 
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
-    let not_lowercase: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
+    let not_camelcase: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
         g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-            && g.name.as_deref().is_some_and(|n| n != n.to_lowercase())
+            && g.name.as_deref().is_some_and(|n| !n.starts_with(char::is_uppercase))
     }).collect();
 
-    for group in &not_lowercase {
+    for group in &not_camelcase {
         let name = group.name.as_deref().unwrap_or("<unnamed>");
-        let lower = name.to_lowercase();
+        let camel = capitalize_first(name);
         if fix || dry_run {
-            println!("{} -> {}", name, lower);
+            println!("{} -> {}", name, camel);
         } else {
             println!("{}", name);
         }
@@ -1213,14 +1213,14 @@ pub async fn cmd_check_labels_camelcase(fix: bool, dry_run: bool) -> Result<(), 
             let resource_name = group.resource_name.as_deref()
                 .ok_or("Contact group missing resource name")?;
             let mut updated_group = (*group).clone();
-            updated_group.name = Some(lower.clone());
+            updated_group.name = Some(camel.clone());
             let req = google_people1::api::UpdateContactGroupRequest {
                 contact_group: Some(updated_group),
                 read_group_fields: None,
                 update_group_fields: None,
             };
             hub.contact_groups().update(req, resource_name).doit().await?;
-            eprintln!("  Renamed \"{}\" -> \"{}\"", name, lower);
+            eprintln!("  Renamed \"{}\" -> \"{}\"", name, camel);
             tokio::time::sleep(MUTATE_DELAY).await;
         }
     }
@@ -1500,17 +1500,17 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
     }
     results.push(("check-contact-label-space", with_space.len()));
 
-    let not_lowercase: Vec<_> = all_groups.iter().filter(|g| {
+    let not_camelcase: Vec<_> = all_groups.iter().filter(|g| {
         g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-            && g.name.as_deref().is_some_and(|n| n != n.to_lowercase())
+            && g.name.as_deref().is_some_and(|n| !n.starts_with(char::is_uppercase))
     }).collect();
-    if !stats && !not_lowercase.is_empty() {
-        println!("=== Labels not camelCase (check-labels-camelcase) ({}) ===", not_lowercase.len());
-        for group in &not_lowercase {
+    if !stats && !not_camelcase.is_empty() {
+        println!("=== Labels not camelCase (check-labels-camelcase) ({}) ===", not_camelcase.len());
+        for group in &not_camelcase {
             let name = group.name.as_deref().unwrap_or("<unnamed>");
-            let lower = name.to_lowercase();
+            let camel = capitalize_first(name);
             if fix || dry_run {
-                println!("  {} -> {}", name, lower);
+                println!("  {} -> {}", name, camel);
             } else {
                 println!("  {}", name);
             }
@@ -1519,20 +1519,20 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
                 let resource_name = group.resource_name.as_deref()
                     .ok_or("Contact group missing resource name")?;
                 let mut updated_group = (*group).clone();
-                updated_group.name = Some(lower.clone());
+                updated_group.name = Some(camel.clone());
                 let req = google_people1::api::UpdateContactGroupRequest {
                     contact_group: Some(updated_group),
                     read_group_fields: None,
                     update_group_fields: None,
                 };
                 hub.contact_groups().update(req, resource_name).doit().await?;
-                eprintln!("  Renamed \"{}\" -> \"{}\"", name, lower);
+                eprintln!("  Renamed \"{}\" -> \"{}\"", name, camel);
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
         }
         println!();
     }
-    results.push(("check-labels-camelcase", not_lowercase.len()));
+    results.push(("check-labels-camelcase", not_camelcase.len()));
 
     if stats {
         let total: usize = results.iter().map(|(_, c)| c).sum();

@@ -71,6 +71,14 @@ pub fn starts_with_capital(name: &str) -> bool {
     name.chars().next().is_some_and(|c| c.is_uppercase())
 }
 
+pub fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 pub fn is_all_caps(name: &str) -> bool {
     let alpha_chars: String = name.chars().filter(|c| c.is_alphabetic()).collect();
     alpha_chars.len() >= 2 && alpha_chars == alpha_chars.to_uppercase()
