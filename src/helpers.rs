@@ -536,12 +536,22 @@ pub fn compute_fixed_name(display_name: &str) -> String {
     display_name.to_string()
 }
 
+pub fn is_starred(person: &google_people1::api::Person) -> bool {
+    person.memberships.as_ref().is_some_and(|memberships| {
+        memberships.iter().any(|m| {
+            m.contact_group_membership.as_ref().is_some_and(|cgm| {
+                cgm.contact_group_resource_name.as_deref() == Some("contactGroups/starred")
+            })
+        })
+    })
+}
+
 pub fn has_user_label(person: &google_people1::api::Person) -> bool {
     person.memberships.as_ref().is_some_and(|memberships| {
         memberships.iter().any(|m| {
             m.contact_group_membership.as_ref().is_some_and(|cgm| {
                 let rn = cgm.contact_group_resource_name.as_deref().unwrap_or("");
-                !rn.is_empty() && rn != "contactGroups/myContacts"
+                !rn.is_empty() && rn != "contactGroups/myContacts" && rn != "contactGroups/starred"
             })
         })
     })

@@ -32,12 +32,18 @@ pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-pub async fn cmd_list(emails: bool, labels: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_list(emails: bool, labels: bool, starred: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let mut fields = vec!["names", "phoneNumbers"];
     if emails { fields.push("emailAddresses"); }
-    if labels { fields.push("memberships"); }
+    if labels || starred { fields.push("memberships"); }
     let contacts = fetch_all_contacts(&hub, &fields).await?;
+
+    let contacts: Vec<_> = if starred {
+        contacts.into_iter().filter(|p| is_starred(p)).collect()
+    } else {
+        contacts
+    };
 
     // Build group resource name -> display name map when showing labels
     let group_names: std::collections::HashMap<String, String> = if labels {

@@ -30,6 +30,9 @@ enum Commands {
         /// Also show contact labels (contact group memberships)
         #[arg(long)]
         labels: bool,
+        /// Only show starred contacts
+        #[arg(long)]
+        starred: bool,
     },
     /// Print contacts with non-English names
     CheckNameEnglish {
@@ -220,7 +223,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Auth { no_browser, force } => commands::cmd_auth(no_browser, force).await?,
-        Commands::List { emails, labels } => commands::cmd_list(emails, labels).await?,
+        Commands::List { emails, labels, starred } => commands::cmd_list(emails, labels, starred).await?,
         Commands::CheckNameEnglish { fix, dry_run } => commands::cmd_check_english(fix, dry_run).await?,
         Commands::CheckNameCaps { fix, dry_run } => commands::cmd_check_caps(fix, dry_run).await?,
         Commands::CheckNameFirstCapitalLetter { fix, dry_run } => commands::cmd_check_first_capital_letter(fix, dry_run).await?,
