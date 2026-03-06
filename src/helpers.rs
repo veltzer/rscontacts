@@ -529,6 +529,10 @@ pub fn print_phone_fix(name: &str, phone: &str, fixed: &str, fix: bool, dry_run:
     }
 }
 
+pub fn is_numeric_string(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
+}
+
 pub fn has_reversed_name(person: &google_people1::api::Person) -> bool {
     person_name(person).contains(',')
 }

@@ -1321,6 +1321,65 @@ pub async fn cmd_check_contact_label_camelcase(fix: bool, dry_run: bool) -> Resu
     Ok(())
 }
 
+pub async fn cmd_move_numeric_lastname_to_suffix(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names"]).await?;
+
+    let mut count = 0;
+    for person in &contacts {
+        let names = match &person.names {
+            Some(names) => names,
+            None => continue,
+        };
+        let name = match names.first() {
+            Some(n) => n,
+            None => continue,
+        };
+        let family = match name.family_name.as_deref() {
+            Some(f) => f,
+            None => continue,
+        };
+        if !is_numeric_string(family) {
+            continue;
+        }
+
+        let display = person_display_name(person);
+        let given = name.given_name.as_deref().unwrap_or("");
+        println!("{} -> given: \"{}\", suffix: \"{}\"", display, given, family);
+        count += 1;
+
+        if !dry_run {
+            let resource_name = person
+                .resource_name
+                .as_deref()
+                .ok_or("Contact missing resource name")?;
+            let mut updated = person.clone();
+            if let Some(ref mut names) = updated.names {
+                if let Some(first) = names.first_mut() {
+                    first.honorific_suffix = Some(family.to_string());
+                    first.family_name = None;
+                    first.unstructured_name = Some(format!("{} {}", given, family));
+                }
+            }
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                .doit()
+                .await?;
+            eprintln!("  Updated.");
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+    }
+
+    if count == 0 {
+        println!("No contacts with numeric last names found.");
+    } else {
+        println!("{} contact(s) {}", count, if dry_run { "would be updated" } else { "updated" });
+    }
+
+    Ok(())
+}
+
 pub async fn cmd_remove_label_from_all_contacts(label: &str, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
