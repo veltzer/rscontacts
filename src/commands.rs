@@ -808,10 +808,16 @@ pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), 
     let (user_groups_owned, label_names) = if fix {
         let all_groups = fetch_all_contact_groups(&hub).await?;
         let ug: Vec<(String, String)> = all_groups.iter()
-            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+            .filter(|g| {
+                let gt = g.group_type.as_deref();
+                gt == Some("USER_CONTACT_GROUP") || gt == Some("SYSTEM_CONTACT_GROUP")
+            })
             .filter_map(|g| {
                 let name = g.name.as_deref()?;
                 let rn = g.resource_name.as_deref()?;
+                if rn == "contactGroups/myContacts" || rn == "contactGroups/starred" {
+                    return None;
+                }
                 Some((name.to_string(), rn.to_string()))
             })
             .collect();
@@ -1363,10 +1369,16 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
     let (user_groups_owned, label_names) = if fix {
         let all_groups_for_labels = fetch_all_contact_groups(&hub).await?;
         let ug: Vec<(String, String)> = all_groups_for_labels.iter()
-            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+            .filter(|g| {
+                let gt = g.group_type.as_deref();
+                gt == Some("USER_CONTACT_GROUP") || gt == Some("SYSTEM_CONTACT_GROUP")
+            })
             .filter_map(|g| {
                 let name = g.name.as_deref()?;
                 let rn = g.resource_name.as_deref()?;
+                if rn == "contactGroups/myContacts" || rn == "contactGroups/starred" {
+                    return None;
+                }
                 Some((name.to_string(), rn.to_string()))
             })
             .collect();
