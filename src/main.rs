@@ -213,8 +213,11 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Move numeric last names ("1", "2", "3", etc.) to the name suffix field
-    MoveNumericLastnameToSuffix {
+    /// Check for contacts with numeric surnames (e.g. "1", "2") and move them to the suffix field
+    CheckContactNameNumericSurname {
+        /// Move numeric surnames to the suffix field
+        #[arg(long)]
+        fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
@@ -286,7 +289,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactLabelNophone { fix, dry_run } => commands::cmd_check_contact_label_nophone(fix, dry_run).await?,
         Commands::CheckContactLabelSpace { fix, dry_run } => commands::cmd_check_contact_label_space(fix, dry_run).await?,
         Commands::CheckContactLabelCamelcase { fix, dry_run } => commands::cmd_check_contact_label_camelcase(fix, dry_run).await?,
-        Commands::MoveNumericLastnameToSuffix { dry_run } => commands::cmd_move_numeric_lastname_to_suffix(dry_run).await?,
+        Commands::CheckContactNameNumericSurname { fix, dry_run } => commands::cmd_check_contact_name_numeric_surname(fix, dry_run).await?,
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,

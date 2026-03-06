@@ -1493,12 +1493,24 @@ pub async fn cmd_check_contact_label_camelcase(fix: bool, dry_run: bool) -> Resu
     Ok(())
 }
 
-pub async fn cmd_move_numeric_lastname_to_suffix(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_name_numeric_surname(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names"]).await?;
+    check_name_numeric_surname(&hub, &contacts, fix, dry_run, "", None, false).await?;
+    Ok(())
+}
 
+async fn check_name_numeric_surname(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+    quiet: bool,
+) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
-    for person in &contacts {
+    for person in contacts {
         let names = match &person.names {
             Some(names) => names,
             None => continue,
@@ -1515,12 +1527,24 @@ pub async fn cmd_move_numeric_lastname_to_suffix(dry_run: bool) -> Result<(), Bo
             continue;
         }
 
-        let display = person_display_name(person);
-        let given = name.given_name.as_deref().unwrap_or("");
-        println!("{} -> given: \"{}\", suffix: \"{}\"", display, given, family);
+        if !quiet {
+            if count == 0 {
+                if let Some(header) = header {
+                    println!("=== {} ===", header);
+                }
+            }
+            let display = person_display_name(person);
+            let given = name.given_name.as_deref().unwrap_or("");
+            if fix || dry_run {
+                println!("{}{} -> given: \"{}\", suffix: \"{}\"", prefix, display, given, family);
+            } else {
+                println!("{}{} (surname: \"{}\")", prefix, display, family);
+            }
+        }
         count += 1;
 
-        if !dry_run {
+        if fix && !dry_run && !quiet {
+            let given = name.given_name.as_deref().unwrap_or("");
             let resource_name = person
                 .resource_name
                 .as_deref()
@@ -1538,18 +1562,12 @@ pub async fn cmd_move_numeric_lastname_to_suffix(dry_run: bool) -> Result<(), Bo
                 .update_person_fields(FieldMask::new::<&str>(&["names"]))
                 .doit()
                 .await?;
-            eprintln!("  Updated.");
+            eprintln!("{}  Updated.", prefix);
             tokio::time::sleep(MUTATE_DELAY).await;
         }
     }
-
-    if count == 0 {
-        println!("No contacts with numeric last names found.");
-    } else {
-        println!("{} contact(s) {}", count, if dry_run { "would be updated" } else { "updated" });
-    }
-
-    Ok(())
+    if !quiet && count > 0 && header.is_some() { println!(); }
+    Ok(count)
 }
 
 pub async fn cmd_remove_label_from_all_contacts(label: &str, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -1792,6 +1810,10 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     log("check-contact-displayname-duplicate");
     let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-displayname-duplicate)"), stats).await?;
     results.push(("check-contact-displayname-duplicate", name_dup));
+
+    log("check-contact-name-numeric-surname");
+    let numeric_surname = check_name_numeric_surname(&hub, &all_contacts, fix, dry_run, prefix, hdr("Numeric surnames (check-contact-name-numeric-surname)"), stats).await?;
+    results.push(("check-contact-name-numeric-surname", numeric_surname));
 
     log("check-contact-samename-suffix");
     let samename_suffix = check_samename_suffix(&hub, &all_contacts, fix, dry_run, prefix, hdr("Same-name contacts with bad suffixes (check-contact-samename-suffix)"), stats).await?;
