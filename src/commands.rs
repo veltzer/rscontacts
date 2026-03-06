@@ -384,19 +384,22 @@ async fn check_name_duplicate(
     Ok(count)
 }
 
-pub async fn cmd_check_contact_samename_suffix() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_samename_suffix(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names"]).await?;
-    check_samename_suffix(&contacts, "", None, false);
+    check_samename_suffix(&hub, &contacts, fix, dry_run, "", None, false).await?;
     Ok(())
 }
 
-fn check_samename_suffix(
+async fn check_samename_suffix(
+    hub: &HubType,
     contacts: &[google_people1::api::Person],
+    fix: bool,
+    dry_run: bool,
     prefix: &str,
     header: Option<&str>,
     quiet: bool,
-) -> usize {
+) -> Result<usize, Box<dyn std::error::Error>> {
     // Group contacts by base name (display name with numeric suffix stripped)
     let mut base_groups: std::collections::HashMap<String, Vec<(&google_people1::api::Person, Option<u32>)>> =
         std::collections::HashMap::new();
@@ -410,7 +413,7 @@ fn check_samename_suffix(
     }
 
     let mut count = 0;
-    let mut issues: Vec<(String, Vec<String>)> = Vec::new();
+    let mut issues: Vec<(String, Vec<String>, Vec<(&google_people1::api::Person, Option<u32>)>)> = Vec::new();
 
     for (base, group) in &base_groups {
         if group.len() < 2 {
@@ -419,7 +422,7 @@ fn check_samename_suffix(
                 let display = person_display_name(group[0].0);
                 issues.push((base.clone(), vec![
                     format!("{} has suffix but is the only contact with base name \"{}\"", display, base),
-                ]));
+                ], group.clone()));
                 count += 1;
             }
             continue;
@@ -458,20 +461,55 @@ fn check_samename_suffix(
         }
 
         if !problems.is_empty() {
-            issues.push((base.clone(), problems));
+            issues.push((base.clone(), problems, group.clone()));
         }
     }
 
-    issues.sort_by(|(a, _), (b, _)| a.cmp(b));
+    issues.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
 
     if !quiet && !issues.is_empty() {
         if let Some(header) = header {
             println!("=== {} ({}) ===", header, count);
         }
-        for (base, problems) in &issues {
+        for (base, problems, group) in &issues {
             println!("{}\"{}\":", prefix, base);
             for problem in problems {
                 println!("{}  - {}", prefix, problem);
+            }
+
+            if (fix || dry_run) && group.len() >= 2 {
+                // Show planned renumbering: assign suffixes 1..N in current order
+                println!("{}  fix:", prefix);
+                for (i, (person, _)) in group.iter().enumerate() {
+                    let old_display = person_display_name(person);
+                    let new_display = format!("{} {}", base, i + 1);
+                    println!("{}    {} -> {}", prefix, old_display, new_display);
+                }
+
+                if fix && !dry_run {
+                    for (i, (person, _)) in group.iter().enumerate() {
+                        let new_suffix = format!("{}", i + 1);
+                        let resource_name = person
+                            .resource_name
+                            .as_deref()
+                            .ok_or("Contact missing resource name")?;
+                        let mut updated = (*person).clone();
+                        if let Some(ref mut names) = updated.names {
+                            if let Some(first) = names.first_mut() {
+                                first.honorific_suffix = Some(new_suffix.clone());
+                                first.family_name = None;
+                                first.unstructured_name = Some(format!("{} {}", base, new_suffix));
+                            }
+                        }
+                        hub.people()
+                            .update_contact(updated, resource_name)
+                            .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                            .doit()
+                            .await?;
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    }
+                    eprintln!("{}  Updated {} contacts.", prefix, group.len());
+                }
             }
         }
         if header.is_some() {
@@ -479,7 +517,7 @@ fn check_samename_suffix(
         }
     }
 
-    count
+    Ok(count)
 }
 
 pub async fn cmd_check_phone_countrycode(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -1720,7 +1758,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     results.push(("check-contact-displayname-duplicate", name_dup));
 
     log("check-contact-samename-suffix");
-    let samename_suffix = check_samename_suffix(&all_contacts, prefix, hdr("Same-name contacts with bad suffixes (check-contact-samename-suffix)"), stats);
+    let samename_suffix = check_samename_suffix(&hub, &all_contacts, fix, dry_run, prefix, hdr("Same-name contacts with bad suffixes (check-contact-samename-suffix)"), stats).await?;
     results.push(("check-contact-samename-suffix", samename_suffix));
 
     // For check-contact-no-label with fix, we need contact groups for label autocomplete

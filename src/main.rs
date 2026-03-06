@@ -80,7 +80,14 @@ enum Commands {
         dry_run: bool,
     },
     /// Check that same-name contacts are distinguished with sequential numeric suffixes (1, 2, ...)
-    CheckContactSamenameSuffix,
+    CheckContactSamenameSuffix {
+        /// Automatically assign sequential suffixes
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Run all checks
     CheckAll {
         /// Fix all issues found
@@ -266,7 +273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactNameFirstCapitalLetter { fix, dry_run } => commands::cmd_check_contact_name_first_capital_letter(fix, dry_run).await?,
         Commands::CheckContactNameOrder { fix, dry_run } => commands::cmd_check_contact_name_order(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,
-        Commands::CheckContactSamenameSuffix => commands::cmd_check_contact_samename_suffix().await?,
+        Commands::CheckContactSamenameSuffix { fix, dry_run } => commands::cmd_check_contact_samename_suffix(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
