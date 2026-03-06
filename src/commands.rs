@@ -232,7 +232,7 @@ pub async fn cmd_check_contact_name_first_capital_letter(fix: bool, dry_run: boo
 
 pub async fn cmd_check_contact_name_firstname_space(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "organizations"]).await?;
     check_name_firstname_space(&hub, &contacts, fix, dry_run, "", None, false).await?;
     Ok(())
 }
@@ -270,7 +270,111 @@ async fn check_name_firstname_space(
             }
 
             if fix && !dry_run {
-                interactive_name_fix(hub, person, display).await?;
+                let parts: Vec<&str> = given.splitn(2, ' ').collect();
+                let has_two_parts = parts.len() == 2 && !parts[1].is_empty();
+
+                use std::io::Write;
+                loop {
+                    if has_two_parts {
+                        eprint!("  [p]split \"{}\"/\"{}\" / [c]ompany / [r]ename / [d]elete / [s]kip? ", parts[0], parts[1]);
+                    } else {
+                        eprint!("  [c]ompany / [r]ename / [d]elete / [s]kip? ");
+                    }
+                    std::io::stderr().flush()?;
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input)?;
+                    match input.trim().chars().next() {
+                        Some('p') if has_two_parts => {
+                            let resource_name = person
+                                .resource_name
+                                .as_deref()
+                                .ok_or("Contact missing resource name")?;
+                            let mut updated = person.clone();
+                            if let Some(ref mut names) = updated.names {
+                                if let Some(first) = names.first_mut() {
+                                    first.given_name = Some(parts[0].to_string());
+                                    first.family_name = Some(parts[1].to_string());
+                                    first.unstructured_name = Some(given.to_string());
+                                }
+                            }
+                            hub.people()
+                                .update_contact(updated, resource_name)
+                                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                                .doit()
+                                .await?;
+                            eprintln!("  Split to given: \"{}\", family: \"{}\"", parts[0], parts[1]);
+                            tokio::time::sleep(MUTATE_DELAY).await;
+                            break;
+                        }
+                        Some('c') => {
+                            let resource_name = person
+                                .resource_name
+                                .as_deref()
+                                .ok_or("Contact missing resource name")?;
+                            let mut updated = person.clone();
+                            // Move the full given name to organization
+                            let org = google_people1::api::Organization {
+                                name: Some(given.to_string()),
+                                ..Default::default()
+                            };
+                            updated.organizations = Some(vec![org]);
+                            // Clear the name
+                            if let Some(ref mut names) = updated.names {
+                                if let Some(first) = names.first_mut() {
+                                    first.given_name = None;
+                                    first.family_name = None;
+                                    first.unstructured_name = None;
+                                }
+                            }
+                            hub.people()
+                                .update_contact(updated, resource_name)
+                                .update_person_fields(FieldMask::new::<&str>(&["names", "organizations"]))
+                                .doit()
+                                .await?;
+                            eprintln!("  Moved \"{}\" to company name.", given);
+                            tokio::time::sleep(MUTATE_DELAY).await;
+                            break;
+                        }
+                        Some('r') => {
+                            let new_name = prompt_new_name(display)?;
+                            let resource_name = person
+                                .resource_name
+                                .as_deref()
+                                .ok_or("Contact missing resource name")?;
+                            let mut updated = person.clone();
+                            if let Some(ref mut names) = updated.names {
+                                if let Some(first) = names.first_mut() {
+                                    first.given_name = Some(new_name.clone());
+                                    first.family_name = None;
+                                    first.unstructured_name = Some(new_name.clone());
+                                }
+                            }
+                            hub.people()
+                                .update_contact(updated, resource_name)
+                                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                                .doit()
+                                .await?;
+                            eprintln!("  Renamed to \"{}\"", new_name);
+                            tokio::time::sleep(MUTATE_DELAY).await;
+                            break;
+                        }
+                        Some('d') => {
+                            let resource_name = person
+                                .resource_name
+                                .as_deref()
+                                .ok_or("Contact missing resource name")?;
+                            hub.people().delete_contact(resource_name).doit().await?;
+                            eprintln!("  Deleted.");
+                            tokio::time::sleep(MUTATE_DELAY).await;
+                            break;
+                        }
+                        Some('s') => {
+                            eprintln!("  Skipped.");
+                            break;
+                        }
+                        _ => eprintln!("  Invalid choice."),
+                    }
+                }
             }
         }
         count += 1;
