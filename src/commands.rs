@@ -499,7 +499,7 @@ async fn check_no_label(
 
             if fix && !quiet {
                 println!("{}", "=".repeat(60));
-                print_person_details(person);
+                print_person_details(person, None);
                 println!("{}", "-".repeat(60));
 
                 if dry_run {
@@ -518,7 +518,7 @@ async fn check_no_label(
                     std::io::stdin().read_line(&mut input)?;
                     match input.trim().chars().next() {
                         Some('l') => {
-                            print_person_details(person);
+                            print_person_details(person, None);
                             println!("{}", "-".repeat(60));
                             if let Some(group_rn) = prompt_label_autocomplete(hub, label_names, user_groups).await? {
                                 let req = google_people1::api::ModifyContactGroupMembersRequest {
@@ -1035,14 +1035,23 @@ pub async fn cmd_show_contact(search: &str) -> Result<(), Box<dyn std::error::Er
         return Ok(());
     }
 
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names: std::collections::HashMap<String, String> = all_groups.iter()
+        .filter_map(|g| {
+            let rn = g.resource_name.as_deref()?;
+            let name = g.name.as_deref()?;
+            Some((rn.to_string(), name.to_string()))
+        })
+        .collect();
+
     for (i, person) in matches.iter().enumerate() {
         if i > 0 { println!("\n{}", "=".repeat(60)); }
-        print_person_details(person);
+        print_person_details(person, Some(&group_names));
     }
     Ok(())
 }
 
-fn print_person_details(person: &google_people1::api::Person) {
+fn print_person_details(person: &google_people1::api::Person, group_names: Option<&std::collections::HashMap<String, String>>) {
     let name = person_display_name(person);
     println!("Name: {}", name);
 
@@ -1218,11 +1227,15 @@ fn print_person_details(person: &google_people1::api::Person) {
     }
 
     if let Some(memberships) = &person.memberships {
-        let labels: Vec<&str> = memberships.iter().filter_map(|m| {
-            m.contact_group_membership.as_ref().and_then(|cgm| {
-                cgm.contact_group_resource_name.as_deref()
-            })
-        }).filter(|rn| *rn != "contactGroups/myContacts").collect();
+        let labels: Vec<String> = memberships.iter().filter_map(|m| {
+            let rn = m.contact_group_membership.as_ref()?.contact_group_resource_name.as_deref()?;
+            if rn == "contactGroups/myContacts" { return None; }
+            let display = group_names
+                .and_then(|gn| gn.get(rn))
+                .map(|s| s.as_str())
+                .unwrap_or(rn);
+            Some(display.to_string())
+        }).collect();
         if !labels.is_empty() {
             println!("Labels: {}", labels.join(", "));
         }
