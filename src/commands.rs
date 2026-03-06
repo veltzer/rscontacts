@@ -209,21 +209,21 @@ where
     Ok(filtered.len())
 }
 
-pub async fn cmd_check_english(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_name_english(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
     check_name_issues(&hub, &contacts, |name| !is_english_name(name), fix, dry_run, "", None, false).await?;
     Ok(())
 }
 
-pub async fn cmd_check_caps(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_name_caps(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
     check_name_issues(&hub, &contacts, |name| is_all_caps(name), fix, dry_run, "", None, false).await?;
     Ok(())
 }
 
-pub async fn cmd_check_first_capital_letter(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_name_first_capital_letter(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
     check_name_issues(&hub, &contacts, |name| !starts_with_capital(name), fix, dry_run, "", None, false).await?;
@@ -297,7 +297,7 @@ async fn check_name_order(hub: &HubType, contacts: &[google_people1::api::Person
     Ok(count)
 }
 
-pub async fn cmd_check_name_order(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_name_order(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
     check_name_order(&hub, &contacts, fix, dry_run, "", None, false).await?;
@@ -501,14 +501,14 @@ async fn remove_duplicate_phones(hub: &HubType, person: &google_people1::api::Pe
     Ok(())
 }
 
-pub async fn cmd_check_duplicate_phones(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers"]).await?;
     check_duplicate_phones(&hub, &contacts, fix, dry_run, "", None, false).await?;
     Ok(())
 }
 
-pub async fn cmd_check_email() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_email() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
     check_invalid_emails(&contacts, "", None, false);
@@ -573,7 +573,7 @@ async fn check_email_caps(hub: &HubType, contacts: &[google_people1::api::Person
     Ok(count)
 }
 
-pub async fn cmd_check_email_caps(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_email_caps(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
     check_email_caps(&hub, &contacts, fix, dry_run, "", None, false).await?;
@@ -639,7 +639,7 @@ async fn remove_duplicate_emails(hub: &HubType, person: &google_people1::api::Pe
     Ok(())
 }
 
-pub async fn cmd_check_duplicate_emails(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_email_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
     check_duplicate_emails(&hub, &contacts, fix, dry_run, "", None, false).await?;
@@ -903,7 +903,7 @@ async fn prompt_label_autocomplete(
     }
 }
 
-pub async fn cmd_check_labels_nophone(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_label_nophone(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
@@ -1191,13 +1191,13 @@ pub async fn cmd_check_contact_label_space(fix: bool, dry_run: bool) -> Result<(
     Ok(())
 }
 
-pub async fn cmd_check_labels_camelcase(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_label_camelcase(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
     let not_camelcase: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
         g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-            && g.name.as_deref().is_some_and(|n| !n.starts_with(char::is_uppercase))
+            && g.name.as_deref().is_some_and(|n| n.starts_with(char::is_lowercase))
     }).collect();
 
     for group in &not_camelcase {
@@ -1359,15 +1359,15 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
 
     let non_english = check_name_issues(
         &hub, &all_contacts, |name| !is_english_name(name),
-        fix, dry_run, prefix, hdr("Non-English names (check-name-english)"), stats,
+        fix, dry_run, prefix, hdr("Non-English names (check-contact-name-english)"), stats,
     ).await?;
-    results.push(("check-name-english", non_english));
+    results.push(("check-contact-name-english", non_english));
 
     let all_caps = check_name_issues(
         &hub, &all_contacts, |name| is_all_caps(name),
-        fix, dry_run, prefix, hdr("All-caps names (check-name-caps)"), stats,
+        fix, dry_run, prefix, hdr("All-caps names (check-contact-name-caps)"), stats,
     ).await?;
-    results.push(("check-name-caps", all_caps));
+    results.push(("check-contact-name-caps", all_caps));
 
     let country_owned = country.to_string();
     let no_country = check_phone_issues(
@@ -1389,12 +1389,12 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
 
     let first_cap = check_name_issues(
         &hub, &all_contacts, |name| !starts_with_capital(name),
-        fix, dry_run, prefix, hdr("Names not starting with capital letter (check-name-first-capital-letter)"), stats,
+        fix, dry_run, prefix, hdr("Names not starting with capital letter (check-contact-name-first-capital-letter)"), stats,
     ).await?;
-    results.push(("check-name-first-capital-letter", first_cap));
+    results.push(("check-contact-name-first-capital-letter", first_cap));
 
-    let name_order = check_name_order(&hub, &all_contacts, fix, dry_run, prefix, hdr("Reversed name order (check-name-order)"), stats).await?;
-    results.push(("check-name-order", name_order));
+    let name_order = check_name_order(&hub, &all_contacts, fix, dry_run, prefix, hdr("Reversed name order (check-contact-name-order)"), stats).await?;
+    results.push(("check-contact-name-order", name_order));
 
     // For check-contact-no-label with fix, we need contact groups for label autocomplete
     let (user_groups_owned, label_names) = if fix {
@@ -1423,16 +1423,16 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
     let phone_label_eng = check_phone_label_english(&hub, &all_contacts, fix, dry_run, prefix, hdr("Non-English phone labels (check-phone-label-english)"), stats).await?;
     results.push(("check-phone-label-english", phone_label_eng));
 
-    results.push(("check-email", check_invalid_emails(&all_contacts, prefix, hdr("Invalid emails (check-email)"), stats)));
+    results.push(("check-contact-email", check_invalid_emails(&all_contacts, prefix, hdr("Invalid emails (check-contact-email)"), stats)));
 
-    let email_caps = check_email_caps(&hub, &all_contacts, fix, dry_run, prefix, hdr("Emails with uppercase (check-email-caps)"), stats).await?;
-    results.push(("check-email-caps", email_caps));
+    let email_caps = check_email_caps(&hub, &all_contacts, fix, dry_run, prefix, hdr("Emails with uppercase (check-contact-email-caps)"), stats).await?;
+    results.push(("check-contact-email-caps", email_caps));
 
-    let dup_phones = check_duplicate_phones(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate phone numbers (check-duplicate-phones)"), stats).await?;
-    results.push(("check-duplicate-phones", dup_phones));
+    let dup_phones = check_duplicate_phones(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate phone numbers (check-phone-duplicate)"), stats).await?;
+    results.push(("check-phone-duplicate", dup_phones));
 
-    let dup_emails = check_duplicate_emails(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate email addresses (check-duplicate-emails)"), stats).await?;
-    results.push(("check-duplicate-emails", dup_emails));
+    let dup_emails = check_duplicate_emails(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate email addresses (check-contact-email-duplicate)"), stats).await?;
+    results.push(("check-contact-email-duplicate", dup_emails));
 
     // Check for empty labels (contact groups) — separate API call
     let all_groups = fetch_all_contact_groups(&hub).await?;
@@ -1442,7 +1442,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
             && g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
     }).collect();
     if !stats && !empty.is_empty() {
-        println!("=== Empty labels (check-labels-nophone) ({}) ===", empty.len());
+        println!("=== Empty labels (check-contact-label-nophone) ({}) ===", empty.len());
         for group in &empty {
             let name = group.name.as_deref().unwrap_or("<unnamed>");
             println!("  {}", name);
@@ -1463,7 +1463,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
         }
         println!();
     }
-    results.push(("check-labels-nophone", empty.len()));
+    results.push(("check-contact-label-nophone", empty.len()));
 
     let with_space: Vec<_> = all_groups.iter().filter(|g| {
         g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
@@ -1502,10 +1502,10 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
 
     let not_camelcase: Vec<_> = all_groups.iter().filter(|g| {
         g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-            && g.name.as_deref().is_some_and(|n| !n.starts_with(char::is_uppercase))
+            && g.name.as_deref().is_some_and(|n| n.starts_with(char::is_lowercase))
     }).collect();
     if !stats && !not_camelcase.is_empty() {
-        println!("=== Labels not camelCase (check-labels-camelcase) ({}) ===", not_camelcase.len());
+        println!("=== Labels not camelCase (check-contact-label-camelcase) ({}) ===", not_camelcase.len());
         for group in &not_camelcase {
             let name = group.name.as_deref().unwrap_or("<unnamed>");
             let camel = capitalize_first(name);
@@ -1532,7 +1532,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
         }
         println!();
     }
-    results.push(("check-labels-camelcase", not_camelcase.len()));
+    results.push(("check-contact-label-camelcase", not_camelcase.len()));
 
     if stats {
         let total: usize = results.iter().map(|(_, c)| c).sum();

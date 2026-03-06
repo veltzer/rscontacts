@@ -35,7 +35,7 @@ enum Commands {
         starred: bool,
     },
     /// Print contacts with non-English names
-    CheckNameEnglish {
+    CheckContactNameEnglish {
         /// Interactively fix each non-English contact (rename/delete/skip)
         #[arg(long)]
         fix: bool,
@@ -44,7 +44,7 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contacts with all-caps names
-    CheckNameCaps {
+    CheckContactNameCaps {
         /// Interactively fix each all-caps contact (rename/delete/skip)
         #[arg(long)]
         fix: bool,
@@ -53,7 +53,7 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contacts whose name doesn't start with a capital letter
-    CheckNameFirstCapitalLetter {
+    CheckContactNameFirstCapitalLetter {
         /// Interactively fix each contact (rename/delete/skip)
         #[arg(long)]
         fix: bool,
@@ -62,7 +62,7 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contacts with reversed name order (e.g. "Family, Given")
-    CheckNameOrder {
+    CheckContactNameOrder {
         /// Interactively fix each contact (rename/delete/skip)
         #[arg(long)]
         fix: bool,
@@ -137,9 +137,9 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contacts with invalid-looking email addresses
-    CheckEmail,
+    CheckContactEmail,
     /// Print contacts with uppercase letters in email addresses
-    CheckEmailCaps {
+    CheckContactEmailCaps {
         /// Automatically lowercase emails
         #[arg(long)]
         fix: bool,
@@ -148,7 +148,7 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contacts that have the same email address attached twice
-    CheckDuplicateEmails {
+    CheckContactEmailDuplicate {
         /// Interactively remove duplicate email addresses
         #[arg(long)]
         fix: bool,
@@ -157,7 +157,7 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contacts that have the same phone number attached twice
-    CheckDuplicatePhones {
+    CheckPhoneDuplicate {
         /// Interactively remove duplicate phone numbers
         #[arg(long)]
         fix: bool,
@@ -166,7 +166,7 @@ enum Commands {
         dry_run: bool,
     },
     /// Print labels (contact groups) that have no contacts
-    CheckLabelsNophone {
+    CheckContactLabelNophone {
         /// Delete empty labels
         #[arg(long)]
         fix: bool,
@@ -184,7 +184,7 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contact labels (groups) that are not all lowercase (camelCase or uppercase)
-    CheckLabelsCamelcase {
+    CheckContactLabelCamelcase {
         /// Rename labels to lowercase
         #[arg(long)]
         fix: bool,
@@ -233,22 +233,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Auth { no_browser, force } => commands::cmd_auth(no_browser, force).await?,
         Commands::List { emails, labels, starred } => commands::cmd_list(emails, labels, starred).await?,
-        Commands::CheckNameEnglish { fix, dry_run } => commands::cmd_check_english(fix, dry_run).await?,
-        Commands::CheckNameCaps { fix, dry_run } => commands::cmd_check_caps(fix, dry_run).await?,
-        Commands::CheckNameFirstCapitalLetter { fix, dry_run } => commands::cmd_check_first_capital_letter(fix, dry_run).await?,
-        Commands::CheckNameOrder { fix, dry_run } => commands::cmd_check_name_order(fix, dry_run).await?,
+        Commands::CheckContactNameEnglish { fix, dry_run } => commands::cmd_check_contact_name_english(fix, dry_run).await?,
+        Commands::CheckContactNameCaps { fix, dry_run } => commands::cmd_check_contact_name_caps(fix, dry_run).await?,
+        Commands::CheckContactNameFirstCapitalLetter { fix, dry_run } => commands::cmd_check_contact_name_first_capital_letter(fix, dry_run).await?,
+        Commands::CheckContactNameOrder { fix, dry_run } => commands::cmd_check_contact_name_order(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
         Commands::CheckPhoneNoLabel { fix, dry_run } => commands::cmd_check_phone_no_label(fix, dry_run).await?,
         Commands::CheckPhoneLabelEnglish { fix, dry_run } => commands::cmd_check_phone_label_english(fix, dry_run).await?,
-        Commands::CheckEmail => commands::cmd_check_email().await?,
-        Commands::CheckEmailCaps { fix, dry_run } => commands::cmd_check_email_caps(fix, dry_run).await?,
-        Commands::CheckDuplicateEmails { fix, dry_run } => commands::cmd_check_duplicate_emails(fix, dry_run).await?,
-        Commands::CheckDuplicatePhones { fix, dry_run } => commands::cmd_check_duplicate_phones(fix, dry_run).await?,
-        Commands::CheckLabelsNophone { fix, dry_run } => commands::cmd_check_labels_nophone(fix, dry_run).await?,
+        Commands::CheckContactEmail => commands::cmd_check_contact_email().await?,
+        Commands::CheckContactEmailCaps { fix, dry_run } => commands::cmd_check_contact_email_caps(fix, dry_run).await?,
+        Commands::CheckContactEmailDuplicate { fix, dry_run } => commands::cmd_check_contact_email_duplicate(fix, dry_run).await?,
+        Commands::CheckPhoneDuplicate { fix, dry_run } => commands::cmd_check_phone_duplicate(fix, dry_run).await?,
+        Commands::CheckContactLabelNophone { fix, dry_run } => commands::cmd_check_contact_label_nophone(fix, dry_run).await?,
         Commands::CheckContactLabelSpace { fix, dry_run } => commands::cmd_check_contact_label_space(fix, dry_run).await?,
-        Commands::CheckLabelsCamelcase { fix, dry_run } => commands::cmd_check_labels_camelcase(fix, dry_run).await?,
+        Commands::CheckContactLabelCamelcase { fix, dry_run } => commands::cmd_check_contact_label_camelcase(fix, dry_run).await?,
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
         Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,
@@ -314,38 +314,38 @@ mod tests {
 
     #[test]
     fn test_cli_check_name_english_subcommand() {
-        let cli = Cli::parse_from(["rscontacts", "check-name-english"]);
-        assert!(matches!(cli.command, Commands::CheckNameEnglish { fix: false, dry_run: false }));
+        let cli = Cli::parse_from(["rscontacts", "check-contact-name-english"]);
+        assert!(matches!(cli.command, Commands::CheckContactNameEnglish { fix: false, dry_run: false }));
     }
 
     #[test]
     fn test_cli_check_name_english_fix() {
-        let cli = Cli::parse_from(["rscontacts", "check-name-english", "--fix"]);
-        assert!(matches!(cli.command, Commands::CheckNameEnglish { fix: true, dry_run: false }));
+        let cli = Cli::parse_from(["rscontacts", "check-contact-name-english", "--fix"]);
+        assert!(matches!(cli.command, Commands::CheckContactNameEnglish { fix: true, dry_run: false }));
     }
 
     #[test]
     fn test_cli_check_name_english_dry_run() {
-        let cli = Cli::parse_from(["rscontacts", "check-name-english", "--fix", "--dry-run"]);
-        assert!(matches!(cli.command, Commands::CheckNameEnglish { fix: true, dry_run: true }));
+        let cli = Cli::parse_from(["rscontacts", "check-contact-name-english", "--fix", "--dry-run"]);
+        assert!(matches!(cli.command, Commands::CheckContactNameEnglish { fix: true, dry_run: true }));
     }
 
     #[test]
     fn test_cli_check_name_caps_subcommand() {
-        let cli = Cli::parse_from(["rscontacts", "check-name-caps"]);
-        assert!(matches!(cli.command, Commands::CheckNameCaps { fix: false, dry_run: false }));
+        let cli = Cli::parse_from(["rscontacts", "check-contact-name-caps"]);
+        assert!(matches!(cli.command, Commands::CheckContactNameCaps { fix: false, dry_run: false }));
     }
 
     #[test]
     fn test_cli_check_name_caps_fix() {
-        let cli = Cli::parse_from(["rscontacts", "check-name-caps", "--fix"]);
-        assert!(matches!(cli.command, Commands::CheckNameCaps { fix: true, dry_run: false }));
+        let cli = Cli::parse_from(["rscontacts", "check-contact-name-caps", "--fix"]);
+        assert!(matches!(cli.command, Commands::CheckContactNameCaps { fix: true, dry_run: false }));
     }
 
     #[test]
     fn test_cli_check_name_caps_dry_run() {
-        let cli = Cli::parse_from(["rscontacts", "check-name-caps", "--fix", "--dry-run"]);
-        assert!(matches!(cli.command, Commands::CheckNameCaps { fix: true, dry_run: true }));
+        let cli = Cli::parse_from(["rscontacts", "check-contact-name-caps", "--fix", "--dry-run"]);
+        assert!(matches!(cli.command, Commands::CheckContactNameCaps { fix: true, dry_run: true }));
     }
 
     #[test]
