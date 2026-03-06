@@ -808,16 +808,10 @@ pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), 
     let (user_groups_owned, label_names) = if fix {
         let all_groups = fetch_all_contact_groups(&hub).await?;
         let ug: Vec<(String, String)> = all_groups.iter()
-            .filter(|g| {
-                let gt = g.group_type.as_deref();
-                gt == Some("USER_CONTACT_GROUP") || gt == Some("SYSTEM_CONTACT_GROUP")
-            })
+            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
             .filter_map(|g| {
                 let name = g.name.as_deref()?;
                 let rn = g.resource_name.as_deref()?;
-                if rn == "contactGroups/myContacts" || rn == "contactGroups/starred" {
-                    return None;
-                }
                 Some((name.to_string(), rn.to_string()))
             })
             .collect();
@@ -1197,6 +1191,43 @@ pub async fn cmd_check_contact_label_space(fix: bool, dry_run: bool) -> Result<(
     Ok(())
 }
 
+pub async fn cmd_check_labels_camelcase(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+
+    let not_lowercase: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
+        g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+            && g.name.as_deref().is_some_and(|n| n != n.to_lowercase())
+    }).collect();
+
+    for group in &not_lowercase {
+        let name = group.name.as_deref().unwrap_or("<unnamed>");
+        let lower = name.to_lowercase();
+        if fix || dry_run {
+            println!("{} -> {}", name, lower);
+        } else {
+            println!("{}", name);
+        }
+
+        if fix && !dry_run {
+            let resource_name = group.resource_name.as_deref()
+                .ok_or("Contact group missing resource name")?;
+            let mut updated_group = (*group).clone();
+            updated_group.name = Some(lower.clone());
+            let req = google_people1::api::UpdateContactGroupRequest {
+                contact_group: Some(updated_group),
+                read_group_fields: None,
+                update_group_fields: None,
+            };
+            hub.contact_groups().update(req, resource_name).doit().await?;
+            eprintln!("  Renamed \"{}\" -> \"{}\"", name, lower);
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn cmd_show_phone_labels() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["phoneNumbers"]).await?;
@@ -1369,16 +1400,10 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
     let (user_groups_owned, label_names) = if fix {
         let all_groups_for_labels = fetch_all_contact_groups(&hub).await?;
         let ug: Vec<(String, String)> = all_groups_for_labels.iter()
-            .filter(|g| {
-                let gt = g.group_type.as_deref();
-                gt == Some("USER_CONTACT_GROUP") || gt == Some("SYSTEM_CONTACT_GROUP")
-            })
+            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
             .filter_map(|g| {
                 let name = g.name.as_deref()?;
                 let rn = g.resource_name.as_deref()?;
-                if rn == "contactGroups/myContacts" || rn == "contactGroups/starred" {
-                    return None;
-                }
                 Some((name.to_string(), rn.to_string()))
             })
             .collect();
@@ -1474,6 +1499,40 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
         println!();
     }
     results.push(("check-contact-label-space", with_space.len()));
+
+    let not_lowercase: Vec<_> = all_groups.iter().filter(|g| {
+        g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+            && g.name.as_deref().is_some_and(|n| n != n.to_lowercase())
+    }).collect();
+    if !stats && !not_lowercase.is_empty() {
+        println!("=== Labels not lowercase (check-labels-camelcase) ({}) ===", not_lowercase.len());
+        for group in &not_lowercase {
+            let name = group.name.as_deref().unwrap_or("<unnamed>");
+            let lower = name.to_lowercase();
+            if fix || dry_run {
+                println!("  {} -> {}", name, lower);
+            } else {
+                println!("  {}", name);
+            }
+
+            if fix && !dry_run {
+                let resource_name = group.resource_name.as_deref()
+                    .ok_or("Contact group missing resource name")?;
+                let mut updated_group = (*group).clone();
+                updated_group.name = Some(lower.clone());
+                let req = google_people1::api::UpdateContactGroupRequest {
+                    contact_group: Some(updated_group),
+                    read_group_fields: None,
+                    update_group_fields: None,
+                };
+                hub.contact_groups().update(req, resource_name).doit().await?;
+                eprintln!("  Renamed \"{}\" -> \"{}\"", name, lower);
+                tokio::time::sleep(MUTATE_DELAY).await;
+            }
+        }
+        println!();
+    }
+    results.push(("check-labels-camelcase", not_lowercase.len()));
 
     if stats {
         let total: usize = results.iter().map(|(_, c)| c).sum();

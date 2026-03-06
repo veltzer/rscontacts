@@ -183,6 +183,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Print contact labels (groups) that are not all lowercase (camelCase or uppercase)
+    CheckLabelsCamelcase {
+        /// Rename labels to lowercase
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Review all phones with a specific label (e.g. "Work Fax")
     ReviewPhoneLabel {
         /// The phone label to review (case-insensitive)
@@ -239,6 +248,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckDuplicatePhones { fix, dry_run } => commands::cmd_check_duplicate_phones(fix, dry_run).await?,
         Commands::CheckLabelsNophone { fix, dry_run } => commands::cmd_check_labels_nophone(fix, dry_run).await?,
         Commands::CheckContactLabelSpace { fix, dry_run } => commands::cmd_check_contact_label_space(fix, dry_run).await?,
+        Commands::CheckLabelsCamelcase { fix, dry_run } => commands::cmd_check_labels_camelcase(fix, dry_run).await?,
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
         Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,

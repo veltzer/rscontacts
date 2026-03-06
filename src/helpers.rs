@@ -546,12 +546,26 @@ pub fn is_starred(person: &google_people1::api::Person) -> bool {
     })
 }
 
+/// System contact groups that should be ignored when checking if a contact has a label.
+/// All system groups except myContacts and starred are deprecated by Google and cannot
+/// have new members added. They should not count as real labels.
+pub const IGNORED_SYSTEM_GROUPS: &[&str] = &[
+    "contactGroups/myContacts",
+    "contactGroups/starred",
+    "contactGroups/family",
+    "contactGroups/friends",
+    "contactGroups/coworkers",
+    "contactGroups/chatBuddies",
+    "contactGroups/all",
+    "contactGroups/blocked",
+];
+
 pub fn has_user_label(person: &google_people1::api::Person) -> bool {
     person.memberships.as_ref().is_some_and(|memberships| {
         memberships.iter().any(|m| {
             m.contact_group_membership.as_ref().is_some_and(|cgm| {
                 let rn = cgm.contact_group_resource_name.as_deref().unwrap_or("");
-                !rn.is_empty() && rn != "contactGroups/myContacts" && rn != "contactGroups/starred"
+                !rn.is_empty() && !IGNORED_SYSTEM_GROUPS.contains(&rn)
             })
         })
     })
