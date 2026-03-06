@@ -61,6 +61,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Print contacts whose first name is numeric (e.g. "2" instead of a real name)
+    CheckContactNameFirstnameNumeric {
+        /// Fix by swapping last name into first name
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print contacts whose first name contains a space
     CheckContactNameFirstnameSpace {
         /// Interactively fix each contact (rename/delete/skip)
@@ -283,6 +292,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactNameEnglish { fix, dry_run } => commands::cmd_check_contact_name_english(fix, dry_run).await?,
         Commands::CheckContactNameCaps { fix, dry_run } => commands::cmd_check_contact_name_caps(fix, dry_run).await?,
         Commands::CheckContactNameFirstCapitalLetter { fix, dry_run } => commands::cmd_check_contact_name_first_capital_letter(fix, dry_run).await?,
+        Commands::CheckContactNameFirstnameNumeric { fix, dry_run } => commands::cmd_check_contact_name_firstname_numeric(fix, dry_run).await?,
         Commands::CheckContactNameFirstnameSpace { fix, dry_run } => commands::cmd_check_contact_name_firstname_space(fix, dry_run).await?,
         Commands::CheckContactNameOrder { fix, dry_run } => commands::cmd_check_contact_name_order(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,

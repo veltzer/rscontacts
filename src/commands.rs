@@ -230,6 +230,86 @@ pub async fn cmd_check_contact_name_first_capital_letter(fix: bool, dry_run: boo
     Ok(())
 }
 
+pub async fn cmd_check_contact_name_firstname_numeric(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names"]).await?;
+    check_name_firstname_numeric(&hub, &contacts, fix, dry_run, "", None, false).await?;
+    Ok(())
+}
+
+async fn check_name_firstname_numeric(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+    quiet: bool,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+    for person in contacts {
+        let name_entry = match person.names.as_ref().and_then(|n| n.first()) {
+            Some(n) => n,
+            None => continue,
+        };
+        let given = name_entry.given_name.as_deref().unwrap_or("");
+        if !is_numeric_string(given) {
+            continue;
+        }
+
+        let family = name_entry.family_name.as_deref().unwrap_or("");
+        let display = person_display_name(person);
+
+        if !quiet {
+            if count == 0 {
+                if let Some(header) = header {
+                    println!("=== {} ===", header);
+                }
+            }
+            if !family.is_empty() {
+                if fix || dry_run {
+                    println!("{}{} -> given: \"{}\", suffix: \"{}\"", prefix, display, family, given);
+                } else {
+                    println!("{}{} (given: \"{}\", family: \"{}\")", prefix, display, given, family);
+                }
+            } else {
+                println!("{}{} (given: \"{}\")", prefix, display, given);
+            }
+
+            if fix && !dry_run {
+                if !family.is_empty() {
+                    // Move family to given, move numeric given to suffix
+                    let resource_name = person
+                        .resource_name
+                        .as_deref()
+                        .ok_or("Contact missing resource name")?;
+                    let mut updated = person.clone();
+                    if let Some(ref mut names) = updated.names {
+                        if let Some(first) = names.first_mut() {
+                            first.given_name = Some(family.to_string());
+                            first.family_name = None;
+                            first.honorific_suffix = Some(given.to_string());
+                            first.unstructured_name = Some(format!("{} {}", family, given));
+                        }
+                    }
+                    hub.people()
+                        .update_contact(updated, resource_name)
+                        .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                        .doit()
+                        .await?;
+                    eprintln!("{}  Fixed: given=\"{}\", suffix=\"{}\"", prefix, family, given);
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                } else {
+                    eprintln!("{}  No family name to swap — skipped.", prefix);
+                }
+            }
+        }
+        count += 1;
+    }
+    if !quiet && count > 0 && header.is_some() { println!(); }
+    Ok(count)
+}
+
 pub async fn cmd_check_contact_name_firstname_space(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "organizations"]).await?;
@@ -1955,6 +2035,10 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         fix, dry_run, prefix, hdr("Names not starting with capital letter (check-contact-name-first-capital-letter)"), stats,
     ).await?;
     results.push(("check-contact-name-first-capital-letter", first_cap));
+
+    log("check-contact-name-firstname-numeric");
+    let firstname_numeric = check_name_firstname_numeric(&hub, &all_contacts, fix, dry_run, prefix, hdr("Numeric first name (check-contact-name-firstname-numeric)"), stats).await?;
+    results.push(("check-contact-name-firstname-numeric", firstname_numeric));
 
     log("check-contact-name-firstname-space");
     let firstname_space = check_name_firstname_space(&hub, &all_contacts, fix, dry_run, prefix, hdr("First name contains space (check-contact-name-firstname-space)"), stats).await?;
