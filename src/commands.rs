@@ -1298,11 +1298,15 @@ pub async fn cmd_show_contact_labels() -> Result<(), Box<dyn std::error::Error>>
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
     for group in &all_groups {
-        if group.group_type.as_deref() == Some("USER_CONTACT_GROUP") {
-            let name = group.name.as_deref().unwrap_or("<unnamed>");
-            let count = group.member_count.unwrap_or(0);
-            println!("{} ({})", name, count);
-        }
+        let name = group.name.as_deref().unwrap_or("<unnamed>");
+        let count = group.member_count.unwrap_or(0);
+        let kind = match group.group_type.as_deref() {
+            Some("USER_CONTACT_GROUP") => "user",
+            Some("SYSTEM_CONTACT_GROUP") => "system",
+            Some(other) => other,
+            None => "unknown",
+        };
+        println!("{} ({}) [{}]", name, count, kind);
     }
     Ok(())
 }

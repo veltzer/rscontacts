@@ -46,12 +46,24 @@ fn main() {
         describe
     };
 
+    let build_timestamp = {
+        let output = Command::new("date")
+            .arg("+%Y-%m-%d %H:%M:%S")
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+            .unwrap_or_else(|| "unknown".to_owned());
+        output
+    };
+
     println!("cargo:rustc-env=RUST_EDITION={edition}");
     println!("cargo:rustc-env=GIT_SHA={sha}");
     println!("cargo:rustc-env=GIT_BRANCH={branch}");
     println!("cargo:rustc-env=GIT_DIRTY={dirty_str}");
     println!("cargo:rustc-env=RUSTC_SEMVER={rustc_ver}");
     println!("cargo:rustc-env=GIT_DESCRIBE={describe}");
+    println!("cargo:rustc-env=BUILD_TIMESTAMP={build_timestamp}");
 
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=.git/HEAD");

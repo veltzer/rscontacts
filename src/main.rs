@@ -252,6 +252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("GIT_DIRTY: {}", env!("GIT_DIRTY"));
             println!("RUSTC_SEMVER: {}", env!("RUSTC_SEMVER"));
             println!("RUST_EDITION: {}", env!("RUST_EDITION"));
+            println!("BUILD_TIMESTAMP: {}", env!("BUILD_TIMESTAMP"));
         }
         Commands::Complete { shell } => {
             clap_complete::generate(shell, &mut Cli::command(), "rscontacts", &mut std::io::stdout());
