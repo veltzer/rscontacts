@@ -477,24 +477,12 @@ async fn check_samename_suffix(
                 println!("{}  - {}", prefix, problem);
             }
 
-            if (fix || dry_run) && group.len() >= 2 {
-                // Only fix contacts that are missing a suffix.
-                // Assign them the lowest available number(s) starting from 1.
-                let existing_nums: std::collections::HashSet<u32> = group.iter()
-                    .filter_map(|(_, s)| *s)
-                    .collect();
-
-                let mut available = (1u32..).filter(|n| !existing_nums.contains(n));
-
-                let to_fix: Vec<_> = group.iter()
-                    .filter(|(_, s)| s.is_none())
-                    .collect();
-
-                for (person, _) in &to_fix {
-                    let num = available.next().unwrap();
+            if fix || dry_run {
+                if group.len() == 1 {
+                    // Lone contact with a suffix — remove it
+                    let (person, _) = &group[0];
                     let old_display = person_display_name(person);
-                    let new_display = format!("{} {}", base, num);
-                    println!("{}  {} -> {}", prefix, old_display, new_display);
+                    println!("{}  {} -> {}", prefix, old_display, base);
 
                     if fix && !dry_run {
                         let resource_name = person
@@ -504,9 +492,9 @@ async fn check_samename_suffix(
                         let mut updated = (*person).clone();
                         if let Some(ref mut names) = updated.names {
                             if let Some(first) = names.first_mut() {
-                                first.honorific_suffix = Some(format!("{}", num));
+                                first.honorific_suffix = None;
                                 first.family_name = None;
-                                first.unstructured_name = Some(new_display);
+                                first.unstructured_name = Some(base.clone());
                             }
                         }
                         hub.people()
@@ -516,6 +504,46 @@ async fn check_samename_suffix(
                             .await?;
                         eprintln!("{}  Updated.", prefix);
                         tokio::time::sleep(MUTATE_DELAY).await;
+                    }
+                } else {
+                    // Multiple contacts — renumber sequentially.
+                    // First fix contacts missing a suffix (assign lowest available),
+                    // then renumber all to be sequential 1..N.
+
+                    // Sort group by existing suffix (None first, then by number)
+                    let mut sorted_group = group.clone();
+                    sorted_group.sort_by_key(|(_, s)| s.unwrap_or(0));
+
+                    for (i, (person, old_suffix)) in sorted_group.iter().enumerate() {
+                        let new_num = (i + 1) as u32;
+                        if *old_suffix == Some(new_num) {
+                            continue; // Already correct
+                        }
+                        let old_display = person_display_name(person);
+                        let new_display = format!("{} {}", base, new_num);
+                        println!("{}  {} -> {}", prefix, old_display, new_display);
+
+                        if fix && !dry_run {
+                            let resource_name = person
+                                .resource_name
+                                .as_deref()
+                                .ok_or("Contact missing resource name")?;
+                            let mut updated = (*person).clone();
+                            if let Some(ref mut names) = updated.names {
+                                if let Some(first) = names.first_mut() {
+                                    first.honorific_suffix = Some(format!("{}", new_num));
+                                    first.family_name = None;
+                                    first.unstructured_name = Some(new_display);
+                                }
+                            }
+                            hub.people()
+                                .update_contact(updated, resource_name)
+                                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                                .doit()
+                                .await?;
+                            eprintln!("{}  Updated.", prefix);
+                            tokio::time::sleep(MUTATE_DELAY).await;
+                        }
                     }
                 }
             }
