@@ -555,8 +555,18 @@ pub fn is_starred(person: &google_people1::api::Person) -> bool {
 }
 
 /// System contact groups that should be ignored when checking if a contact has a label.
-/// All system groups except myContacts and starred are deprecated by Google and cannot
-/// have new members added. They should not count as real labels.
+///
+/// Google Contacts has two kinds of system contact groups:
+/// - **Active:** `myContacts` (all contacts) and `starred` (starred contacts). These are
+///   managed automatically and don't represent user-assigned labels.
+/// - **Deprecated:** `family`, `friends`, `coworkers`, `chatBuddies`, `all`, `blocked`.
+///   These were predefined by Google but are now deprecated in the People API. You can
+///   remove contacts from them but **cannot add** new contacts to them (the API returns
+///   400 Bad Request: "Cannot add contacts to deprecated system contact group"). They
+///   still appear in the web UI but are not functional for labeling purposes. Users should
+///   create their own user contact groups (e.g. "Family") instead.
+///
+/// None of these system groups count as real user-assigned labels.
 pub const IGNORED_SYSTEM_GROUPS: &[&str] = &[
     "contactGroups/myContacts",
     "contactGroups/starred",
