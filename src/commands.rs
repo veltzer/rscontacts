@@ -478,17 +478,22 @@ async fn check_samename_suffix(
             }
 
             if (fix || dry_run) && group.len() >= 2 {
-                // Show planned renumbering: assign suffixes 1..N in current order
-                println!("{}  fix:", prefix);
-                for (i, (person, _)) in group.iter().enumerate() {
-                    let old_display = person_display_name(person);
-                    let new_display = format!("{} {}", base, i + 1);
-                    println!("{}    {} -> {}", prefix, old_display, new_display);
-                }
+                // Only fix contacts that are missing a suffix.
+                // Assign them the next available number(s).
+                let existing_nums: Vec<u32> = group.iter().filter_map(|(_, s)| *s).collect();
+                let max_existing = existing_nums.iter().copied().max().unwrap_or(0);
+                let mut next_num = max_existing + 1;
 
-                if fix && !dry_run {
-                    for (i, (person, _)) in group.iter().enumerate() {
-                        let new_suffix = format!("{}", i + 1);
+                let to_fix: Vec<_> = group.iter()
+                    .filter(|(_, s)| s.is_none())
+                    .collect();
+
+                for (person, _) in &to_fix {
+                    let old_display = person_display_name(person);
+                    let new_display = format!("{} {}", base, next_num);
+                    println!("{}  {} -> {}", prefix, old_display, new_display);
+
+                    if fix && !dry_run {
                         let resource_name = person
                             .resource_name
                             .as_deref()
@@ -496,9 +501,9 @@ async fn check_samename_suffix(
                         let mut updated = (*person).clone();
                         if let Some(ref mut names) = updated.names {
                             if let Some(first) = names.first_mut() {
-                                first.honorific_suffix = Some(new_suffix.clone());
+                                first.honorific_suffix = Some(format!("{}", next_num));
                                 first.family_name = None;
-                                first.unstructured_name = Some(format!("{} {}", base, new_suffix));
+                                first.unstructured_name = Some(new_display);
                             }
                         }
                         hub.people()
@@ -506,9 +511,10 @@ async fn check_samename_suffix(
                             .update_person_fields(FieldMask::new::<&str>(&["names"]))
                             .doit()
                             .await?;
+                        eprintln!("{}  Updated.", prefix);
                         tokio::time::sleep(MUTATE_DELAY).await;
                     }
-                    eprintln!("{}  Updated {} contacts.", prefix, group.len());
+                    next_num += 1;
                 }
             }
         }
