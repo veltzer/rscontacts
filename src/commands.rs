@@ -304,6 +304,86 @@ pub async fn cmd_check_contact_name_order(fix: bool, dry_run: bool) -> Result<()
     Ok(())
 }
 
+pub async fn cmd_check_contact_name_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers"]).await?;
+    check_name_duplicate(&hub, &contacts, fix, dry_run, "", None, false).await?;
+    Ok(())
+}
+
+async fn check_name_duplicate(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+    quiet: bool,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut name_groups: std::collections::HashMap<String, Vec<&google_people1::api::Person>> =
+        std::collections::HashMap::new();
+    for person in contacts {
+        let name = person_name(person);
+        if !name.is_empty() {
+            name_groups.entry(name.to_string()).or_default().push(person);
+        }
+    }
+
+    let mut duplicates: Vec<(&str, &[&google_people1::api::Person])> = name_groups
+        .iter()
+        .filter(|(_, group)| group.len() > 1)
+        .map(|(name, group)| (name.as_str(), group.as_slice()))
+        .collect();
+    duplicates.sort_by_key(|(name, _)| *name);
+
+    let count: usize = duplicates.iter().map(|(_, group)| group.len()).sum();
+
+    if !quiet && !duplicates.is_empty() {
+        if let Some(header) = header {
+            println!("=== {} ({}) ===", header, count);
+        }
+
+        for (name, group) in &duplicates {
+            println!("{}\"{}\" ({} contacts):", prefix, name, group.len());
+            for person in *group {
+                let email = person_email(person);
+                let phone = person.phone_numbers.as_ref()
+                    .and_then(|nums| nums.first())
+                    .and_then(|p| p.value.as_deref())
+                    .unwrap_or("");
+                let mut info = vec![];
+                if !email.is_empty() { info.push(email.to_string()); }
+                if !phone.is_empty() { info.push(phone.to_string()); }
+                if info.is_empty() {
+                    println!("{}  - {}", prefix, name);
+                } else {
+                    println!("{}  - {} ({})", prefix, name, info.join(", "));
+                }
+            }
+
+            if fix && !dry_run {
+                // Ask to rename all but the first
+                for person in &group[1..] {
+                    let display = person_display_name(person);
+                    let email = person_email(person);
+                    if !email.is_empty() {
+                        eprintln!("{}  Fix duplicate: {} ({})", prefix, display, email);
+                    } else {
+                        eprintln!("{}  Fix duplicate: {}", prefix, display);
+                    }
+                    interactive_name_fix(hub, person, display).await?;
+                }
+            }
+        }
+
+        if header.is_some() {
+            println!();
+        }
+    }
+
+    Ok(count)
+}
+
 pub async fn cmd_check_phone_countrycode(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers"]).await?;
@@ -1228,6 +1308,68 @@ pub async fn cmd_check_contact_label_camelcase(fix: bool, dry_run: bool) -> Resu
     Ok(())
 }
 
+pub async fn cmd_remove_label_from_all_contacts(label: &str, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+
+    // Find the group by name (case-insensitive)
+    let lower = label.to_lowercase();
+    let group = all_groups.iter().find(|g| {
+        g.name.as_deref().is_some_and(|n| n.to_lowercase() == lower)
+    });
+    let group = match group {
+        Some(g) => g,
+        None => {
+            eprintln!("Label \"{}\" not found.", label);
+            return Ok(());
+        }
+    };
+    let group_rn = group.resource_name.as_deref()
+        .ok_or("Contact group missing resource name")?;
+    let group_name = group.name.as_deref().unwrap_or(label);
+
+    // Find all contacts that have this label
+    let contacts = fetch_all_contacts(&hub, &["names", "memberships"]).await?;
+    let members: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
+        p.memberships.as_ref().is_some_and(|ms| {
+            ms.iter().any(|m| {
+                m.contact_group_membership.as_ref().is_some_and(|cgm| {
+                    cgm.contact_group_resource_name.as_deref() == Some(group_rn)
+                })
+            })
+        })
+    }).collect();
+
+    if members.is_empty() {
+        println!("No contacts have the label \"{}\".", group_name);
+        return Ok(());
+    }
+
+    println!("Removing label \"{}\" from {} contacts:", group_name, members.len());
+    for person in &members {
+        let name = person_display_name(person);
+        println!("  {}", name);
+    }
+
+    if !dry_run {
+        // Remove in batches — the API accepts up to 1000 resource names per call
+        let resource_names: Vec<String> = members.iter()
+            .filter_map(|p| p.resource_name.as_ref().cloned())
+            .collect();
+        for chunk in resource_names.chunks(1000) {
+            let req = google_people1::api::ModifyContactGroupMembersRequest {
+                resource_names_to_add: None,
+                resource_names_to_remove: Some(chunk.to_vec()),
+            };
+            hub.contact_groups().members_modify(req, group_rn).doit().await?;
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        eprintln!("Done. Removed label \"{}\" from {} contacts.", group_name, members.len());
+    }
+
+    Ok(())
+}
+
 pub async fn cmd_show_phone_labels() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["phoneNumbers"]).await?;
@@ -1395,6 +1537,9 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
 
     let name_order = check_name_order(&hub, &all_contacts, fix, dry_run, prefix, hdr("Reversed name order (check-contact-name-order)"), stats).await?;
     results.push(("check-contact-name-order", name_order));
+
+    let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-name-duplicate)"), stats).await?;
+    results.push(("check-contact-name-duplicate", name_dup));
 
     // For check-contact-no-label with fix, we need contact groups for label autocomplete
     let (user_groups_owned, label_names) = if fix {

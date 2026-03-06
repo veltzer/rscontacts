@@ -70,6 +70,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Print contacts that share the same name
+    CheckContactNameDuplicate {
+        /// Interactively fix each duplicate (rename/delete/skip)
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Run all checks
     CheckAll {
         /// Fix all issues found
@@ -203,6 +212,14 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Remove a contact label (group) from all contacts that have it
+    RemoveLabelFromAllContacts {
+        /// The label name to remove (case-insensitive)
+        label: String,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Show all distinct phone labels in use
     ShowPhoneLabels,
     /// Show all contact labels (contact groups) in use
@@ -237,6 +254,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactNameCaps { fix, dry_run } => commands::cmd_check_contact_name_caps(fix, dry_run).await?,
         Commands::CheckContactNameFirstCapitalLetter { fix, dry_run } => commands::cmd_check_contact_name_first_capital_letter(fix, dry_run).await?,
         Commands::CheckContactNameOrder { fix, dry_run } => commands::cmd_check_contact_name_order(fix, dry_run).await?,
+        Commands::CheckContactNameDuplicate { fix, dry_run } => commands::cmd_check_contact_name_duplicate(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
@@ -250,6 +268,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactLabelSpace { fix, dry_run } => commands::cmd_check_contact_label_space(fix, dry_run).await?,
         Commands::CheckContactLabelCamelcase { fix, dry_run } => commands::cmd_check_contact_label_camelcase(fix, dry_run).await?,
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
+        Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
         Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,
         Commands::ShowContactLabels => commands::cmd_show_contact_labels().await?,
