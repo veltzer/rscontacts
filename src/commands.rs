@@ -384,6 +384,104 @@ async fn check_name_duplicate(
     Ok(count)
 }
 
+pub async fn cmd_check_contact_samename_suffix() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names"]).await?;
+    check_samename_suffix(&contacts, "", None, false);
+    Ok(())
+}
+
+fn check_samename_suffix(
+    contacts: &[google_people1::api::Person],
+    prefix: &str,
+    header: Option<&str>,
+    quiet: bool,
+) -> usize {
+    // Group contacts by base name (display name with numeric suffix stripped)
+    let mut base_groups: std::collections::HashMap<String, Vec<(&google_people1::api::Person, Option<u32>)>> =
+        std::collections::HashMap::new();
+    for person in contacts {
+        let name = person_name(person);
+        if name.is_empty() {
+            continue;
+        }
+        let (base, suffix) = split_name_suffix(name);
+        base_groups.entry(base.to_string()).or_default().push((person, suffix));
+    }
+
+    let mut count = 0;
+    let mut issues: Vec<(String, Vec<String>)> = Vec::new();
+
+    for (base, group) in &base_groups {
+        if group.len() < 2 {
+            // Only one contact with this base name — but if it has a suffix, that's odd
+            if group.len() == 1 && group[0].1.is_some() {
+                let display = person_display_name(group[0].0);
+                issues.push((base.clone(), vec![
+                    format!("{} has suffix but is the only contact with base name \"{}\"", display, base),
+                ]));
+                count += 1;
+            }
+            continue;
+        }
+
+        // Multiple contacts share the same base name — check suffixes
+        let mut problems = Vec::new();
+        let suffixes: Vec<Option<u32>> = group.iter().map(|(_, s)| *s).collect();
+
+        // Check: all must have a suffix
+        let missing: Vec<_> = group.iter()
+            .filter(|(_, s)| s.is_none())
+            .collect();
+        for (person, _) in &missing {
+            let display = person_display_name(person);
+            problems.push(format!("{} is missing a numeric suffix", display));
+            count += 1;
+        }
+
+        // Check: suffixes should be 1..=N
+        let mut nums: Vec<u32> = suffixes.iter().filter_map(|s| *s).collect();
+        nums.sort();
+        let expected: Vec<u32> = (1..=group.len() as u32).collect();
+        if !missing.is_empty() || nums != expected {
+            if missing.is_empty() {
+                // All have suffixes but they're not sequential
+                let actual: Vec<String> = nums.iter().map(|n| n.to_string()).collect();
+                let expected_str: Vec<String> = expected.iter().map(|n| n.to_string()).collect();
+                problems.push(format!(
+                    "suffixes are [{}], expected [{}]",
+                    actual.join(", "),
+                    expected_str.join(", "),
+                ));
+                count += 1;
+            }
+        }
+
+        if !problems.is_empty() {
+            issues.push((base.clone(), problems));
+        }
+    }
+
+    issues.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+    if !quiet && !issues.is_empty() {
+        if let Some(header) = header {
+            println!("=== {} ({}) ===", header, count);
+        }
+        for (base, problems) in &issues {
+            println!("{}\"{}\":", prefix, base);
+            for problem in problems {
+                println!("{}  - {}", prefix, problem);
+            }
+        }
+        if header.is_some() {
+            println!();
+        }
+    }
+
+    count
+}
+
 pub async fn cmd_check_phone_countrycode(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "phoneNumbers"]).await?;
@@ -1620,6 +1718,10 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     log("check-contact-displayname-duplicate");
     let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-displayname-duplicate)"), stats).await?;
     results.push(("check-contact-displayname-duplicate", name_dup));
+
+    log("check-contact-samename-suffix");
+    let samename_suffix = check_samename_suffix(&all_contacts, prefix, hdr("Same-name contacts with bad suffixes (check-contact-samename-suffix)"), stats);
+    results.push(("check-contact-samename-suffix", samename_suffix));
 
     // For check-contact-no-label with fix, we need contact groups for label autocomplete
     let (user_groups_owned, label_names) = if fix {

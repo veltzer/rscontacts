@@ -79,6 +79,8 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Check that same-name contacts are distinguished with sequential numeric suffixes (1, 2, ...)
+    CheckContactSamenameSuffix,
     /// Run all checks
     CheckAll {
         /// Fix all issues found
@@ -264,6 +266,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactNameFirstCapitalLetter { fix, dry_run } => commands::cmd_check_contact_name_first_capital_letter(fix, dry_run).await?,
         Commands::CheckContactNameOrder { fix, dry_run } => commands::cmd_check_contact_name_order(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,
+        Commands::CheckContactSamenameSuffix => commands::cmd_check_contact_samename_suffix().await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
@@ -626,6 +629,25 @@ mod tests {
         assert!(!is_valid_email("user@"));
         assert!(!is_valid_email("user@nodot"));
         assert!(!is_valid_email("user@domain.x"));
+    }
+
+    #[test]
+    fn test_is_numeric_string() {
+        assert!(is_numeric_string("1"));
+        assert!(is_numeric_string("123"));
+        assert!(!is_numeric_string(""));
+        assert!(!is_numeric_string("abc"));
+        assert!(!is_numeric_string("1a"));
+    }
+
+    #[test]
+    fn test_split_name_suffix() {
+        assert_eq!(split_name_suffix("Mike 1"), ("Mike", Some(1)));
+        assert_eq!(split_name_suffix("Mike 2"), ("Mike", Some(2)));
+        assert_eq!(split_name_suffix("Mike"), ("Mike", None));
+        assert_eq!(split_name_suffix("John Doe"), ("John Doe", None));
+        assert_eq!(split_name_suffix("Mike 10"), ("Mike", Some(10)));
+        assert_eq!(split_name_suffix("Jean-Pierre 3"), ("Jean-Pierre", Some(3)));
     }
 
     #[test]

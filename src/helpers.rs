@@ -533,6 +533,21 @@ pub fn is_numeric_string(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
 }
 
+/// Extract the "base name" from a display name by stripping a trailing numeric suffix.
+/// E.g., "Mike 1" -> "Mike", "Mike" -> "Mike", "Mike 2" -> "Mike".
+/// Returns (base_name, optional_suffix_number).
+pub fn split_name_suffix(display_name: &str) -> (&str, Option<u32>) {
+    if let Some(pos) = display_name.rfind(' ') {
+        let after = &display_name[pos + 1..];
+        if is_numeric_string(after) {
+            if let Ok(n) = after.parse::<u32>() {
+                return (display_name[..pos].trim_end(), Some(n));
+            }
+        }
+    }
+    (display_name, None)
+}
+
 pub fn has_reversed_name(person: &google_people1::api::Person) -> bool {
     person_name(person).contains(',')
 }
