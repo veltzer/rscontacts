@@ -479,18 +479,21 @@ async fn check_samename_suffix(
 
             if (fix || dry_run) && group.len() >= 2 {
                 // Only fix contacts that are missing a suffix.
-                // Assign them the next available number(s).
-                let existing_nums: Vec<u32> = group.iter().filter_map(|(_, s)| *s).collect();
-                let max_existing = existing_nums.iter().copied().max().unwrap_or(0);
-                let mut next_num = max_existing + 1;
+                // Assign them the lowest available number(s) starting from 1.
+                let existing_nums: std::collections::HashSet<u32> = group.iter()
+                    .filter_map(|(_, s)| *s)
+                    .collect();
+
+                let mut available = (1u32..).filter(|n| !existing_nums.contains(n));
 
                 let to_fix: Vec<_> = group.iter()
                     .filter(|(_, s)| s.is_none())
                     .collect();
 
                 for (person, _) in &to_fix {
+                    let num = available.next().unwrap();
                     let old_display = person_display_name(person);
-                    let new_display = format!("{} {}", base, next_num);
+                    let new_display = format!("{} {}", base, num);
                     println!("{}  {} -> {}", prefix, old_display, new_display);
 
                     if fix && !dry_run {
@@ -501,7 +504,7 @@ async fn check_samename_suffix(
                         let mut updated = (*person).clone();
                         if let Some(ref mut names) = updated.names {
                             if let Some(first) = names.first_mut() {
-                                first.honorific_suffix = Some(format!("{}", next_num));
+                                first.honorific_suffix = Some(format!("{}", num));
                                 first.family_name = None;
                                 first.unstructured_name = Some(new_display);
                             }
@@ -514,7 +517,6 @@ async fn check_samename_suffix(
                         eprintln!("{}  Updated.", prefix);
                         tokio::time::sleep(MUTATE_DELAY).await;
                     }
-                    next_num += 1;
                 }
             }
         }
