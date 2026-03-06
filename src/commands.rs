@@ -230,6 +230,55 @@ pub async fn cmd_check_contact_name_first_capital_letter(fix: bool, dry_run: boo
     Ok(())
 }
 
+pub async fn cmd_check_contact_name_firstname_space(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
+    check_name_firstname_space(&hub, &contacts, fix, dry_run, "", None, false).await?;
+    Ok(())
+}
+
+async fn check_name_firstname_space(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+    quiet: bool,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+    for person in contacts {
+        let given = person.names.as_ref()
+            .and_then(|names| names.first())
+            .and_then(|n| n.given_name.as_deref())
+            .unwrap_or("");
+        if !given.contains(' ') {
+            continue;
+        }
+
+        if !quiet {
+            if count == 0 {
+                if let Some(header) = header {
+                    println!("=== {} ===", header);
+                }
+            }
+            let display = person_display_name(person);
+            let email = person_email(person);
+            println!("{}{} (given: \"{}\")", prefix, display, given);
+            if !email.is_empty() {
+                println!("{}  email: {}", prefix, email);
+            }
+
+            if fix && !dry_run {
+                interactive_name_fix(hub, person, display).await?;
+            }
+        }
+        count += 1;
+    }
+    if !quiet && count > 0 && header.is_some() { println!(); }
+    Ok(count)
+}
+
 async fn check_name_order(hub: &HubType, contacts: &[google_people1::api::Person], fix: bool, dry_run: bool, prefix: &str, header: Option<&str>, quiet: bool) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
@@ -1802,6 +1851,10 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         fix, dry_run, prefix, hdr("Names not starting with capital letter (check-contact-name-first-capital-letter)"), stats,
     ).await?;
     results.push(("check-contact-name-first-capital-letter", first_cap));
+
+    log("check-contact-name-firstname-space");
+    let firstname_space = check_name_firstname_space(&hub, &all_contacts, fix, dry_run, prefix, hdr("First name contains space (check-contact-name-firstname-space)"), stats).await?;
+    results.push(("check-contact-name-firstname-space", firstname_space));
 
     log("check-contact-name-order");
     let name_order = check_name_order(&hub, &all_contacts, fix, dry_run, prefix, hdr("Reversed name order (check-contact-name-order)"), stats).await?;
