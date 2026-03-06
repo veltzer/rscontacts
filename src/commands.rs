@@ -304,7 +304,7 @@ pub async fn cmd_check_contact_name_order(fix: bool, dry_run: bool) -> Result<()
     Ok(())
 }
 
-pub async fn cmd_check_contact_name_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_displayname_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers"]).await?;
     check_name_duplicate(&hub, &contacts, fix, dry_run, "", None, false).await?;
@@ -1617,9 +1617,9 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     let name_order = check_name_order(&hub, &all_contacts, fix, dry_run, prefix, hdr("Reversed name order (check-contact-name-order)"), stats).await?;
     results.push(("check-contact-name-order", name_order));
 
-    log("check-contact-name-duplicate");
-    let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-name-duplicate)"), stats).await?;
-    results.push(("check-contact-name-duplicate", name_dup));
+    log("check-contact-displayname-duplicate");
+    let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-displayname-duplicate)"), stats).await?;
+    results.push(("check-contact-displayname-duplicate", name_dup));
 
     // For check-contact-no-label with fix, we need contact groups for label autocomplete
     let (user_groups_owned, label_names) = if fix {

@@ -70,8 +70,8 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Print contacts that share the same name
-    CheckContactNameDuplicate {
+    /// Print contacts that share the same display name
+    CheckContactDisplaynameDuplicate {
         /// Interactively fix each duplicate (rename/delete/skip)
         #[arg(long)]
         fix: bool,
@@ -263,7 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactNameCaps { fix, dry_run } => commands::cmd_check_contact_name_caps(fix, dry_run).await?,
         Commands::CheckContactNameFirstCapitalLetter { fix, dry_run } => commands::cmd_check_contact_name_first_capital_letter(fix, dry_run).await?,
         Commands::CheckContactNameOrder { fix, dry_run } => commands::cmd_check_contact_name_order(fix, dry_run).await?,
-        Commands::CheckContactNameDuplicate { fix, dry_run } => commands::cmd_check_contact_name_duplicate(fix, dry_run).await?,
+        Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_name_duplicate(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
