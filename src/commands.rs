@@ -1503,7 +1503,7 @@ pub async fn cmd_show_contact_labels() -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers", "memberships"]).await?;
 
@@ -1511,19 +1511,23 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
 
     let prefix = if stats { "" } else { "  " };
     let hdr = |s: &'static str| -> Option<&'static str> { if stats { None } else { Some(s) } };
+    let log = |name: &str| { if verbose { eprintln!("Running {}...", name); } };
 
+    log("check-contact-name-english");
     let non_english = check_name_issues(
         &hub, &all_contacts, |name| !is_english_name(name),
         fix, dry_run, prefix, hdr("Non-English names (check-contact-name-english)"), stats,
     ).await?;
     results.push(("check-contact-name-english", non_english));
 
+    log("check-contact-name-caps");
     let all_caps = check_name_issues(
         &hub, &all_contacts, |name| is_all_caps(name),
         fix, dry_run, prefix, hdr("All-caps names (check-contact-name-caps)"), stats,
     ).await?;
     results.push(("check-contact-name-caps", all_caps));
 
+    log("check-phone-countrycode");
     let country_owned = country.to_string();
     let no_country = check_phone_issues(
         &hub, &all_contacts,
@@ -1533,6 +1537,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
     ).await?;
     results.push(("check-phone-countrycode", no_country));
 
+    log("check-phone-format");
     let country_owned2 = country.to_string();
     let bad_format = check_phone_issues(
         &hub, &all_contacts,
@@ -1542,15 +1547,18 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
     ).await?;
     results.push(("check-phone-format", bad_format));
 
+    log("check-contact-name-first-capital-letter");
     let first_cap = check_name_issues(
         &hub, &all_contacts, |name| !starts_with_capital(name),
         fix, dry_run, prefix, hdr("Names not starting with capital letter (check-contact-name-first-capital-letter)"), stats,
     ).await?;
     results.push(("check-contact-name-first-capital-letter", first_cap));
 
+    log("check-contact-name-order");
     let name_order = check_name_order(&hub, &all_contacts, fix, dry_run, prefix, hdr("Reversed name order (check-contact-name-order)"), stats).await?;
     results.push(("check-contact-name-order", name_order));
 
+    log("check-contact-name-duplicate");
     let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-name-duplicate)"), stats).await?;
     results.push(("check-contact-name-duplicate", name_dup));
 
@@ -1572,27 +1580,35 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
     };
     let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
 
+    log("check-contact-no-label");
     let no_label = check_no_label(&hub, &all_contacts, fix, dry_run, prefix, hdr("Contacts without label (check-contact-no-label)"), stats, &user_groups, &label_names).await?;
     results.push(("check-contact-no-label", no_label));
 
+    log("check-phone-no-label");
     let phone_no_label = check_phone_no_label(&hub, &all_contacts, fix, dry_run, prefix, hdr("Phones without label (check-phone-no-label)"), stats).await?;
     results.push(("check-phone-no-label", phone_no_label));
 
+    log("check-phone-label-english");
     let phone_label_eng = check_phone_label_english(&hub, &all_contacts, fix, dry_run, prefix, hdr("Non-English phone labels (check-phone-label-english)"), stats).await?;
     results.push(("check-phone-label-english", phone_label_eng));
 
+    log("check-contact-email");
     results.push(("check-contact-email", check_invalid_emails(&all_contacts, prefix, hdr("Invalid emails (check-contact-email)"), stats)));
 
+    log("check-contact-email-caps");
     let email_caps = check_email_caps(&hub, &all_contacts, fix, dry_run, prefix, hdr("Emails with uppercase (check-contact-email-caps)"), stats).await?;
     results.push(("check-contact-email-caps", email_caps));
 
+    log("check-phone-duplicate");
     let dup_phones = check_duplicate_phones(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate phone numbers (check-phone-duplicate)"), stats).await?;
     results.push(("check-phone-duplicate", dup_phones));
 
+    log("check-contact-email-duplicate");
     let dup_emails = check_duplicate_emails(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate email addresses (check-contact-email-duplicate)"), stats).await?;
     results.push(("check-contact-email-duplicate", dup_emails));
 
     // Check for empty labels (contact groups) — separate API call
+    log("check-contact-label-nophone");
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
     let empty: Vec<_> = all_groups.iter().filter(|g| {
@@ -1623,6 +1639,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
     }
     results.push(("check-contact-label-nophone", empty.len()));
 
+    log("check-contact-label-space");
     let with_space: Vec<_> = all_groups.iter().filter(|g| {
         g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
             && g.name.as_deref().unwrap_or("").contains(' ')
@@ -1658,6 +1675,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
     }
     results.push(("check-contact-label-space", with_space.len()));
 
+    log("check-contact-label-camelcase");
     let not_camelcase: Vec<_> = all_groups.iter().filter(|g| {
         g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
             && g.name.as_deref().is_some_and(|n| n.starts_with(char::is_lowercase))

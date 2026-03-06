@@ -90,6 +90,9 @@ enum Commands {
         /// Only show error counts per check, no details
         #[arg(long)]
         stats: bool,
+        /// Show each check name as it runs
+        #[arg(short, long)]
+        verbose: bool,
         /// Country code to prepend for phone country code check (without +)
         #[arg(long, default_value = "972")]
         country: String,
@@ -272,7 +275,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
         Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,
         Commands::ShowContactLabels => commands::cmd_show_contact_labels().await?,
-        Commands::CheckAll { fix, dry_run, stats, ref country } => commands::cmd_check_all(fix, dry_run, stats, country).await?,
+        Commands::CheckAll { fix, dry_run, stats, verbose, ref country } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
         Commands::Version => {
             println!("rscontacts {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
             println!("GIT_DESCRIBE: {}", env!("GIT_DESCRIBE"));
