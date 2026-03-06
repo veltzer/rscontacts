@@ -1505,7 +1505,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, country: &str)
             && g.name.as_deref().is_some_and(|n| n != n.to_lowercase())
     }).collect();
     if !stats && !not_lowercase.is_empty() {
-        println!("=== Labels not lowercase (check-labels-camelcase) ({}) ===", not_lowercase.len());
+        println!("=== Labels not camelCase (check-labels-camelcase) ({}) ===", not_lowercase.len());
         for group in &not_lowercase {
             let name = group.name.as_deref().unwrap_or("<unnamed>");
             let lower = name.to_lowercase();
