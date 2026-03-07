@@ -1870,7 +1870,7 @@ async fn interactive_edit_contact(
                     .and_then(|n| n.first())
                     .and_then(|n| n.given_name.as_deref())
                     .unwrap_or("");
-                eprint!("  Given name [{}] (enter - to clear): ", current);
+                eprint!("  Given name [{}] (new value / - to clear / Enter to skip): ", current);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
@@ -1905,7 +1905,7 @@ async fn interactive_edit_contact(
                     .and_then(|n| n.first())
                     .and_then(|n| n.family_name.as_deref())
                     .unwrap_or("");
-                eprint!("  Family name [{}] (enter - to clear): ", current);
+                eprint!("  Family name [{}] (new value / - to clear / Enter to skip): ", current);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
@@ -1940,7 +1940,7 @@ async fn interactive_edit_contact(
                     .and_then(|n| n.first())
                     .and_then(|n| n.honorific_suffix.as_deref())
                     .unwrap_or("");
-                eprint!("  Suffix [{}] (enter - to clear): ", current);
+                eprint!("  Suffix [{}] (new value / - to clear / Enter to skip): ", current);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
@@ -1975,7 +1975,7 @@ async fn interactive_edit_contact(
                     .and_then(|orgs| orgs.first())
                     .and_then(|o| o.name.as_deref())
                     .unwrap_or("");
-                eprint!("  Company [{}] (enter - to clear): ", current);
+                eprint!("  Company [{}] (new value / - to clear / Enter to skip): ", current);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
