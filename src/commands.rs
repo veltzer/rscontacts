@@ -520,7 +520,7 @@ pub async fn cmd_check_contact_suffix_regexp(fix: bool, dry_run: bool) -> Result
     Ok(())
 }
 
-const DEFAULT_SUFFIX_REGEX: &str = r"^\d+$";
+const DEFAULT_SUFFIX_REGEX: &str = r"^[1-9]\d*$";
 
 async fn check_suffix_regexp(
     hub: &HubType,

@@ -221,6 +221,12 @@ enum Commands {
         /// Name (or part of name) to search for
         name: String,
     },
+    /// Generate a default config file at ~/.config/rscontacts/config.toml
+    InitConfig {
+        /// Overwrite existing config file
+        #[arg(long)]
+        force: bool,
+    },
     /// Print version information
     Version,
     /// Generate shell completions
@@ -263,6 +269,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,
         Commands::ShowContactLabels => commands::cmd_show_contact_labels().await?,
         Commands::CheckAll { fix, dry_run, stats, verbose, ref country } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
+        Commands::InitConfig { force } => commands::cmd_init_config(force)?,
         Commands::Version => {
             println!("rscontacts {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
             println!("GIT_DESCRIBE: {}", env!("GIT_DESCRIBE"));
