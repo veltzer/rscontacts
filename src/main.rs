@@ -139,11 +139,9 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Print contacts with invalid-looking email addresses
-    CheckContactEmail,
-    /// Print contacts with uppercase letters in email addresses
-    CheckContactEmailCaps {
-        /// Automatically lowercase emails
+    /// Print contacts with invalid or uppercase email addresses
+    CheckContactEmail {
+        /// Automatically lowercase emails with uppercase letters
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
@@ -253,8 +251,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
         Commands::CheckPhoneLabelMissing { fix, dry_run } => commands::cmd_check_phone_label_missing(fix, dry_run).await?,
         Commands::CheckPhoneLabelEnglish { fix, dry_run } => commands::cmd_check_phone_label_english(fix, dry_run).await?,
-        Commands::CheckContactEmail => commands::cmd_check_contact_email().await?,
-        Commands::CheckContactEmailCaps { fix, dry_run } => commands::cmd_check_contact_email_caps(fix, dry_run).await?,
+        Commands::CheckContactEmail { fix, dry_run } => commands::cmd_check_contact_email(fix, dry_run).await?,
         Commands::CheckContactEmailDuplicate { fix, dry_run } => commands::cmd_check_contact_email_duplicate(fix, dry_run).await?,
         Commands::CheckPhoneDuplicate { fix, dry_run } => commands::cmd_check_phone_duplicate(fix, dry_run).await?,
         Commands::CheckContactLabelNophone { fix, dry_run } => commands::cmd_check_contact_label_nophone(fix, dry_run).await?,

@@ -37,8 +37,7 @@ The following check names can be used in the `skip` list:
 | `check-contact-suffix-regexp` | Suffixes not matching the allow regex (default: numeric) |
 | `check-contact-displayname-duplicate` | Multiple contacts with the same display name |
 | `check-contact-no-label` | Contacts not assigned to any label |
-| `check-contact-email` | Invalid email addresses |
-| `check-contact-email-caps` | Email addresses with uppercase letters |
+| `check-contact-email` | Invalid or uppercase email addresses |
 | `check-contact-email-duplicate` | Duplicate email addresses on a contact |
 | `check-contact-label-nophone` | Empty labels (contact groups with no members) |
 | `check-contact-label-space` | Labels with spaces in their name |
