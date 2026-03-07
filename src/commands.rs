@@ -2174,18 +2174,18 @@ pub async fn cmd_show_contact(search: &str) -> Result<(), Box<dyn std::error::Er
 }
 
 fn print_person_details(person: &google_people1::api::Person, group_names: Option<&std::collections::HashMap<String, String>>) {
-    let name = person_display_name(person);
-    println!("Name: {}", name);
+    let names = person.names.as_ref().and_then(|n| n.first());
+    let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+    let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+    let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
+    let prefix_name = names.and_then(|n| n.honorific_prefix.as_deref()).unwrap_or("");
+    let middle = names.and_then(|n| n.middle_name.as_deref()).unwrap_or("");
 
-    if let Some(names) = &person.names {
-        for n in names {
-            if let Some(given) = &n.given_name { println!("  Given name: {}", given); }
-            if let Some(family) = &n.family_name { println!("  Family name: {}", family); }
-            if let Some(middle) = &n.middle_name { println!("  Middle name: {}", middle); }
-            if let Some(prefix) = &n.honorific_prefix { println!("  Prefix: {}", prefix); }
-            if let Some(suffix) = &n.honorific_suffix { println!("  Suffix: {}", suffix); }
-        }
-    }
+    println!("Given name: {}", given);
+    println!("Family name: {}", family);
+    println!("Suffix: {}", suffix);
+    if !middle.is_empty() { println!("Middle name: {}", middle); }
+    if !prefix_name.is_empty() { println!("Prefix: {}", prefix_name); }
 
     if let Some(nicknames) = &person.nicknames {
         for n in nicknames {
@@ -2221,16 +2221,16 @@ fn print_person_details(person: &google_people1::api::Person, group_names: Optio
         }
     }
 
+    // Organization — always show company field
+    let org = person.organizations.as_ref().and_then(|o| o.first());
+    let company = org.and_then(|o| o.name.as_deref()).unwrap_or("");
+    println!("Company: {}", company);
     if let Some(orgs) = &person.organizations {
         for o in orgs {
-            let org_name = o.name.as_deref().unwrap_or("");
             let title = o.title.as_deref().unwrap_or("");
             let dept = o.department.as_deref().unwrap_or("");
-            let mut parts = Vec::new();
-            if !title.is_empty() { parts.push(title.to_string()); }
-            if !org_name.is_empty() { parts.push(org_name.to_string()); }
-            if !dept.is_empty() { parts.push(format!("({})", dept)); }
-            if !parts.is_empty() { println!("Organization: {}", parts.join(", ")); }
+            if !title.is_empty() { println!("  Title: {}", title); }
+            if !dept.is_empty() { println!("  Department: {}", dept); }
         }
     }
 
@@ -2348,8 +2348,8 @@ fn print_person_details(person: &google_people1::api::Person, group_names: Optio
         }
     }
 
-    if let Some(memberships) = &person.memberships {
-        let labels: Vec<String> = memberships.iter().filter_map(|m| {
+    let labels: Vec<String> = person.memberships.as_ref().map(|memberships| {
+        memberships.iter().filter_map(|m| {
             let rn = m.contact_group_membership.as_ref()?.contact_group_resource_name.as_deref()?;
             if rn == "contactGroups/myContacts" { return None; }
             let display = group_names
@@ -2357,11 +2357,9 @@ fn print_person_details(person: &google_people1::api::Person, group_names: Optio
                 .map(|s| s.as_str())
                 .unwrap_or(rn);
             Some(display.to_string())
-        }).collect();
-        if !labels.is_empty() {
-            println!("Labels: {}", labels.join(", "));
-        }
-    }
+        }).collect()
+    }).unwrap_or_default();
+    println!("Labels: {}", if labels.is_empty() { "(none)".to_string() } else { labels.join(", ") });
 
     if let Some(rn) = &person.resource_name {
         println!("Resource: {}", rn);
