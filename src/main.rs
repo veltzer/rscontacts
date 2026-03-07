@@ -236,6 +236,11 @@ enum Commands {
         /// Name (or part of name) to search for
         name: String,
     },
+    /// Interactively edit a contact
+    EditContact {
+        /// Name (or part of name) to search for
+        name: String,
+    },
     /// Generate a default config file at ~/.config/rscontacts/config.toml
     InitConfig {
         /// Overwrite existing config file
@@ -281,6 +286,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactLabelRegexp { fix, dry_run } => commands::cmd_check_contact_label_regexp(fix, dry_run).await?,
         Commands::CompactSuffixesForContacts { dry_run } => commands::cmd_compact_suffixes_for_contacts(dry_run).await?,
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
+        Commands::EditContact { ref name } => commands::cmd_edit_contact(name).await?,
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
         Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,

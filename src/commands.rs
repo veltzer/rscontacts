@@ -2317,6 +2317,63 @@ pub async fn cmd_show_contact(search: &str) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
+pub async fn cmd_edit_contact(search: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let all_fields = &[
+        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
+        "organizations", "memberships", "biographies", "urls", "events",
+        "relations", "nicknames", "occupations", "interests", "skills",
+        "userDefined", "imClients", "sipAddresses", "locations",
+        "externalIds", "clientData", "metadata",
+    ];
+    let contacts = fetch_all_contacts(&hub, all_fields).await?;
+    let search_lower = search.to_lowercase();
+    let matches: Vec<_> = contacts.iter().filter(|p| {
+        person_name(p).to_lowercase().contains(&search_lower)
+    }).collect();
+
+    if matches.is_empty() {
+        println!("No contacts found matching \"{}\"", search);
+        return Ok(());
+    }
+
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let user_groups_owned: Vec<(String, String)> = all_groups.iter()
+        .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+        .filter_map(|g| {
+            let name = g.name.as_deref()?;
+            let rn = g.resource_name.as_deref()?;
+            Some((name.to_string(), rn.to_string()))
+        })
+        .collect();
+    let label_names: Vec<String> = user_groups_owned.iter().map(|(name, _)| name.clone()).collect();
+    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+
+    let person = if matches.len() == 1 {
+        matches[0]
+    } else {
+        println!("Multiple contacts found:");
+        for (i, p) in matches.iter().enumerate() {
+            println!("  {}: {}", i + 1, person_display_name_detailed(p));
+        }
+        use std::io::Write;
+        eprint!("Pick a contact [1-{}]: ", matches.len());
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let idx: usize = input.trim().parse().unwrap_or(0);
+        if idx < 1 || idx > matches.len() {
+            eprintln!("Invalid selection.");
+            return Ok(());
+        }
+        matches[idx - 1]
+    };
+
+    interactive_edit_contact(&hub, person, &user_groups, &label_names, &group_names).await?;
+    Ok(())
+}
+
 fn print_person_details(person: &google_people1::api::Person, group_names: Option<&std::collections::HashMap<String, String>>) {
     let names = person.names.as_ref().and_then(|n| n.first());
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");

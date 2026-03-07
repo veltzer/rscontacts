@@ -6,57 +6,73 @@ rscontacts provides commands in several categories:
 
 | Command | Description |
 |---------|-------------|
-| [list](commands/list.md) | List all contacts |
-| [show-contact](commands/show-contact.md) | Show all details about a specific contact |
-| [show-phone-labels](commands/show-phone-labels.md) | Show all distinct phone labels in use |
-| [show-contact-labels](commands/show-contact-labels.md) | Show all contact groups with member counts |
+| list | List all contacts |
+| show-contact | Show all details about a specific contact |
+| edit-contact | Interactively edit a contact |
+| show-phone-labels | Show all distinct phone labels in use |
+| show-contact-labels | Show all contact groups with member counts |
 
 ## Check Commands
 
-All check commands are also run by [check-all](commands/check-all.md).
+All check commands are also run by check-all.
 
 ### Name Checks
 
 | Command | `--fix` | Description |
 |---------|---------|-------------|
-| [check-name-english](commands/check-name-english.md) | Yes | Non-English characters in names |
-| [check-name-caps](commands/check-name-caps.md) | Yes | All-caps names |
-| [check-name-first-capital-letter](commands/check-name-first-capital-letter.md) | Yes | Names not starting with a capital letter |
-| [check-name-order](commands/check-name-order.md) | Yes | Reversed name order ("Family, Given") |
+| check-contact-given-name-regexp | Yes | Given names not matching allow regex |
+| check-contact-family-name-regexp | Yes | Family names not matching allow regex |
+| check-contact-suffix-regexp | Yes | Suffixes not matching allow regex |
+| check-contact-displayname-duplicate | Yes | Duplicate contact display names |
+| check-contact-name-is-company | Yes | Given/family name matches a company name |
+
+### Company Checks
+
+| Command | `--fix` | Description |
+|---------|---------|-------------|
+| check-contact-company-known | Yes | Company field not in configured companies list |
 
 ### Phone Checks
 
 | Command | `--fix` | Description |
 |---------|---------|-------------|
-| [check-phone-countrycode](commands/check-phone-countrycode.md) | Yes | Missing country code |
-| [check-phone-format](commands/check-phone-format.md) | Yes | Not in `+CC-NUMBER` format |
-| [check-phone-no-label](commands/check-phone-no-label.md) | No | Missing phone type label |
-| [check-phone-label-english](commands/check-phone-label-english.md) | Yes | Non-English phone labels |
+| check-phone-countrycode | Yes | Missing country code |
+| check-phone-format | Yes | Not in `+CC-NUMBER` format |
+| check-phone-label-missing | Yes | Missing phone type label |
+| check-phone-label-english | Yes | Non-English phone labels |
+| check-phone-duplicate | Yes | Same phone attached twice |
 
 ### Email Checks
 
 | Command | `--fix` | Description |
 |---------|---------|-------------|
-| [check-email](commands/check-email.md) | No | Invalid email format |
-| [check-email-caps](commands/check-email-caps.md) | Yes | Uppercase letters in emails |
-| [check-duplicate-emails](commands/check-duplicate-emails.md) | Yes | Same email attached twice |
+| check-contact-email | Yes | Invalid or uppercase email addresses |
+| check-contact-email-duplicate | Yes | Same email attached twice |
 
 ### Contact Group (Label) Checks
 
 | Command | `--fix` | Description |
 |---------|---------|-------------|
-| [check-contact-no-label](commands/check-contact-no-label.md) | No | Contacts not in any group |
-| [check-contact-label-space](commands/check-contact-label-space.md) | Yes | Group names containing spaces |
-| [check-labels-nophone](commands/check-labels-nophone.md) | Yes | Empty contact groups |
-| [check-duplicate-phones](commands/check-duplicate-phones.md) | Yes | Same phone attached twice |
+| check-contact-no-label | Yes | Contacts not in any group |
+| check-contact-label-nophone | Yes | Empty contact groups |
+| check-contact-label-regexp | Yes | Labels not matching allow regex |
+
+## Action Commands
+
+| Command | Description |
+|---------|-------------|
+| compact-suffixes-for-contacts | Compact suffixes for contacts sharing the same base name |
+| review-phone-label | Review all phones with a specific label |
+| remove-label-from-all-contacts | Remove a label from all contacts |
 
 ## Other Commands
 
 | Command | Description |
 |---------|-------------|
-| [auth](commands/auth.md) | Authenticate with Google |
-| [version](commands/version.md) | Print version information |
-| [complete](commands/complete.md) | Generate shell completions |
+| auth | Authenticate with Google |
+| init-config | Generate a default config file |
+| version | Print version information |
+| complete | Generate shell completions |
 
 ## Common Flags
 
