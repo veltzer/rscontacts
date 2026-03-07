@@ -626,7 +626,7 @@ async fn check_suffix_regexp(
                 println!("{}{} (suffix: \"{}\"{})", prefix, display, suffix, labels_str);
 
                 if fix && !dry_run {
-                    interactive_name_fix(hub, person, &display).await?;
+                    interactive_suffix_fix(hub, person, suffix).await?;
                 }
             }
             count += 1;
@@ -634,6 +634,46 @@ async fn check_suffix_regexp(
     }
     if !quiet && count > 0 && header.is_some() { println!(); }
     Ok(count)
+}
+
+async fn interactive_suffix_fix(
+    hub: &HubType,
+    person: &google_people1::api::Person,
+    suffix: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let resource_name = person
+        .resource_name
+        .as_deref()
+        .ok_or("Contact missing resource name")?;
+
+    match prompt_fix_action(suffix)? {
+        'r' => {
+            let new_suffix = prompt_new_name(suffix)?;
+            let mut updated = person.clone();
+            if let Some(ref mut names) = updated.names {
+                if let Some(first) = names.first_mut() {
+                    first.honorific_suffix = Some(new_suffix.clone());
+                }
+            }
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                .doit()
+                .await?;
+            eprintln!("  Renamed suffix to \"{}\"", new_suffix);
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        'd' => {
+            hub.people().delete_contact(resource_name).doit().await?;
+            eprintln!("  Deleted.");
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        's' => {
+            eprintln!("  Skipped.");
+        }
+        _ => unreachable!(),
+    }
+    Ok(())
 }
 
 pub async fn cmd_check_contact_family_name_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -1148,7 +1188,7 @@ async fn check_phone_label_missing(hub: &HubType, contacts: &[google_people1::ap
                             println!("=== {} ===", header);
                         }
                     }
-                    let name = person_display_name(person);
+                    let name = person_display_name_detailed(person);
                     for pn in nums.iter().filter(|pn| !phone_has_type(pn)) {
                         let phone = pn.value.as_deref().unwrap_or("");
                         println!("{}{} | {}", prefix, name, phone);
@@ -1215,7 +1255,7 @@ async fn check_phone_label_english(hub: &HubType, contacts: &[google_people1::ap
                             println!("=== {} ===", header);
                         }
                     }
-                    let name = person_display_name(person);
+                    let name = person_display_name_detailed(person);
                     for pn in nums {
                         let label = get_phone_label(pn);
                         if !label.is_empty() && !label.chars().all(|c| c.is_ascii()) {
