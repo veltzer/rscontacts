@@ -16,6 +16,8 @@ pub struct Config {
     pub check_contact_firstname_regexp: NameRegexpConfig,
     #[serde(default, rename = "check-contact-lastname-regexp")]
     pub check_contact_lastname_regexp: NameRegexpConfig,
+    #[serde(default, rename = "check-contact-suffix-regexp")]
+    pub check_contact_suffix_regexp: NameRegexpConfig,
 }
 
 #[derive(serde::Deserialize, Default, Debug)]
@@ -458,16 +460,29 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
 
 // --- Prompt helpers ---
 
-pub fn prompt_firstname_fix_action(_given: &str, family: &str) -> Result<char, Box<dyn std::error::Error>> {
+pub fn prompt_firstname_fix_action(given: &str, family: &str) -> Result<char, Box<dyn std::error::Error>> {
     use std::io::Write;
+    let has_split = split_alpha_numeric(given).is_some();
     loop {
-        eprint!("  s[w]ap lastname \"{}\" to firstname / [r]ename / [d]elete / [s]kip? ", family);
+        if has_split {
+            let (alpha, numeric) = split_alpha_numeric(given).unwrap();
+            eprint!("  s[w]ap lastname \"{}\" to firstname / s[p]lit \"{}\" -> firstname \"{}\", suffix \"{}\" / [c]ompany / [r]ename / [d]elete / [s]kip? ", family, given, alpha, numeric);
+        } else {
+            eprint!("  s[w]ap lastname \"{}\" to firstname / [c]ompany / [r]ename / [d]elete / [s]kip? ", family);
+        }
         std::io::stderr().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         match input.trim().chars().next() {
-            Some(c @ ('w' | 'r' | 'd' | 's')) => return Ok(c),
-            _ => eprintln!("  Invalid choice. Enter w, r, d, or s."),
+            Some(c @ ('w' | 'c' | 'r' | 'd' | 's')) => return Ok(c),
+            Some('p') if has_split => return Ok('p'),
+            _ => {
+                if has_split {
+                    eprintln!("  Invalid choice. Enter w, p, c, r, d, or s.");
+                } else {
+                    eprintln!("  Invalid choice. Enter w, c, r, d, or s.");
+                }
+            }
         }
     }
 }
@@ -606,6 +621,22 @@ pub fn split_name_suffix(display_name: &str) -> (&str, Option<u32>) {
         }
     }
     (display_name, None)
+}
+
+/// Split a string into its alpha prefix and numeric suffix.
+/// E.g. "Mike2" -> Some(("Mike", "2")), "Mike" -> None, "123" -> None
+pub fn split_alpha_numeric(s: &str) -> Option<(&str, &str)> {
+    let num_start = s.find(|c: char| c.is_ascii_digit())?;
+    if num_start == 0 {
+        return None;
+    }
+    let alpha = &s[..num_start];
+    let numeric = &s[num_start..];
+    if numeric.chars().all(|c| c.is_ascii_digit()) {
+        Some((alpha, numeric))
+    } else {
+        None
+    }
 }
 
 pub fn has_reversed_name(person: &google_people1::api::Person) -> bool {

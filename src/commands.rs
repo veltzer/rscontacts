@@ -316,6 +316,24 @@ async fn interactive_firstname_fix(
         .unwrap_or("");
 
     match prompt_firstname_fix_action(given, family)? {
+        'p' => {
+            // Split: "Mike2" -> given_name="Mike", suffix="2"
+            let (alpha, numeric) = split_alpha_numeric(given).expect("split option only available when splittable");
+            let mut updated = person.clone();
+            if let Some(ref mut names) = updated.names {
+                if let Some(first) = names.first_mut() {
+                    first.given_name = Some(alpha.to_string());
+                    first.honorific_suffix = Some(numeric.to_string());
+                }
+            }
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                .doit()
+                .await?;
+            eprintln!("  Split: firstname=\"{}\", suffix=\"{}\"", alpha, numeric);
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
         'w' => {
             // Swap: set given_name = family_name, clear family_name
             let mut updated = person.clone();
@@ -333,6 +351,30 @@ async fn interactive_firstname_fix(
                 .doit()
                 .await?;
             eprintln!("  Swapped: given name is now \"{}\"", family);
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        'c' => {
+            // Move firstname to company (organization name), clear name fields
+            let mut updated = person.clone();
+            let company = given.to_string();
+            if let Some(ref mut names) = updated.names {
+                if let Some(first) = names.first_mut() {
+                    first.given_name = None;
+                    first.family_name = None;
+                    first.unstructured_name = None;
+                }
+            }
+            let org = google_people1::api::Organization {
+                name: Some(company.clone()),
+                ..Default::default()
+            };
+            updated.organizations = Some(vec![org]);
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["names", "organizations"]))
+                .doit()
+                .await?;
+            eprintln!("  Moved to company: \"{}\"", company);
             tokio::time::sleep(MUTATE_DELAY).await;
         }
         'r' => {
@@ -366,6 +408,68 @@ async fn interactive_firstname_fix(
     Ok(())
 }
 
+
+pub async fn cmd_check_contact_suffix_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names"]).await?;
+    let config = load_config();
+    check_suffix_regexp(&hub, &contacts, &config.check_contact_suffix_regexp, fix, dry_run, "", None, false).await?;
+    Ok(())
+}
+
+const DEFAULT_SUFFIX_REGEX: &str = r"^\d+$";
+
+async fn check_suffix_regexp(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    config: &crate::helpers::NameRegexpConfig,
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+    quiet: bool,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let default_pattern = DEFAULT_SUFFIX_REGEX.to_string();
+    let pattern = config.allow.as_ref().unwrap_or(&default_pattern);
+
+    let re = match regex::Regex::new(pattern) {
+        Ok(re) => re,
+        Err(e) => {
+            eprintln!("Warning: invalid regex \"{}\": {}", pattern, e);
+            return Ok(0);
+        }
+    };
+
+    let mut count = 0;
+    for person in contacts {
+        let suffix = person.names.as_ref()
+            .and_then(|names| names.first())
+            .and_then(|n| n.honorific_suffix.as_deref())
+            .unwrap_or("");
+        if suffix.is_empty() {
+            continue;
+        }
+
+        if !re.is_match(suffix) {
+            if !quiet {
+                if count == 0 {
+                    if let Some(header) = header {
+                        println!("=== {} ===", header);
+                    }
+                }
+                let display = person_display_name(person);
+                println!("{}{} (suffix: \"{}\")", prefix, display, suffix);
+
+                if fix && !dry_run {
+                    interactive_name_fix(hub, person, &display).await?;
+                }
+            }
+            count += 1;
+        }
+    }
+    if !quiet && count > 0 && header.is_some() { println!(); }
+    Ok(count)
+}
 
 pub async fn cmd_check_contact_lastname_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
@@ -2034,6 +2138,12 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         log("check-contact-lastname-regexp");
         let lastname_regexp = check_lastname_regexp(&hub, &all_contacts, &config.check_contact_lastname_regexp, fix, dry_run, prefix, hdr("Last name doesn't match allow regex (check-contact-lastname-regexp)"), stats).await?;
         results.push(("check-contact-lastname-regexp", lastname_regexp));
+    }
+
+    if !skip.contains("check-contact-suffix-regexp") {
+        log("check-contact-suffix-regexp");
+        let suffix_regexp = check_suffix_regexp(&hub, &all_contacts, &config.check_contact_suffix_regexp, fix, dry_run, prefix, hdr("Suffix doesn't match allow regex (check-contact-suffix-regexp)"), stats).await?;
+        results.push(("check-contact-suffix-regexp", suffix_regexp));
     }
 
     if !skip.contains("check-contact-name-order") {
