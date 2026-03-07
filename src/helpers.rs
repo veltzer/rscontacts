@@ -8,6 +8,42 @@ use std::time::Duration;
 
 pub const MUTATE_DELAY: Duration = Duration::from_millis(500);
 
+#[derive(serde::Deserialize, Default, Debug)]
+pub struct Config {
+    #[serde(default)]
+    pub check_all: CheckAllConfig,
+}
+
+#[derive(serde::Deserialize, Default, Debug)]
+pub struct CheckAllConfig {
+    #[serde(default)]
+    pub skip: Vec<String>,
+}
+
+pub fn config_path() -> PathBuf {
+    config_dir().join("config.toml")
+}
+
+pub fn load_config() -> Config {
+    let path = config_path();
+    if !path.exists() {
+        return Config::default();
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => match toml::from_str(&contents) {
+            Ok(config) => config,
+            Err(e) => {
+                eprintln!("Warning: failed to parse {}: {}", path.display(), e);
+                Config::default()
+            }
+        },
+        Err(e) => {
+            eprintln!("Warning: failed to read {}: {}", path.display(), e);
+            Config::default()
+        }
+    }
+}
+
 pub fn config_dir() -> PathBuf {
     let mut dir = dirs::home_dir().expect("Could not determine home directory");
     dir.push(".config");

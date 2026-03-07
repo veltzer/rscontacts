@@ -1986,8 +1986,11 @@ pub async fn cmd_show_contact_labels() -> Result<(), Box<dyn std::error::Error>>
 }
 
 pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config();
+    let skip: std::collections::HashSet<&str> = config.check_all.skip.iter().map(|s| s.as_str()).collect();
+
     let hub = build_hub().await?;
-    let all_contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers", "memberships"]).await?;
+    let all_contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers", "memberships", "organizations"]).await?;
 
     let mut results: Vec<(&str, usize)> = Vec::new();
 
@@ -1995,70 +1998,92 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     let hdr = |s: &'static str| -> Option<&'static str> { if stats { None } else { Some(s) } };
     let log = |name: &str| { if verbose { eprintln!("Running {}...", name); } };
 
-    log("check-contact-name-english");
-    let non_english = check_name_issues(
-        &hub, &all_contacts, |name| !is_english_name(name),
-        fix, dry_run, prefix, hdr("Non-English names (check-contact-name-english)"), stats,
-    ).await?;
-    results.push(("check-contact-name-english", non_english));
+    if !skip.contains("check-contact-name-english") {
+        log("check-contact-name-english");
+        let non_english = check_name_issues(
+            &hub, &all_contacts, |name| !is_english_name(name),
+            fix, dry_run, prefix, hdr("Non-English names (check-contact-name-english)"), stats,
+        ).await?;
+        results.push(("check-contact-name-english", non_english));
+    }
 
-    log("check-contact-name-caps");
-    let all_caps = check_name_issues(
-        &hub, &all_contacts, |name| is_all_caps(name),
-        fix, dry_run, prefix, hdr("All-caps names (check-contact-name-caps)"), stats,
-    ).await?;
-    results.push(("check-contact-name-caps", all_caps));
+    if !skip.contains("check-contact-name-caps") {
+        log("check-contact-name-caps");
+        let all_caps = check_name_issues(
+            &hub, &all_contacts, |name| is_all_caps(name),
+            fix, dry_run, prefix, hdr("All-caps names (check-contact-name-caps)"), stats,
+        ).await?;
+        results.push(("check-contact-name-caps", all_caps));
+    }
 
-    log("check-phone-countrycode");
-    let country_owned = country.to_string();
-    let no_country = check_phone_issues(
-        &hub, &all_contacts,
-        |v| is_fixable_phone(v) && !has_country_code(v),
-        move |v| add_country_code(v, &country_owned),
-        fix, dry_run, prefix, hdr("Phones missing country code (check-phone-countrycode)"), stats,
-    ).await?;
-    results.push(("check-phone-countrycode", no_country));
+    if !skip.contains("check-phone-countrycode") {
+        log("check-phone-countrycode");
+        let country_owned = country.to_string();
+        let no_country = check_phone_issues(
+            &hub, &all_contacts,
+            |v| is_fixable_phone(v) && !has_country_code(v),
+            move |v| add_country_code(v, &country_owned),
+            fix, dry_run, prefix, hdr("Phones missing country code (check-phone-countrycode)"), stats,
+        ).await?;
+        results.push(("check-phone-countrycode", no_country));
+    }
 
-    log("check-phone-format");
-    let country_owned2 = country.to_string();
-    let bad_format = check_phone_issues(
-        &hub, &all_contacts,
-        |v| is_fixable_phone(v) && !is_correct_phone_format(v),
-        move |v| fix_phone_format(v, &country_owned2),
-        fix, dry_run, prefix, hdr("Phones not in +CC-NUMBER format (check-phone-format)"), stats,
-    ).await?;
-    results.push(("check-phone-format", bad_format));
+    if !skip.contains("check-phone-format") {
+        log("check-phone-format");
+        let country_owned2 = country.to_string();
+        let bad_format = check_phone_issues(
+            &hub, &all_contacts,
+            |v| is_fixable_phone(v) && !is_correct_phone_format(v),
+            move |v| fix_phone_format(v, &country_owned2),
+            fix, dry_run, prefix, hdr("Phones not in +CC-NUMBER format (check-phone-format)"), stats,
+        ).await?;
+        results.push(("check-phone-format", bad_format));
+    }
 
-    log("check-contact-name-first-capital-letter");
-    let first_cap = check_name_issues(
-        &hub, &all_contacts, |name| !starts_with_capital(name),
-        fix, dry_run, prefix, hdr("Names not starting with capital letter (check-contact-name-first-capital-letter)"), stats,
-    ).await?;
-    results.push(("check-contact-name-first-capital-letter", first_cap));
+    if !skip.contains("check-contact-name-first-capital-letter") {
+        log("check-contact-name-first-capital-letter");
+        let first_cap = check_name_issues(
+            &hub, &all_contacts, |name| !starts_with_capital(name),
+            fix, dry_run, prefix, hdr("Names not starting with capital letter (check-contact-name-first-capital-letter)"), stats,
+        ).await?;
+        results.push(("check-contact-name-first-capital-letter", first_cap));
+    }
 
-    log("check-contact-name-firstname-numeric");
-    let firstname_numeric = check_name_firstname_numeric(&hub, &all_contacts, fix, dry_run, prefix, hdr("Numeric first name (check-contact-name-firstname-numeric)"), stats).await?;
-    results.push(("check-contact-name-firstname-numeric", firstname_numeric));
+    if !skip.contains("check-contact-name-firstname-numeric") {
+        log("check-contact-name-firstname-numeric");
+        let firstname_numeric = check_name_firstname_numeric(&hub, &all_contacts, fix, dry_run, prefix, hdr("Numeric first name (check-contact-name-firstname-numeric)"), stats).await?;
+        results.push(("check-contact-name-firstname-numeric", firstname_numeric));
+    }
 
-    log("check-contact-name-firstname-space");
-    let firstname_space = check_name_firstname_space(&hub, &all_contacts, fix, dry_run, prefix, hdr("First name contains space (check-contact-name-firstname-space)"), stats).await?;
-    results.push(("check-contact-name-firstname-space", firstname_space));
+    if !skip.contains("check-contact-name-firstname-space") {
+        log("check-contact-name-firstname-space");
+        let firstname_space = check_name_firstname_space(&hub, &all_contacts, fix, dry_run, prefix, hdr("First name contains space (check-contact-name-firstname-space)"), stats).await?;
+        results.push(("check-contact-name-firstname-space", firstname_space));
+    }
 
-    log("check-contact-name-order");
-    let name_order = check_name_order(&hub, &all_contacts, fix, dry_run, prefix, hdr("Reversed name order (check-contact-name-order)"), stats).await?;
-    results.push(("check-contact-name-order", name_order));
+    if !skip.contains("check-contact-name-order") {
+        log("check-contact-name-order");
+        let name_order = check_name_order(&hub, &all_contacts, fix, dry_run, prefix, hdr("Reversed name order (check-contact-name-order)"), stats).await?;
+        results.push(("check-contact-name-order", name_order));
+    }
 
-    log("check-contact-displayname-duplicate");
-    let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-displayname-duplicate)"), stats).await?;
-    results.push(("check-contact-displayname-duplicate", name_dup));
+    if !skip.contains("check-contact-displayname-duplicate") {
+        log("check-contact-displayname-duplicate");
+        let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-displayname-duplicate)"), stats).await?;
+        results.push(("check-contact-displayname-duplicate", name_dup));
+    }
 
-    log("check-contact-name-numeric-surname");
-    let numeric_surname = check_name_numeric_surname(&hub, &all_contacts, fix, dry_run, prefix, hdr("Numeric surnames (check-contact-name-numeric-surname)"), stats).await?;
-    results.push(("check-contact-name-numeric-surname", numeric_surname));
+    if !skip.contains("check-contact-name-numeric-surname") {
+        log("check-contact-name-numeric-surname");
+        let numeric_surname = check_name_numeric_surname(&hub, &all_contacts, fix, dry_run, prefix, hdr("Numeric surnames (check-contact-name-numeric-surname)"), stats).await?;
+        results.push(("check-contact-name-numeric-surname", numeric_surname));
+    }
 
-    log("check-contact-samename-suffix");
-    let samename_suffix = check_samename_suffix(&hub, &all_contacts, fix, dry_run, prefix, hdr("Same-name contacts with bad suffixes (check-contact-samename-suffix)"), stats).await?;
-    results.push(("check-contact-samename-suffix", samename_suffix));
+    if !skip.contains("check-contact-samename-suffix") {
+        log("check-contact-samename-suffix");
+        let samename_suffix = check_samename_suffix(&hub, &all_contacts, fix, dry_run, prefix, hdr("Same-name contacts with bad suffixes (check-contact-samename-suffix)"), stats).await?;
+        results.push(("check-contact-samename-suffix", samename_suffix));
+    }
 
     // For check-contact-no-label with fix, we need contact groups for label autocomplete
     let (user_groups_owned, label_names) = if fix {
@@ -2078,135 +2103,155 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     };
     let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
 
-    log("check-contact-no-label");
-    let no_label = check_no_label(&hub, &all_contacts, fix, dry_run, prefix, hdr("Contacts without label (check-contact-no-label)"), stats, &user_groups, &label_names).await?;
-    results.push(("check-contact-no-label", no_label));
+    if !skip.contains("check-contact-no-label") {
+        log("check-contact-no-label");
+        let no_label = check_no_label(&hub, &all_contacts, fix, dry_run, prefix, hdr("Contacts without label (check-contact-no-label)"), stats, &user_groups, &label_names).await?;
+        results.push(("check-contact-no-label", no_label));
+    }
 
-    log("check-phone-no-label");
-    let phone_no_label = check_phone_no_label(&hub, &all_contacts, fix, dry_run, prefix, hdr("Phones without label (check-phone-no-label)"), stats).await?;
-    results.push(("check-phone-no-label", phone_no_label));
+    if !skip.contains("check-phone-no-label") {
+        log("check-phone-no-label");
+        let phone_no_label = check_phone_no_label(&hub, &all_contacts, fix, dry_run, prefix, hdr("Phones without label (check-phone-no-label)"), stats).await?;
+        results.push(("check-phone-no-label", phone_no_label));
+    }
 
-    log("check-phone-label-english");
-    let phone_label_eng = check_phone_label_english(&hub, &all_contacts, fix, dry_run, prefix, hdr("Non-English phone labels (check-phone-label-english)"), stats).await?;
-    results.push(("check-phone-label-english", phone_label_eng));
+    if !skip.contains("check-phone-label-english") {
+        log("check-phone-label-english");
+        let phone_label_eng = check_phone_label_english(&hub, &all_contacts, fix, dry_run, prefix, hdr("Non-English phone labels (check-phone-label-english)"), stats).await?;
+        results.push(("check-phone-label-english", phone_label_eng));
+    }
 
-    log("check-contact-email");
-    results.push(("check-contact-email", check_invalid_emails(&all_contacts, prefix, hdr("Invalid emails (check-contact-email)"), stats)));
+    if !skip.contains("check-contact-email") {
+        log("check-contact-email");
+        results.push(("check-contact-email", check_invalid_emails(&all_contacts, prefix, hdr("Invalid emails (check-contact-email)"), stats)));
+    }
 
-    log("check-contact-email-caps");
-    let email_caps = check_email_caps(&hub, &all_contacts, fix, dry_run, prefix, hdr("Emails with uppercase (check-contact-email-caps)"), stats).await?;
-    results.push(("check-contact-email-caps", email_caps));
+    if !skip.contains("check-contact-email-caps") {
+        log("check-contact-email-caps");
+        let email_caps = check_email_caps(&hub, &all_contacts, fix, dry_run, prefix, hdr("Emails with uppercase (check-contact-email-caps)"), stats).await?;
+        results.push(("check-contact-email-caps", email_caps));
+    }
 
-    log("check-phone-duplicate");
-    let dup_phones = check_duplicate_phones(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate phone numbers (check-phone-duplicate)"), stats).await?;
-    results.push(("check-phone-duplicate", dup_phones));
+    if !skip.contains("check-phone-duplicate") {
+        log("check-phone-duplicate");
+        let dup_phones = check_duplicate_phones(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate phone numbers (check-phone-duplicate)"), stats).await?;
+        results.push(("check-phone-duplicate", dup_phones));
+    }
 
-    log("check-contact-email-duplicate");
-    let dup_emails = check_duplicate_emails(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate email addresses (check-contact-email-duplicate)"), stats).await?;
-    results.push(("check-contact-email-duplicate", dup_emails));
+    if !skip.contains("check-contact-email-duplicate") {
+        log("check-contact-email-duplicate");
+        let dup_emails = check_duplicate_emails(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate email addresses (check-contact-email-duplicate)"), stats).await?;
+        results.push(("check-contact-email-duplicate", dup_emails));
+    }
 
     // Check for empty labels (contact groups) — separate API call
-    log("check-contact-label-nophone");
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
-    let empty: Vec<_> = all_groups.iter().filter(|g| {
-        g.member_count.unwrap_or(0) == 0
-            && g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-    }).collect();
-    if !stats && !empty.is_empty() {
-        println!("=== Empty labels (check-contact-label-nophone) ({}) ===", empty.len());
-        for group in &empty {
-            let name = group.name.as_deref().unwrap_or("<unnamed>");
-            println!("  {}", name);
+    if !skip.contains("check-contact-label-nophone") {
+        log("check-contact-label-nophone");
+        let empty: Vec<_> = all_groups.iter().filter(|g| {
+            g.member_count.unwrap_or(0) == 0
+                && g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+        }).collect();
+        if !stats && !empty.is_empty() {
+            println!("=== Empty labels (check-contact-label-nophone) ({}) ===", empty.len());
+            for group in &empty {
+                let name = group.name.as_deref().unwrap_or("<unnamed>");
+                println!("  {}", name);
 
-            if fix && !dry_run {
-                use std::io::Write;
-                std::io::stdout().flush()?;
-                if let Some(resource_name) = group.resource_name.as_deref() {
-                    if prompt_yes_no(&format!("Delete label \"{}\"?", name))? {
-                        hub.contact_groups().delete(resource_name).doit().await?;
-                        eprintln!("  Deleted.");
+                if fix && !dry_run {
+                    use std::io::Write;
+                    std::io::stdout().flush()?;
+                    if let Some(resource_name) = group.resource_name.as_deref() {
+                        if prompt_yes_no(&format!("Delete label \"{}\"?", name))? {
+                            hub.contact_groups().delete(resource_name).doit().await?;
+                            eprintln!("  Deleted.");
+                            tokio::time::sleep(MUTATE_DELAY).await;
+                        } else {
+                            eprintln!("  Skipped.");
+                        }
+                    }
+                }
+            }
+            println!();
+        }
+        results.push(("check-contact-label-nophone", empty.len()));
+    }
+
+    if !skip.contains("check-contact-label-space") {
+        log("check-contact-label-space");
+        let with_space: Vec<_> = all_groups.iter().filter(|g| {
+            g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+                && g.name.as_deref().unwrap_or("").contains(' ')
+        }).collect();
+        if !stats && !with_space.is_empty() {
+            println!("=== Labels with spaces (check-contact-label-space) ({}) ===", with_space.len());
+            for group in &with_space {
+                let name = group.name.as_deref().unwrap_or("<unnamed>");
+                println!("  {}", name);
+
+                if fix && !dry_run {
+                    use std::io::Write;
+                    std::io::stdout().flush()?;
+                    if let Some(new_name) = prompt_rename_label(name)? {
+                        let resource_name = group.resource_name.as_deref()
+                            .ok_or("Contact group missing resource name")?;
+                        let mut updated_group = (*group).clone();
+                        updated_group.name = Some(new_name.clone());
+                        let req = google_people1::api::UpdateContactGroupRequest {
+                            contact_group: Some(updated_group),
+                            read_group_fields: None,
+                            update_group_fields: None,
+                        };
+                        hub.contact_groups().update(req, resource_name).doit().await?;
+                        eprintln!("  Renamed \"{}\" -> \"{}\"", name, new_name);
                         tokio::time::sleep(MUTATE_DELAY).await;
                     } else {
                         eprintln!("  Skipped.");
                     }
                 }
             }
+            println!();
         }
-        println!();
+        results.push(("check-contact-label-space", with_space.len()));
     }
-    results.push(("check-contact-label-nophone", empty.len()));
 
-    log("check-contact-label-space");
-    let with_space: Vec<_> = all_groups.iter().filter(|g| {
-        g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-            && g.name.as_deref().unwrap_or("").contains(' ')
-    }).collect();
-    if !stats && !with_space.is_empty() {
-        println!("=== Labels with spaces (check-contact-label-space) ({}) ===", with_space.len());
-        for group in &with_space {
-            let name = group.name.as_deref().unwrap_or("<unnamed>");
-            println!("  {}", name);
+    if !skip.contains("check-contact-label-camelcase") {
+        log("check-contact-label-camelcase");
+        let not_camelcase: Vec<_> = all_groups.iter().filter(|g| {
+            g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+                && g.name.as_deref().is_some_and(|n| n.starts_with(char::is_lowercase))
+        }).collect();
+        if !stats && !not_camelcase.is_empty() {
+            println!("=== Labels not camelCase (check-contact-label-camelcase) ({}) ===", not_camelcase.len());
+            for group in &not_camelcase {
+                let name = group.name.as_deref().unwrap_or("<unnamed>");
+                let camel = capitalize_first(name);
+                if fix || dry_run {
+                    println!("  {} -> {}", name, camel);
+                } else {
+                    println!("  {}", name);
+                }
 
-            if fix && !dry_run {
-                use std::io::Write;
-                std::io::stdout().flush()?;
-                if let Some(new_name) = prompt_rename_label(name)? {
+                if fix && !dry_run {
                     let resource_name = group.resource_name.as_deref()
                         .ok_or("Contact group missing resource name")?;
                     let mut updated_group = (*group).clone();
-                    updated_group.name = Some(new_name.clone());
+                    updated_group.name = Some(camel.clone());
                     let req = google_people1::api::UpdateContactGroupRequest {
                         contact_group: Some(updated_group),
                         read_group_fields: None,
                         update_group_fields: None,
                     };
                     hub.contact_groups().update(req, resource_name).doit().await?;
-                    eprintln!("  Renamed \"{}\" -> \"{}\"", name, new_name);
+                    eprintln!("  Renamed \"{}\" -> \"{}\"", name, camel);
                     tokio::time::sleep(MUTATE_DELAY).await;
-                } else {
-                    eprintln!("  Skipped.");
                 }
             }
+            println!();
         }
-        println!();
+        results.push(("check-contact-label-camelcase", not_camelcase.len()));
     }
-    results.push(("check-contact-label-space", with_space.len()));
-
-    log("check-contact-label-camelcase");
-    let not_camelcase: Vec<_> = all_groups.iter().filter(|g| {
-        g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-            && g.name.as_deref().is_some_and(|n| n.starts_with(char::is_lowercase))
-    }).collect();
-    if !stats && !not_camelcase.is_empty() {
-        println!("=== Labels not camelCase (check-contact-label-camelcase) ({}) ===", not_camelcase.len());
-        for group in &not_camelcase {
-            let name = group.name.as_deref().unwrap_or("<unnamed>");
-            let camel = capitalize_first(name);
-            if fix || dry_run {
-                println!("  {} -> {}", name, camel);
-            } else {
-                println!("  {}", name);
-            }
-
-            if fix && !dry_run {
-                let resource_name = group.resource_name.as_deref()
-                    .ok_or("Contact group missing resource name")?;
-                let mut updated_group = (*group).clone();
-                updated_group.name = Some(camel.clone());
-                let req = google_people1::api::UpdateContactGroupRequest {
-                    contact_group: Some(updated_group),
-                    read_group_fields: None,
-                    update_group_fields: None,
-                };
-                hub.contact_groups().update(req, resource_name).doit().await?;
-                eprintln!("  Renamed \"{}\" -> \"{}\"", name, camel);
-                tokio::time::sleep(MUTATE_DELAY).await;
-            }
-        }
-        println!();
-    }
-    results.push(("check-contact-label-camelcase", not_camelcase.len()));
 
     if stats {
         let total: usize = results.iter().map(|(_, c)| c).sum();
