@@ -13,6 +13,7 @@ skip = [
     # "check-contact-family-name-regexp",
     # "check-contact-suffix-regexp",
     # "check-contact-name-is-company",
+    # "check-contact-company-known",
     # "check-contact-displayname-duplicate",
     # "check-contact-no-label",
     # "check-contact-email",
@@ -914,6 +915,148 @@ async fn check_name_is_company(
     }
 
     Ok(count)
+}
+
+pub async fn cmd_check_contact_company_known(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config();
+    if config.check_contact_name_is_company.companies.is_empty() {
+        eprintln!("No [check-contact-name-is-company] companies configured in config.toml.");
+        eprintln!("Add a section like:");
+        eprintln!("  [check-contact-name-is-company]");
+        eprintln!("  companies = [\"Google\", \"Microsoft\"]");
+        return Ok(());
+    }
+    let hub = build_hub().await?;
+    let all_fields = &[
+        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
+        "organizations", "memberships", "biographies", "urls", "events",
+        "relations", "nicknames", "occupations", "interests", "skills",
+        "userDefined", "imClients", "sipAddresses", "locations",
+        "externalIds", "clientData",
+    ];
+    let contacts = if fix {
+        fetch_all_contacts(&hub, all_fields).await?
+    } else {
+        fetch_all_contacts(&hub, &["names", "organizations", "memberships"]).await?
+    };
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = if fix {
+        let ug: Vec<(String, String)> = all_groups.iter()
+            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+            .filter_map(|g| {
+                let name = g.name.as_deref()?;
+                let rn = g.resource_name.as_deref()?;
+                Some((name.to_string(), rn.to_string()))
+            })
+            .collect();
+        let ln: Vec<String> = ug.iter().map(|(name, _)| name.clone()).collect();
+        (ug, ln)
+    } else {
+        (vec![], vec![])
+    };
+    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    check_company_known(&hub, &contacts, &config.check_contact_name_is_company.companies, fix, dry_run, "", None, false, &user_groups, &label_names, &group_names).await?;
+    Ok(())
+}
+
+async fn check_company_known(
+    _hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    companies: &[String],
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+    quiet: bool,
+    _user_groups: &[(&str, &str)],
+    _label_names: &[String],
+    _group_names: &std::collections::HashMap<String, String>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let company_set: std::collections::HashSet<String> = companies.iter()
+        .map(|c| c.to_lowercase())
+        .collect();
+
+    // Collect unknown companies and their contact count
+    let mut unknown_companies: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut count = 0;
+    for person in contacts {
+        let org_name = person.organizations.as_ref()
+            .and_then(|orgs| orgs.first())
+            .and_then(|o| o.name.as_deref())
+            .unwrap_or("");
+
+        if org_name.is_empty() || company_set.contains(&org_name.to_lowercase()) {
+            continue;
+        }
+
+        if !quiet {
+            if count == 0 {
+                if let Some(header) = header {
+                    println!("=== {} ===", header);
+                }
+            }
+            let display = person_display_name_detailed(person);
+            println!("{}  {} (company: \"{}\")", prefix, display, org_name);
+        }
+        *unknown_companies.entry(org_name.to_string()).or_default() += 1;
+        count += 1;
+    }
+
+    if !quiet && count > 0 {
+        if header.is_some() {
+            println!();
+        }
+    }
+
+    if fix && !dry_run && !unknown_companies.is_empty() {
+        use std::io::Write;
+        let mut to_add: Vec<String> = Vec::new();
+        for (company, contact_count) in &unknown_companies {
+            eprint!("  Add \"{}\" ({} contacts) to config? [y/n] ", company, contact_count);
+            std::io::stderr().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if input.trim().eq_ignore_ascii_case("y") {
+                to_add.push(company.clone());
+            }
+        }
+
+        if !to_add.is_empty() {
+            let mut config = load_config();
+            for name in &to_add {
+                if !config.check_contact_name_is_company.companies.iter()
+                    .any(|c| c.eq_ignore_ascii_case(name))
+                {
+                    config.check_contact_name_is_company.companies.push(name.clone());
+                }
+            }
+            config.check_contact_name_is_company.companies.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            save_company_list(&config.check_contact_name_is_company.companies)?;
+            eprintln!("  Added {} company name(s) to config.", to_add.len());
+        }
+    }
+
+    Ok(count)
+}
+
+fn save_company_list(companies: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let path = config_path();
+    let content = std::fs::read_to_string(&path)?;
+
+    // Parse the TOML, update the companies list, and write back
+    let mut doc = content.parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse config: {}", e))?;
+
+    let table = doc.entry("check-contact-name-is-company")
+        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    let arr = companies.iter()
+        .map(|c| toml_edit::Value::from(c.as_str()))
+        .collect::<toml_edit::Array>();
+    table["companies"] = toml_edit::value(arr);
+
+    std::fs::write(&path, doc.to_string())?;
+    Ok(())
 }
 
 pub async fn cmd_check_contact_displayname_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -2680,6 +2823,16 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
             0
         };
         results.push(("check-contact-name-is-company", name_company));
+    }
+
+    if !skip.contains("check-contact-company-known") {
+        log("check-contact-company-known");
+        let company_regexp = if !config.check_contact_name_is_company.companies.is_empty() {
+            check_company_known(&hub, &all_contacts, &config.check_contact_name_is_company.companies, fix, dry_run, prefix, hdr("Company not in configured list (check-contact-company-known)"), stats, &user_groups_regexp, &label_names_regexp, &group_names_for_regexp).await?
+        } else {
+            0
+        };
+        results.push(("check-contact-company-known", company_regexp));
     }
 
     if !skip.contains("check-contact-displayname-duplicate") {

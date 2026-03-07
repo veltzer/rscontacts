@@ -36,6 +36,7 @@ The following check names can be used in the `skip` list:
 | `check-contact-family-name-regexp` | Family names not matching the configured allow regex |
 | `check-contact-suffix-regexp` | Suffixes not matching the allow regex (default: numeric) |
 | `check-contact-name-is-company` | Given or family name matches a known company name |
+| `check-contact-company-known` | Company field not in configured companies list |
 | `check-contact-displayname-duplicate` | Multiple contacts with the same display name |
 | `check-contact-no-label` | Contacts not assigned to any label |
 | `check-contact-email` | Invalid or uppercase email addresses |
