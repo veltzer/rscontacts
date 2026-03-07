@@ -32,16 +32,10 @@ The following check names can be used in the `skip` list:
 
 | Check name | Description |
 |---|---|
-| `check-contact-name-english` | Non-English contact names |
-| `check-contact-name-caps` | All-caps contact names |
-| `check-contact-name-first-capital-letter` | Names not starting with a capital letter |
 | `check-contact-firstname-regexp` | First names not matching the configured allow regex |
 | `check-contact-lastname-regexp` | Last names not matching the configured allow regex |
 | `check-contact-suffix-regexp` | Suffixes not matching the allow regex (default: numeric) |
-| `check-contact-name-order` | Reversed name order (e.g., "Family, Given") |
 | `check-contact-displayname-duplicate` | Multiple contacts with the same display name |
-| `check-contact-name-numeric-surname` | Numeric surnames (should be suffixes) |
-| `check-contact-samename-suffix` | Same-name contacts with missing or non-sequential suffixes |
 | `check-contact-no-label` | Contacts not assigned to any label |
 | `check-contact-email` | Invalid email addresses |
 | `check-contact-email-caps` | Email addresses with uppercase letters |

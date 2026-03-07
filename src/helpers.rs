@@ -115,25 +115,12 @@ pub fn phone_has_type(pn: &google_people1::api::PhoneNumber) -> bool {
         || !pn.formatted_type.as_deref().unwrap_or("").is_empty()
 }
 
-pub fn starts_with_capital(name: &str) -> bool {
-    name.chars().next().is_some_and(|c| c.is_uppercase())
-}
-
 pub fn capitalize_first(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
         Some(c) => c.to_uppercase().to_string() + chars.as_str(),
         None => String::new(),
     }
-}
-
-pub fn is_all_caps(name: &str) -> bool {
-    let alpha_chars: String = name.chars().filter(|c| c.is_alphabetic()).collect();
-    alpha_chars.len() >= 2 && alpha_chars == alpha_chars.to_uppercase()
-}
-
-pub fn is_english_name(name: &str) -> bool {
-    name.chars().all(|c| c.is_ascii() || c == '\u{200f}' || c == '\u{200e}')
 }
 
 pub fn is_fixable_phone(phone: &str) -> bool {
@@ -460,13 +447,12 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
 
 // --- Prompt helpers ---
 
-pub fn prompt_firstname_fix_action(given: &str, family: &str) -> Result<char, Box<dyn std::error::Error>> {
+pub fn prompt_firstname_fix_action(_given: &str, family: &str, split_source: Option<&str>) -> Result<char, Box<dyn std::error::Error>> {
     use std::io::Write;
-    let has_split = split_alpha_numeric(given).is_some();
     loop {
-        if has_split {
-            let (alpha, numeric) = split_alpha_numeric(given).unwrap();
-            eprint!("  s[w]ap lastname \"{}\" to firstname / s[p]lit \"{}\" -> firstname \"{}\", suffix \"{}\" / [c]ompany / [r]ename / [d]elete / [s]kip? ", family, given, alpha, numeric);
+        if let Some(source) = split_source {
+            let (alpha, numeric) = split_alpha_numeric(source).unwrap();
+            eprint!("  s[w]ap lastname \"{}\" to firstname / s[p]lit \"{}\" -> firstname \"{}\", suffix \"{}\" / [c]ompany / [r]ename / [d]elete / [s]kip? ", family, source, alpha, numeric);
         } else {
             eprint!("  s[w]ap lastname \"{}\" to firstname / [c]ompany / [r]ename / [d]elete / [s]kip? ", family);
         }
@@ -475,9 +461,9 @@ pub fn prompt_firstname_fix_action(given: &str, family: &str) -> Result<char, Bo
         std::io::stdin().read_line(&mut input)?;
         match input.trim().chars().next() {
             Some(c @ ('w' | 'c' | 'r' | 'd' | 's')) => return Ok(c),
-            Some('p') if has_split => return Ok('p'),
+            Some('p') if split_source.is_some() => return Ok('p'),
             _ => {
-                if has_split {
+                if split_source.is_some() {
                     eprintln!("  Invalid choice. Enter w, p, c, r, d, or s.");
                 } else {
                     eprintln!("  Invalid choice. Enter w, c, r, d, or s.");
@@ -512,20 +498,6 @@ pub fn prompt_new_name(old_name: &str) -> Result<String, Box<dyn std::error::Err
         return Err("Empty name not allowed".into());
     }
     Ok(new_name)
-}
-
-pub fn prompt_new_name_with_default(old_name: &str, suggested: &str) -> Result<String, Box<dyn std::error::Error>> {
-    use std::io::Write;
-    eprint!("  New name for \"{}\" [Enter for \"{}\"]: ", old_name, suggested);
-    std::io::stderr().flush()?;
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        Ok(suggested.to_string())
-    } else {
-        Ok(trimmed.to_string())
-    }
 }
 
 pub fn prompt_yes_no(message: &str) -> Result<bool, Box<dyn std::error::Error>> {
@@ -604,25 +576,6 @@ pub fn print_phone_fix(name: &str, phone: &str, fixed: &str, fix: bool, dry_run:
     }
 }
 
-pub fn is_numeric_string(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
-}
-
-/// Extract the "base name" from a display name by stripping a trailing numeric suffix.
-/// E.g., "Mike 1" -> "Mike", "Mike" -> "Mike", "Mike 2" -> "Mike".
-/// Returns (base_name, optional_suffix_number).
-pub fn split_name_suffix(display_name: &str) -> (&str, Option<u32>) {
-    if let Some(pos) = display_name.rfind(' ') {
-        let after = &display_name[pos + 1..];
-        if is_numeric_string(after) {
-            if let Ok(n) = after.parse::<u32>() {
-                return (display_name[..pos].trim_end(), Some(n));
-            }
-        }
-    }
-    (display_name, None)
-}
-
 /// Split a string into its alpha prefix and numeric suffix.
 /// E.g. "Mike2" -> Some(("Mike", "2")), "Mike" -> None, "123" -> None
 pub fn split_alpha_numeric(s: &str) -> Option<(&str, &str)> {
@@ -637,28 +590,6 @@ pub fn split_alpha_numeric(s: &str) -> Option<(&str, &str)> {
     } else {
         None
     }
-}
-
-pub fn has_reversed_name(person: &google_people1::api::Person) -> bool {
-    let name = person_name(person);
-    if let Some((_, after)) = name.split_once(',') {
-        let after = after.trim();
-        // Don't flag "Name, 2" — that's a numeric suffix, not a reversed name
-        !is_numeric_string(after)
-    } else {
-        false
-    }
-}
-
-pub fn compute_fixed_name(display_name: &str) -> String {
-    if let Some((family, given)) = display_name.split_once(',') {
-        let given = given.trim();
-        let family = family.trim();
-        if !given.is_empty() && !family.is_empty() {
-            return format!("{} {}", given, family);
-        }
-    }
-    display_name.to_string()
 }
 
 pub fn is_starred(person: &google_people1::api::Person) -> bool {

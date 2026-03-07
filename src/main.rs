@@ -34,33 +34,6 @@ enum Commands {
         #[arg(long)]
         starred: bool,
     },
-    /// Print contacts with non-English names
-    CheckContactNameEnglish {
-        /// Interactively fix each non-English contact (rename/delete/skip)
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Print contacts with all-caps names
-    CheckContactNameCaps {
-        /// Interactively fix each all-caps contact (rename/delete/skip)
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Print contacts whose name doesn't start with a capital letter
-    CheckContactNameFirstCapitalLetter {
-        /// Interactively fix each contact (rename/delete/skip)
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
     /// Check first names against allow regex defined in config.toml
     CheckContactFirstnameRegexp {
         /// Interactively fix each flagged contact (swap/rename/delete/skip)
@@ -88,27 +61,9 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Print contacts with reversed name order (e.g. "Family, Given")
-    CheckContactNameOrder {
-        /// Interactively fix each contact (rename/delete/skip)
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
     /// Print contacts that share the same display name
     CheckContactDisplaynameDuplicate {
         /// Interactively fix each duplicate (rename/delete/skip)
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Check that same-name contacts are distinguished with sequential numeric suffixes (1, 2, ...)
-    CheckContactSamenameSuffix {
-        /// Automatically assign sequential suffixes
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
@@ -240,15 +195,6 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Check for contacts with numeric surnames (e.g. "1", "2") and move them to the suffix field
-    CheckContactNameNumericSurname {
-        /// Move numeric surnames to the suffix field
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
     /// Review all phones with a specific label (e.g. "Work Fax")
     ReviewPhoneLabel {
         /// The phone label to review (case-insensitive)
@@ -298,15 +244,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Auth { no_browser, force } => commands::cmd_auth(no_browser, force).await?,
         Commands::List { emails, labels, starred } => commands::cmd_list(emails, labels, starred).await?,
-        Commands::CheckContactNameEnglish { fix, dry_run } => commands::cmd_check_contact_name_english(fix, dry_run).await?,
-        Commands::CheckContactNameCaps { fix, dry_run } => commands::cmd_check_contact_name_caps(fix, dry_run).await?,
-        Commands::CheckContactNameFirstCapitalLetter { fix, dry_run } => commands::cmd_check_contact_name_first_capital_letter(fix, dry_run).await?,
         Commands::CheckContactFirstnameRegexp { fix, dry_run } => commands::cmd_check_contact_firstname_regexp(fix, dry_run).await?,
         Commands::CheckContactSuffixRegexp { fix, dry_run } => commands::cmd_check_contact_suffix_regexp(fix, dry_run).await?,
         Commands::CheckContactLastnameRegexp { fix, dry_run } => commands::cmd_check_contact_lastname_regexp(fix, dry_run).await?,
-        Commands::CheckContactNameOrder { fix, dry_run } => commands::cmd_check_contact_name_order(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,
-        Commands::CheckContactSamenameSuffix { fix, dry_run } => commands::cmd_check_contact_samename_suffix(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
@@ -319,7 +260,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactLabelNophone { fix, dry_run } => commands::cmd_check_contact_label_nophone(fix, dry_run).await?,
         Commands::CheckContactLabelSpace { fix, dry_run } => commands::cmd_check_contact_label_space(fix, dry_run).await?,
         Commands::CheckContactLabelCamelcase { fix, dry_run } => commands::cmd_check_contact_label_camelcase(fix, dry_run).await?,
-        Commands::CheckContactNameNumericSurname { fix, dry_run } => commands::cmd_check_contact_name_numeric_surname(fix, dry_run).await?,
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
@@ -385,42 +325,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_check_name_english_subcommand() {
-        let cli = Cli::parse_from(["rscontacts", "check-contact-name-english"]);
-        assert!(matches!(cli.command, Commands::CheckContactNameEnglish { fix: false, dry_run: false }));
-    }
-
-    #[test]
-    fn test_cli_check_name_english_fix() {
-        let cli = Cli::parse_from(["rscontacts", "check-contact-name-english", "--fix"]);
-        assert!(matches!(cli.command, Commands::CheckContactNameEnglish { fix: true, dry_run: false }));
-    }
-
-    #[test]
-    fn test_cli_check_name_english_dry_run() {
-        let cli = Cli::parse_from(["rscontacts", "check-contact-name-english", "--fix", "--dry-run"]);
-        assert!(matches!(cli.command, Commands::CheckContactNameEnglish { fix: true, dry_run: true }));
-    }
-
-    #[test]
-    fn test_cli_check_name_caps_subcommand() {
-        let cli = Cli::parse_from(["rscontacts", "check-contact-name-caps"]);
-        assert!(matches!(cli.command, Commands::CheckContactNameCaps { fix: false, dry_run: false }));
-    }
-
-    #[test]
-    fn test_cli_check_name_caps_fix() {
-        let cli = Cli::parse_from(["rscontacts", "check-contact-name-caps", "--fix"]);
-        assert!(matches!(cli.command, Commands::CheckContactNameCaps { fix: true, dry_run: false }));
-    }
-
-    #[test]
-    fn test_cli_check_name_caps_dry_run() {
-        let cli = Cli::parse_from(["rscontacts", "check-contact-name-caps", "--fix", "--dry-run"]);
-        assert!(matches!(cli.command, Commands::CheckContactNameCaps { fix: true, dry_run: true }));
-    }
-
-    #[test]
     fn test_cli_check_all_subcommand() {
         let cli = Cli::parse_from(["rscontacts", "check-all"]);
         assert!(matches!(cli.command, Commands::CheckAll { fix: false, dry_run: false, .. }));
@@ -446,32 +350,6 @@ mod tests {
         } else {
             panic!("wrong command");
         }
-    }
-
-    #[test]
-    fn test_is_all_caps_true() {
-        assert!(is_all_caps("JOHN DOE"));
-        assert!(is_all_caps("MARK VELTZER"));
-        assert!(is_all_caps("JEAN-PIERRE"));
-    }
-
-    #[test]
-    fn test_is_all_caps_false() {
-        assert!(!is_all_caps("John Doe"));
-        assert!(!is_all_caps("john doe"));
-        assert!(!is_all_caps("JOHN doe"));
-    }
-
-    #[test]
-    fn test_is_all_caps_no_alpha() {
-        assert!(!is_all_caps("123"));
-        assert!(!is_all_caps(""));
-    }
-
-    #[test]
-    fn test_is_all_caps_short_codes() {
-        assert!(!is_all_caps("P78"));
-        assert!(!is_all_caps("A1"));
     }
 
     #[test]
@@ -576,38 +454,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_english_name_ascii() {
-        assert!(is_english_name("John Doe"));
-        assert!(is_english_name("O'Brien"));
-        assert!(is_english_name("Jean-Pierre"));
-    }
-
-    #[test]
-    fn test_is_english_name_hebrew() {
-        assert!(!is_english_name("יוסי כהן"));
-    }
-
-    #[test]
-    fn test_is_english_name_arabic() {
-        assert!(!is_english_name("محمد"));
-    }
-
-    #[test]
-    fn test_is_english_name_chinese() {
-        assert!(!is_english_name("张伟"));
-    }
-
-    #[test]
-    fn test_is_english_name_mixed() {
-        assert!(!is_english_name("John דוד"));
-    }
-
-    #[test]
-    fn test_is_english_name_empty() {
-        assert!(is_english_name(""));
-    }
-
-    #[test]
     fn test_is_correct_phone_format() {
         assert!(is_correct_phone_format("+972-505665636"));
         assert!(is_correct_phone_format("+1-5551234567"));
@@ -669,25 +515,6 @@ mod tests {
         assert!(!is_valid_email("user@"));
         assert!(!is_valid_email("user@nodot"));
         assert!(!is_valid_email("user@domain.x"));
-    }
-
-    #[test]
-    fn test_is_numeric_string() {
-        assert!(is_numeric_string("1"));
-        assert!(is_numeric_string("123"));
-        assert!(!is_numeric_string(""));
-        assert!(!is_numeric_string("abc"));
-        assert!(!is_numeric_string("1a"));
-    }
-
-    #[test]
-    fn test_split_name_suffix() {
-        assert_eq!(split_name_suffix("Mike 1"), ("Mike", Some(1)));
-        assert_eq!(split_name_suffix("Mike 2"), ("Mike", Some(2)));
-        assert_eq!(split_name_suffix("Mike"), ("Mike", None));
-        assert_eq!(split_name_suffix("John Doe"), ("John Doe", None));
-        assert_eq!(split_name_suffix("Mike 10"), ("Mike", Some(10)));
-        assert_eq!(split_name_suffix("Jean-Pierre 3"), ("Jean-Pierre", Some(3)));
     }
 
     #[test]

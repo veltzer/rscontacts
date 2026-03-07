@@ -104,49 +104,6 @@ pub async fn cmd_list(emails: bool, labels: bool, starred: bool) -> Result<(), B
     Ok(())
 }
 
-async fn check_name_issues<F>(
-    hub: &HubType,
-    contacts: &[google_people1::api::Person],
-    predicate: F,
-    fix: bool,
-    dry_run: bool,
-    prefix: &str,
-    header: Option<&str>,
-    quiet: bool,
-) -> Result<usize, Box<dyn std::error::Error>>
-where
-    F: Fn(&str) -> bool,
-{
-    let filtered: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
-        let name = person_name(p);
-        !name.is_empty() && predicate(name)
-    }).collect();
-
-    if !quiet {
-        if !filtered.is_empty() {
-            if let Some(header) = header {
-                println!("=== {} ({}) ===", header, filtered.len());
-            }
-        }
-
-        for person in &filtered {
-            let name = person_name(person);
-            let email = person_email(person);
-            print_name_with_email(name, email, prefix);
-
-            if fix && !dry_run {
-                interactive_name_fix(hub, person, name).await?;
-            }
-        }
-
-        if !filtered.is_empty() && header.is_some() {
-            println!();
-        }
-    }
-
-    Ok(filtered.len())
-}
-
 async fn check_phone_issues<P, T>(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
@@ -207,27 +164,6 @@ where
     }
 
     Ok(filtered.len())
-}
-
-pub async fn cmd_check_contact_name_english(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
-    check_name_issues(&hub, &contacts, |name| !is_english_name(name), fix, dry_run, "", None, false).await?;
-    Ok(())
-}
-
-pub async fn cmd_check_contact_name_caps(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
-    check_name_issues(&hub, &contacts, |name| is_all_caps(name), fix, dry_run, "", None, false).await?;
-    Ok(())
-}
-
-pub async fn cmd_check_contact_name_first_capital_letter(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
-    check_name_issues(&hub, &contacts, |name| !starts_with_capital(name), fix, dry_run, "", None, false).await?;
-    Ok(())
 }
 
 pub async fn cmd_check_contact_firstname_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -315,14 +251,26 @@ async fn interactive_firstname_fix(
         .and_then(|n| n.family_name.as_deref())
         .unwrap_or("");
 
-    match prompt_firstname_fix_action(given, family)? {
+    // Try splitting given name alone, or given+family combined
+    let combined = format!("{}{}", given, family);
+    let split_source = if split_alpha_numeric(given).is_some() {
+        Some(given.to_string())
+    } else if split_alpha_numeric(&combined).is_some() {
+        Some(combined.clone())
+    } else {
+        None
+    };
+
+    match prompt_firstname_fix_action(given, family, split_source.as_deref())? {
         'p' => {
-            // Split: "Mike2" -> given_name="Mike", suffix="2"
-            let (alpha, numeric) = split_alpha_numeric(given).expect("split option only available when splittable");
+            // Split: "Mike2" or "P"+"51" -> given_name="Mike"/"P", suffix="2"/"51"
+            let source = split_source.as_deref().expect("split option only available when splittable");
+            let (alpha, numeric) = split_alpha_numeric(source).expect("split option only available when splittable");
             let mut updated = person.clone();
             if let Some(ref mut names) = updated.names {
                 if let Some(first) = names.first_mut() {
                     first.given_name = Some(alpha.to_string());
+                    first.family_name = None;
                     first.honorific_suffix = Some(numeric.to_string());
                 }
             }
@@ -542,80 +490,6 @@ async fn check_lastname_regexp(
     Ok(count)
 }
 
-async fn check_name_order(hub: &HubType, contacts: &[google_people1::api::Person], fix: bool, dry_run: bool, prefix: &str, header: Option<&str>, quiet: bool) -> Result<usize, Box<dyn std::error::Error>> {
-    let mut count = 0;
-    for person in contacts {
-        if has_reversed_name(person) {
-            if !quiet {
-                if count == 0 {
-                    if let Some(header) = header {
-                        println!("=== {} ===", header);
-                    }
-                }
-                let name = person_display_name(person);
-                let fixed = compute_fixed_name(name);
-                println!("{}{} -> {}", prefix, name, fixed);
-            }
-            count += 1;
-
-            if fix && !dry_run && !quiet {
-                use std::io::Write;
-                std::io::stdout().flush()?;
-                let name = person_display_name(person);
-                let fixed = compute_fixed_name(name);
-                let resource_name = person
-                    .resource_name
-                    .as_deref()
-                    .ok_or("Contact missing resource name")?;
-
-                match prompt_fix_action(name)? {
-                    'r' => {
-                        let new_name = prompt_new_name_with_default(name, &fixed)?;
-                        let mut updated = person.clone();
-                        if let Some(ref mut names) = updated.names {
-                            if let Some(first) = names.first_mut() {
-                                if let Some((given, family)) = new_name.split_once(' ') {
-                                    first.given_name = Some(given.to_string());
-                                    first.family_name = Some(family.to_string());
-                                } else {
-                                    first.given_name = Some(new_name.clone());
-                                    first.family_name = None;
-                                }
-                                first.unstructured_name = Some(new_name.clone());
-                            }
-                        }
-                        hub.people()
-                            .update_contact(updated, resource_name)
-                            .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                            .doit()
-                            .await?;
-                        eprintln!("  Renamed to \"{}\"", new_name);
-                        tokio::time::sleep(MUTATE_DELAY).await;
-                    }
-                    'd' => {
-                        hub.people().delete_contact(resource_name).doit().await?;
-                        eprintln!("  Deleted.");
-                        tokio::time::sleep(MUTATE_DELAY).await;
-                    }
-                    's' => {
-                        eprintln!("  Skipped.");
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        }
-    }
-    if !quiet && count > 0 && header.is_some() { println!(); }
-    Ok(count)
-}
-
-pub async fn cmd_check_contact_name_order(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses"]).await?;
-    check_name_order(&hub, &contacts, fix, dry_run, "", None, false).await?;
-    Ok(())
-}
-
 pub async fn cmd_check_contact_displayname_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "phoneNumbers"]).await?;
@@ -688,178 +562,6 @@ async fn check_name_duplicate(
             }
         }
 
-        if header.is_some() {
-            println!();
-        }
-    }
-
-    Ok(count)
-}
-
-pub async fn cmd_check_contact_samename_suffix(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names"]).await?;
-    check_samename_suffix(&hub, &contacts, fix, dry_run, "", None, false).await?;
-    Ok(())
-}
-
-async fn check_samename_suffix(
-    hub: &HubType,
-    contacts: &[google_people1::api::Person],
-    fix: bool,
-    dry_run: bool,
-    prefix: &str,
-    header: Option<&str>,
-    quiet: bool,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    // Group contacts by base name (display name with numeric suffix stripped)
-    let mut base_groups: std::collections::HashMap<String, Vec<(&google_people1::api::Person, Option<u32>)>> =
-        std::collections::HashMap::new();
-    for person in contacts {
-        let name = person_name(person);
-        if name.is_empty() {
-            continue;
-        }
-        let (base, suffix) = split_name_suffix(name);
-        base_groups.entry(base.to_string()).or_default().push((person, suffix));
-    }
-
-    let mut count = 0;
-    let mut issues: Vec<(String, Vec<String>, Vec<(&google_people1::api::Person, Option<u32>)>)> = Vec::new();
-
-    for (base, group) in &base_groups {
-        if group.len() < 2 {
-            // Only one contact with this base name — but if it has a suffix, that's odd
-            if group.len() == 1 && group[0].1.is_some() {
-                let display = person_display_name(group[0].0);
-                issues.push((base.clone(), vec![
-                    format!("{} has suffix but is the only contact with base name \"{}\"", display, base),
-                ], group.clone()));
-                count += 1;
-            }
-            continue;
-        }
-
-        // Multiple contacts share the same base name — check suffixes
-        let mut problems = Vec::new();
-        let suffixes: Vec<Option<u32>> = group.iter().map(|(_, s)| *s).collect();
-
-        // Check: all must have a suffix
-        let missing: Vec<_> = group.iter()
-            .filter(|(_, s)| s.is_none())
-            .collect();
-        for (person, _) in &missing {
-            let display = person_display_name(person);
-            problems.push(format!("{} is missing a numeric suffix", display));
-            count += 1;
-        }
-
-        // Check: suffixes should be 1..=N
-        let mut nums: Vec<u32> = suffixes.iter().filter_map(|s| *s).collect();
-        nums.sort();
-        let expected: Vec<u32> = (1..=group.len() as u32).collect();
-        if !missing.is_empty() || nums != expected {
-            if missing.is_empty() {
-                // All have suffixes but they're not sequential
-                let actual: Vec<String> = nums.iter().map(|n| n.to_string()).collect();
-                let expected_str: Vec<String> = expected.iter().map(|n| n.to_string()).collect();
-                problems.push(format!(
-                    "suffixes are [{}], expected [{}]",
-                    actual.join(", "),
-                    expected_str.join(", "),
-                ));
-                count += 1;
-            }
-        }
-
-        if !problems.is_empty() {
-            issues.push((base.clone(), problems, group.clone()));
-        }
-    }
-
-    issues.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
-
-    if !quiet && !issues.is_empty() {
-        if let Some(header) = header {
-            println!("=== {} ({}) ===", header, count);
-        }
-        for (base, problems, group) in &issues {
-            println!("{}\"{}\":", prefix, base);
-            for problem in problems {
-                println!("{}  - {}", prefix, problem);
-            }
-
-            if fix || dry_run {
-                if group.len() == 1 {
-                    // Lone contact with a suffix — remove it
-                    let (person, _) = &group[0];
-                    let old_display = person_display_name(person);
-                    println!("{}  {} -> {}", prefix, old_display, base);
-
-                    if fix && !dry_run {
-                        let resource_name = person
-                            .resource_name
-                            .as_deref()
-                            .ok_or("Contact missing resource name")?;
-                        let mut updated = (*person).clone();
-                        if let Some(ref mut names) = updated.names {
-                            if let Some(first) = names.first_mut() {
-                                first.honorific_suffix = None;
-                                first.family_name = None;
-                                first.unstructured_name = Some(base.clone());
-                            }
-                        }
-                        hub.people()
-                            .update_contact(updated, resource_name)
-                            .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                            .doit()
-                            .await?;
-                        eprintln!("{}  Updated.", prefix);
-                        tokio::time::sleep(MUTATE_DELAY).await;
-                    }
-                } else {
-                    // Multiple contacts — renumber sequentially.
-                    // First fix contacts missing a suffix (assign lowest available),
-                    // then renumber all to be sequential 1..N.
-
-                    // Sort group by existing suffix (None first, then by number)
-                    let mut sorted_group = group.clone();
-                    sorted_group.sort_by_key(|(_, s)| s.unwrap_or(0));
-
-                    for (i, (person, old_suffix)) in sorted_group.iter().enumerate() {
-                        let new_num = (i + 1) as u32;
-                        if *old_suffix == Some(new_num) {
-                            continue; // Already correct
-                        }
-                        let old_display = person_display_name(person);
-                        let new_display = format!("{} {}", base, new_num);
-                        println!("{}  {} -> {}", prefix, old_display, new_display);
-
-                        if fix && !dry_run {
-                            let resource_name = person
-                                .resource_name
-                                .as_deref()
-                                .ok_or("Contact missing resource name")?;
-                            let mut updated = (*person).clone();
-                            if let Some(ref mut names) = updated.names {
-                                if let Some(first) = names.first_mut() {
-                                    first.honorific_suffix = Some(format!("{}", new_num));
-                                    first.family_name = None;
-                                    first.unstructured_name = Some(new_display);
-                                }
-                            }
-                            hub.people()
-                                .update_contact(updated, resource_name)
-                                .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                                .doit()
-                                .await?;
-                            eprintln!("{}  Updated.", prefix);
-                            tokio::time::sleep(MUTATE_DELAY).await;
-                        }
-                    }
-                }
-            }
-        }
         if header.is_some() {
             println!();
         }
@@ -1805,83 +1507,6 @@ pub async fn cmd_check_contact_label_camelcase(fix: bool, dry_run: bool) -> Resu
     Ok(())
 }
 
-pub async fn cmd_check_contact_name_numeric_surname(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names"]).await?;
-    check_name_numeric_surname(&hub, &contacts, fix, dry_run, "", None, false).await?;
-    Ok(())
-}
-
-async fn check_name_numeric_surname(
-    hub: &HubType,
-    contacts: &[google_people1::api::Person],
-    fix: bool,
-    dry_run: bool,
-    prefix: &str,
-    header: Option<&str>,
-    quiet: bool,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let mut count = 0;
-    for person in contacts {
-        let names = match &person.names {
-            Some(names) => names,
-            None => continue,
-        };
-        let name = match names.first() {
-            Some(n) => n,
-            None => continue,
-        };
-        let family = match name.family_name.as_deref() {
-            Some(f) => f,
-            None => continue,
-        };
-        if !is_numeric_string(family) {
-            continue;
-        }
-
-        if !quiet {
-            if count == 0 {
-                if let Some(header) = header {
-                    println!("=== {} ===", header);
-                }
-            }
-            let display = person_display_name(person);
-            let given = name.given_name.as_deref().unwrap_or("");
-            if fix || dry_run {
-                println!("{}{} -> given: \"{}\", suffix: \"{}\"", prefix, display, given, family);
-            } else {
-                println!("{}{} (surname: \"{}\")", prefix, display, family);
-            }
-        }
-        count += 1;
-
-        if fix && !dry_run && !quiet {
-            let given = name.given_name.as_deref().unwrap_or("");
-            let resource_name = person
-                .resource_name
-                .as_deref()
-                .ok_or("Contact missing resource name")?;
-            let mut updated = person.clone();
-            if let Some(ref mut names) = updated.names {
-                if let Some(first) = names.first_mut() {
-                    first.honorific_suffix = Some(family.to_string());
-                    first.family_name = None;
-                    first.unstructured_name = Some(format!("{} {}", given, family));
-                }
-            }
-            hub.people()
-                .update_contact(updated, resource_name)
-                .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                .doit()
-                .await?;
-            eprintln!("{}  Updated.", prefix);
-            tokio::time::sleep(MUTATE_DELAY).await;
-        }
-    }
-    if !quiet && count > 0 && header.is_some() { println!(); }
-    Ok(count)
-}
-
 pub async fn cmd_remove_label_from_all_contacts(label: &str, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
@@ -2077,24 +1702,6 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     let hdr = |s: &'static str| -> Option<&'static str> { if stats { None } else { Some(s) } };
     let log = |name: &str| { if verbose { eprintln!("Running {}...", name); } };
 
-    if !skip.contains("check-contact-name-english") {
-        log("check-contact-name-english");
-        let non_english = check_name_issues(
-            &hub, &all_contacts, |name| !is_english_name(name),
-            fix, dry_run, prefix, hdr("Non-English names (check-contact-name-english)"), stats,
-        ).await?;
-        results.push(("check-contact-name-english", non_english));
-    }
-
-    if !skip.contains("check-contact-name-caps") {
-        log("check-contact-name-caps");
-        let all_caps = check_name_issues(
-            &hub, &all_contacts, |name| is_all_caps(name),
-            fix, dry_run, prefix, hdr("All-caps names (check-contact-name-caps)"), stats,
-        ).await?;
-        results.push(("check-contact-name-caps", all_caps));
-    }
-
     if !skip.contains("check-phone-countrycode") {
         log("check-phone-countrycode");
         let country_owned = country.to_string();
@@ -2119,15 +1726,6 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         results.push(("check-phone-format", bad_format));
     }
 
-    if !skip.contains("check-contact-name-first-capital-letter") {
-        log("check-contact-name-first-capital-letter");
-        let first_cap = check_name_issues(
-            &hub, &all_contacts, |name| !starts_with_capital(name),
-            fix, dry_run, prefix, hdr("Names not starting with capital letter (check-contact-name-first-capital-letter)"), stats,
-        ).await?;
-        results.push(("check-contact-name-first-capital-letter", first_cap));
-    }
-
     if !skip.contains("check-contact-firstname-regexp") && config.check_contact_firstname_regexp.allow.is_some() {
         log("check-contact-firstname-regexp");
         let firstname_regexp = check_firstname_regexp(&hub, &all_contacts, &config.check_contact_firstname_regexp, fix, dry_run, prefix, hdr("First name doesn't match allow regex (check-contact-firstname-regexp)"), stats).await?;
@@ -2146,28 +1744,10 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         results.push(("check-contact-suffix-regexp", suffix_regexp));
     }
 
-    if !skip.contains("check-contact-name-order") {
-        log("check-contact-name-order");
-        let name_order = check_name_order(&hub, &all_contacts, fix, dry_run, prefix, hdr("Reversed name order (check-contact-name-order)"), stats).await?;
-        results.push(("check-contact-name-order", name_order));
-    }
-
     if !skip.contains("check-contact-displayname-duplicate") {
         log("check-contact-displayname-duplicate");
         let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-displayname-duplicate)"), stats).await?;
         results.push(("check-contact-displayname-duplicate", name_dup));
-    }
-
-    if !skip.contains("check-contact-name-numeric-surname") {
-        log("check-contact-name-numeric-surname");
-        let numeric_surname = check_name_numeric_surname(&hub, &all_contacts, fix, dry_run, prefix, hdr("Numeric surnames (check-contact-name-numeric-surname)"), stats).await?;
-        results.push(("check-contact-name-numeric-surname", numeric_surname));
-    }
-
-    if !skip.contains("check-contact-samename-suffix") {
-        log("check-contact-samename-suffix");
-        let samename_suffix = check_samename_suffix(&hub, &all_contacts, fix, dry_run, prefix, hdr("Same-name contacts with bad suffixes (check-contact-samename-suffix)"), stats).await?;
-        results.push(("check-contact-samename-suffix", samename_suffix));
     }
 
     // For check-contact-no-label with fix, we need contact groups for label autocomplete
