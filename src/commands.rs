@@ -230,238 +230,66 @@ pub async fn cmd_check_contact_name_first_capital_letter(fix: bool, dry_run: boo
     Ok(())
 }
 
-pub async fn cmd_check_contact_name_firstname_numeric(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_firstname_regexp() -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names"]).await?;
-    check_name_firstname_numeric(&hub, &contacts, fix, dry_run, "", None, false).await?;
+    let config = load_config();
+    check_firstname_regexp(&contacts, &config.check_contact_firstname_regexp, "", None, false);
     Ok(())
 }
 
-async fn check_name_firstname_numeric(
-    hub: &HubType,
+fn check_firstname_regexp(
     contacts: &[google_people1::api::Person],
-    fix: bool,
-    dry_run: bool,
+    config: &crate::helpers::FirstnameRegexpConfig,
     prefix: &str,
     header: Option<&str>,
     quiet: bool,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let mut count = 0;
-    for person in contacts {
-        let name_entry = match person.names.as_ref().and_then(|n| n.first()) {
-            Some(n) => n,
-            None => continue,
-        };
-        let given = name_entry.given_name.as_deref().unwrap_or("");
-        if !is_numeric_string(given) {
-            continue;
+) -> usize {
+    let pattern = match &config.allow {
+        Some(p) => p,
+        None => {
+            if !quiet {
+                eprintln!("No firstname allow regex configured in config.toml. Set [check-contact-firstname-regexp] allow = \"...\"");
+            }
+            return 0;
         }
+    };
 
-        let family = name_entry.family_name.as_deref().unwrap_or("");
-        let display = person_display_name(person);
-
-        if !quiet {
-            if count == 0 {
-                if let Some(header) = header {
-                    println!("=== {} ===", header);
-                }
-            }
-            if !family.is_empty() {
-                if fix || dry_run {
-                    println!("{}{} -> given: \"{}\", suffix: \"{}\"", prefix, display, family, given);
-                } else {
-                    println!("{}{} (given: \"{}\", family: \"{}\")", prefix, display, given, family);
-                }
-            } else {
-                println!("{}{} (given: \"{}\")", prefix, display, given);
-            }
-
-            if fix && !dry_run {
-                if !family.is_empty() {
-                    // Move family to given, move numeric given to suffix
-                    let resource_name = person
-                        .resource_name
-                        .as_deref()
-                        .ok_or("Contact missing resource name")?;
-                    let mut updated = person.clone();
-                    if let Some(ref mut names) = updated.names {
-                        if let Some(first) = names.first_mut() {
-                            first.given_name = Some(family.to_string());
-                            first.family_name = None;
-                            first.honorific_suffix = Some(given.to_string());
-                            first.unstructured_name = Some(format!("{} {}", family, given));
-                        }
-                    }
-                    hub.people()
-                        .update_contact(updated, resource_name)
-                        .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                        .doit()
-                        .await?;
-                    eprintln!("{}  Fixed: given=\"{}\", suffix=\"{}\"", prefix, family, given);
-                    tokio::time::sleep(MUTATE_DELAY).await;
-                } else {
-                    eprintln!("{}  No family name to swap — skipped.", prefix);
-                }
-            }
+    let re = match regex::Regex::new(pattern) {
+        Ok(re) => re,
+        Err(e) => {
+            eprintln!("Warning: invalid regex \"{}\": {}", pattern, e);
+            return 0;
         }
-        count += 1;
-    }
-    if !quiet && count > 0 && header.is_some() { println!(); }
-    Ok(count)
-}
+    };
 
-pub async fn cmd_check_contact_name_firstname_space(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "emailAddresses", "organizations"]).await?;
-    check_name_firstname_space(&hub, &contacts, fix, dry_run, "", None, false).await?;
-    Ok(())
-}
-
-async fn check_name_firstname_space(
-    hub: &HubType,
-    contacts: &[google_people1::api::Person],
-    fix: bool,
-    dry_run: bool,
-    prefix: &str,
-    header: Option<&str>,
-    quiet: bool,
-) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
         let given = person.names.as_ref()
             .and_then(|names| names.first())
             .and_then(|n| n.given_name.as_deref())
             .unwrap_or("");
-        if !given.contains(' ') {
+        if given.is_empty() {
             continue;
         }
 
-        if !quiet {
-            if count == 0 {
-                if let Some(header) = header {
-                    println!("=== {} ===", header);
-                }
-            }
-            let display = person_display_name(person);
-            let email = person_email(person);
-            println!("{}{} (given: \"{}\")", prefix, display, given);
-            if !email.is_empty() {
-                println!("{}  email: {}", prefix, email);
-            }
-
-            if fix && !dry_run {
-                let parts: Vec<&str> = given.splitn(2, ' ').collect();
-                let has_two_parts = parts.len() == 2 && !parts[1].is_empty();
-
-                use std::io::Write;
-                loop {
-                    if has_two_parts {
-                        eprint!("  [p]split \"{}\"/\"{}\" / [c]ompany / [r]ename / [d]elete / [s]kip? ", parts[0], parts[1]);
-                    } else {
-                        eprint!("  [c]ompany / [r]ename / [d]elete / [s]kip? ");
-                    }
-                    std::io::stderr().flush()?;
-                    let mut input = String::new();
-                    std::io::stdin().read_line(&mut input)?;
-                    match input.trim().chars().next() {
-                        Some('p') if has_two_parts => {
-                            let resource_name = person
-                                .resource_name
-                                .as_deref()
-                                .ok_or("Contact missing resource name")?;
-                            let mut updated = person.clone();
-                            if let Some(ref mut names) = updated.names {
-                                if let Some(first) = names.first_mut() {
-                                    first.given_name = Some(parts[0].to_string());
-                                    first.family_name = Some(parts[1].to_string());
-                                    first.unstructured_name = Some(given.to_string());
-                                }
-                            }
-                            hub.people()
-                                .update_contact(updated, resource_name)
-                                .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                                .doit()
-                                .await?;
-                            eprintln!("  Split to given: \"{}\", family: \"{}\"", parts[0], parts[1]);
-                            tokio::time::sleep(MUTATE_DELAY).await;
-                            break;
-                        }
-                        Some('c') => {
-                            let resource_name = person
-                                .resource_name
-                                .as_deref()
-                                .ok_or("Contact missing resource name")?;
-                            let mut updated = person.clone();
-                            // Move the full given name to organization
-                            let org = google_people1::api::Organization {
-                                name: Some(given.to_string()),
-                                ..Default::default()
-                            };
-                            updated.organizations = Some(vec![org]);
-                            // Clear the name
-                            if let Some(ref mut names) = updated.names {
-                                if let Some(first) = names.first_mut() {
-                                    first.given_name = None;
-                                    first.family_name = None;
-                                    first.unstructured_name = None;
-                                }
-                            }
-                            hub.people()
-                                .update_contact(updated, resource_name)
-                                .update_person_fields(FieldMask::new::<&str>(&["names", "organizations"]))
-                                .doit()
-                                .await?;
-                            eprintln!("  Moved \"{}\" to company name.", given);
-                            tokio::time::sleep(MUTATE_DELAY).await;
-                            break;
-                        }
-                        Some('r') => {
-                            let new_name = prompt_new_name(display)?;
-                            let resource_name = person
-                                .resource_name
-                                .as_deref()
-                                .ok_or("Contact missing resource name")?;
-                            let mut updated = person.clone();
-                            if let Some(ref mut names) = updated.names {
-                                if let Some(first) = names.first_mut() {
-                                    first.given_name = Some(new_name.clone());
-                                    first.family_name = None;
-                                    first.unstructured_name = Some(new_name.clone());
-                                }
-                            }
-                            hub.people()
-                                .update_contact(updated, resource_name)
-                                .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                                .doit()
-                                .await?;
-                            eprintln!("  Renamed to \"{}\"", new_name);
-                            tokio::time::sleep(MUTATE_DELAY).await;
-                            break;
-                        }
-                        Some('d') => {
-                            let resource_name = person
-                                .resource_name
-                                .as_deref()
-                                .ok_or("Contact missing resource name")?;
-                            hub.people().delete_contact(resource_name).doit().await?;
-                            eprintln!("  Deleted.");
-                            tokio::time::sleep(MUTATE_DELAY).await;
-                            break;
-                        }
-                        Some('s') => {
-                            eprintln!("  Skipped.");
-                            break;
-                        }
-                        _ => eprintln!("  Invalid choice."),
+        if !re.is_match(given) {
+            if !quiet {
+                if count == 0 {
+                    if let Some(header) = header {
+                        println!("=== {} ===", header);
                     }
                 }
+                let display = person_display_name(person);
+                println!("{}{} (given: \"{}\")", prefix, display, given);
             }
+            count += 1;
         }
-        count += 1;
     }
     if !quiet && count > 0 && header.is_some() { println!(); }
-    Ok(count)
+    count
 }
+
 
 async fn check_name_order(hub: &HubType, contacts: &[google_people1::api::Person], fix: bool, dry_run: bool, prefix: &str, header: Option<&str>, quiet: bool) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
@@ -2049,16 +1877,10 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         results.push(("check-contact-name-first-capital-letter", first_cap));
     }
 
-    if !skip.contains("check-contact-name-firstname-numeric") {
-        log("check-contact-name-firstname-numeric");
-        let firstname_numeric = check_name_firstname_numeric(&hub, &all_contacts, fix, dry_run, prefix, hdr("Numeric first name (check-contact-name-firstname-numeric)"), stats).await?;
-        results.push(("check-contact-name-firstname-numeric", firstname_numeric));
-    }
-
-    if !skip.contains("check-contact-name-firstname-space") {
-        log("check-contact-name-firstname-space");
-        let firstname_space = check_name_firstname_space(&hub, &all_contacts, fix, dry_run, prefix, hdr("First name contains space (check-contact-name-firstname-space)"), stats).await?;
-        results.push(("check-contact-name-firstname-space", firstname_space));
+    if !skip.contains("check-contact-firstname-regexp") && config.check_contact_firstname_regexp.allow.is_some() {
+        log("check-contact-firstname-regexp");
+        let firstname_regexp = check_firstname_regexp(&all_contacts, &config.check_contact_firstname_regexp, prefix, hdr("First name matches deny regex (check-contact-firstname-regexp)"), stats);
+        results.push(("check-contact-firstname-regexp", firstname_regexp));
     }
 
     if !skip.contains("check-contact-name-order") {

@@ -12,12 +12,20 @@ pub const MUTATE_DELAY: Duration = Duration::from_millis(500);
 pub struct Config {
     #[serde(default)]
     pub check_all: CheckAllConfig,
+    #[serde(default)]
+    pub check_contact_firstname_regexp: FirstnameRegexpConfig,
 }
 
 #[derive(serde::Deserialize, Default, Debug)]
 pub struct CheckAllConfig {
     #[serde(default)]
     pub skip: Vec<String>,
+}
+
+#[derive(serde::Deserialize, Default, Debug)]
+pub struct FirstnameRegexpConfig {
+    #[serde(default)]
+    pub allow: Option<String>,
 }
 
 pub fn config_path() -> PathBuf {
