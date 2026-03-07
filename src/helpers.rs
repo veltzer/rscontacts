@@ -354,44 +354,6 @@ pub fn person_email(person: &google_people1::api::Person) -> &str {
         .unwrap_or("")
 }
 
-pub async fn interactive_name_fix(hub: &HubType, person: &google_people1::api::Person, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let resource_name = person
-        .resource_name
-        .as_deref()
-        .ok_or("Contact missing resource name")?;
-
-    match prompt_fix_action(name)? {
-        'r' => {
-            let new_name = prompt_new_name(name)?;
-            let mut updated = person.clone();
-            if let Some(ref mut names) = updated.names {
-                if let Some(first) = names.first_mut() {
-                    first.given_name = Some(new_name.clone());
-                    first.family_name = None;
-                    first.unstructured_name = Some(new_name.clone());
-                }
-            }
-            hub.people()
-                .update_contact(updated, resource_name)
-                .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                .doit()
-                .await?;
-            eprintln!("  Renamed to \"{}\"", new_name);
-            tokio::time::sleep(MUTATE_DELAY).await;
-        }
-        'd' => {
-            hub.people().delete_contact(resource_name).doit().await?;
-            eprintln!("  Deleted.");
-            tokio::time::sleep(MUTATE_DELAY).await;
-        }
-        's' => {
-            eprintln!("  Skipped.");
-        }
-        _ => unreachable!(),
-    }
-    Ok(())
-}
-
 pub async fn update_phone_numbers<F>(hub: &HubType, person: &google_people1::api::Person, transform: F) -> Result<(), Box<dyn std::error::Error>>
 where
     F: Fn(&str) -> Option<String>,
@@ -515,21 +477,21 @@ pub fn prompt_given_name_fix_action(_given: &str, family: &str, split_source: Op
     loop {
         if let Some(source) = split_source {
             let (alpha, numeric) = split_alpha_numeric(source).unwrap();
-            eprint!("  s[w]ap family name \"{}\" to given name / s[p]lit \"{}\" -> given name \"{}\", suffix \"{}\" / [c]ompany / [r]ename / s[u]ffix / [l]abel / [d]elete / [s]kip? ", family, source, alpha, numeric);
+            eprint!("  s[w]ap family name \"{}\" to given name / s[p]lit \"{}\" -> given name \"{}\", suffix \"{}\" / [c]ompany / [r]ename / s[u]ffix / [l]abel / [e]dit / [d]elete / [s]kip? ", family, source, alpha, numeric);
         } else {
-            eprint!("  s[w]ap family name \"{}\" to given name / [c]ompany / [r]ename / s[u]ffix / [l]abel / [d]elete / [s]kip? ", family);
+            eprint!("  s[w]ap family name \"{}\" to given name / [c]ompany / [r]ename / s[u]ffix / [l]abel / [e]dit / [d]elete / [s]kip? ", family);
         }
         std::io::stderr().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         match input.trim().chars().next() {
-            Some(c @ ('w' | 'c' | 'r' | 'u' | 'l' | 'd' | 's')) => return Ok(c),
+            Some(c @ ('w' | 'c' | 'r' | 'u' | 'l' | 'e' | 'd' | 's')) => return Ok(c),
             Some('p') if split_source.is_some() => return Ok('p'),
             _ => {
                 if split_source.is_some() {
-                    eprintln!("  Invalid choice. Enter w, p, c, r, u, l, d, or s.");
+                    eprintln!("  Invalid choice. Enter w, p, c, r, u, l, e, d, or s.");
                 } else {
-                    eprintln!("  Invalid choice. Enter w, c, r, u, l, d, or s.");
+                    eprintln!("  Invalid choice. Enter w, c, r, u, l, e, d, or s.");
                 }
             }
         }
@@ -539,13 +501,13 @@ pub fn prompt_given_name_fix_action(_given: &str, family: &str, split_source: Op
 pub fn prompt_fix_action(_name: &str) -> Result<char, Box<dyn std::error::Error>> {
     use std::io::Write;
     loop {
-        eprint!("  [r]ename / [d]elete / [s]kip? ");
+        eprint!("  [r]ename / [e]dit / [d]elete / [s]kip? ");
         std::io::stderr().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         match input.trim().chars().next() {
-            Some(c @ ('r' | 'd' | 's')) => return Ok(c),
-            _ => eprintln!("  Invalid choice. Enter r, d, or s."),
+            Some(c @ ('r' | 'e' | 'd' | 's')) => return Ok(c),
+            _ => eprintln!("  Invalid choice. Enter r, e, d, or s."),
         }
     }
 }
@@ -553,13 +515,13 @@ pub fn prompt_fix_action(_name: &str) -> Result<char, Box<dyn std::error::Error>
 pub fn prompt_family_name_fix_action() -> Result<char, Box<dyn std::error::Error>> {
     use std::io::Write;
     loop {
-        eprint!("  [x] remove family name / [r]ename / s[u]ffix / [l]abel / [d]elete / [s]kip? ");
+        eprint!("  [x] remove family name / [r]ename / s[u]ffix / [l]abel / [e]dit / [d]elete / [s]kip? ");
         std::io::stderr().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         match input.trim().chars().next() {
-            Some(c @ ('x' | 'r' | 'u' | 'l' | 'd' | 's')) => return Ok(c),
-            _ => eprintln!("  Invalid choice. Enter x, r, u, l, d, or s."),
+            Some(c @ ('x' | 'r' | 'u' | 'l' | 'e' | 'd' | 's')) => return Ok(c),
+            _ => eprintln!("  Invalid choice. Enter x, r, u, l, e, d, or s."),
         }
     }
 }
