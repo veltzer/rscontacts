@@ -188,7 +188,7 @@ where
         }
 
         for person in &filtered {
-            let name = person_display_name(person);
+            let name = person_display_name_detailed(person);
 
             if let Some(nums) = &person.phone_numbers {
                 for pn in nums {
@@ -775,6 +775,7 @@ async fn check_name_duplicate(
         for (name, group) in &duplicates {
             println!("{}\"{}\" ({} contacts):", prefix, name, group.len());
             for person in *group {
+                let detail = person_detail(person);
                 let email = person_email(person);
                 let phone = person.phone_numbers.as_ref()
                     .and_then(|nums| nums.first())
@@ -784,9 +785,9 @@ async fn check_name_duplicate(
                 if !email.is_empty() { info.push(email.to_string()); }
                 if !phone.is_empty() { info.push(phone.to_string()); }
                 if info.is_empty() {
-                    println!("{}  - {}", prefix, name);
+                    println!("{}  - {}{}", prefix, name, detail);
                 } else {
-                    println!("{}  - {} ({})", prefix, name, info.join(", "));
+                    println!("{}  - {} ({}){}", prefix, name, info.join(", "), detail);
                 }
             }
 
@@ -852,7 +853,7 @@ async fn check_duplicate_phones(hub: &HubType, contacts: &[google_people1::api::
                             println!("=== {} ===", header);
                         }
                     }
-                    let name = person_display_name(person);
+                    let name = person_display_name_detailed(person);
                     for phone in &dupes {
                         println!("{}{} | {}", prefix, name, phone);
                     }
@@ -891,7 +892,7 @@ async fn check_email(hub: &HubType, contacts: &[google_people1::api::Person], fi
                         println!("=== {} ===", header);
                     }
                 }
-                let name = person_display_name(person);
+                let name = person_display_name_detailed(person);
                 for email in emails {
                     if let Some(val) = email.value.as_deref() {
                         if !is_valid_email(val) {
@@ -965,7 +966,7 @@ async fn check_no_label(
                         println!("=== {} ===", header);
                     }
                 }
-                let name = person_display_name(person);
+                let name = person_display_name_detailed(person);
                 let email = person_email(person);
                 print_name_with_email(&name, email, prefix);
             }
@@ -1082,7 +1083,7 @@ async fn check_duplicate_emails(hub: &HubType, contacts: &[google_people1::api::
                             println!("=== {} ===", header);
                         }
                     }
-                    let name = person_display_name(person);
+                    let name = person_display_name_detailed(person);
                     for email in &dupes {
                         println!("{}{} | {}", prefix, name, email);
                     }
