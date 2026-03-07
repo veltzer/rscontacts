@@ -12,6 +12,7 @@ skip = [
     # "check-contact-given-name-regexp",
     # "check-contact-family-name-regexp",
     # "check-contact-suffix-regexp",
+    # "check-contact-name-is-company",
     # "check-contact-displayname-duplicate",
     # "check-contact-no-label",
     # "check-contact-email",
@@ -48,6 +49,11 @@ allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
 # CamelCase: starts with uppercase, then any mix of upper/lowercase letters.
 [check-contact-label-regexp]
 allow = '^[A-Z][a-zA-Z]*$'
+
+# List of company names. Contacts whose given or family name matches
+# a company name (case-insensitive) will be flagged by check-contact-name-is-company.
+# [check-contact-name-is-company]
+# companies = ["Google", "Microsoft", "Apple"]
 "#;
 
 pub fn cmd_init_config(force: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -809,6 +815,107 @@ async fn check_family_name_regexp(
     Ok(count)
 }
 
+pub async fn cmd_check_contact_name_is_company(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config();
+    if config.check_contact_name_is_company.companies.is_empty() {
+        eprintln!("No [check-contact-name-is-company] companies configured in config.toml.");
+        eprintln!("Add a section like:");
+        eprintln!("  [check-contact-name-is-company]");
+        eprintln!("  companies = [\"Google\", \"Microsoft\"]");
+        return Ok(());
+    }
+    let hub = build_hub().await?;
+    let all_fields = &[
+        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
+        "organizations", "memberships", "biographies", "urls", "events",
+        "relations", "nicknames", "occupations", "interests", "skills",
+        "userDefined", "imClients", "sipAddresses", "locations",
+        "externalIds", "clientData",
+    ];
+    let contacts = if fix {
+        fetch_all_contacts(&hub, all_fields).await?
+    } else {
+        fetch_all_contacts(&hub, &["names", "organizations", "memberships"]).await?
+    };
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = if fix {
+        let ug: Vec<(String, String)> = all_groups.iter()
+            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+            .filter_map(|g| {
+                let name = g.name.as_deref()?;
+                let rn = g.resource_name.as_deref()?;
+                Some((name.to_string(), rn.to_string()))
+            })
+            .collect();
+        let ln: Vec<String> = ug.iter().map(|(name, _)| name.clone()).collect();
+        (ug, ln)
+    } else {
+        (vec![], vec![])
+    };
+    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    check_name_is_company(&hub, &contacts, &config.check_contact_name_is_company.companies, fix, dry_run, "", None, false, &user_groups, &label_names, &group_names).await?;
+    Ok(())
+}
+
+async fn check_name_is_company(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    companies: &[String],
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+    quiet: bool,
+    user_groups: &[(&str, &str)],
+    label_names: &[String],
+    group_names: &std::collections::HashMap<String, String>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let company_set: std::collections::HashSet<String> = companies.iter()
+        .map(|c| c.to_lowercase())
+        .collect();
+
+    let mut count = 0;
+    for person in contacts {
+        let names = person.names.as_ref().and_then(|n| n.first());
+        let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+        let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+
+        let given_match = !given.is_empty() && company_set.contains(&given.to_lowercase());
+        let family_match = !family.is_empty() && company_set.contains(&family.to_lowercase());
+
+        if !given_match && !family_match {
+            continue;
+        }
+
+        if !quiet {
+            if count == 0 {
+                if let Some(header) = header {
+                    println!("=== {} ===", header);
+                }
+            }
+            let display = person_display_name_detailed(person);
+            let mut matches = vec![];
+            if given_match { matches.push(format!("given name \"{}\"", given)); }
+            if family_match { matches.push(format!("family name \"{}\"", family)); }
+            println!("{}  {} ({})", prefix, display, matches.join(", "));
+        }
+        count += 1;
+
+        if fix && !dry_run {
+            interactive_edit_contact(hub, person, user_groups, label_names, group_names).await?;
+        }
+    }
+
+    if !quiet && count > 0 {
+        if let Some(_) = header {
+            println!();
+        }
+    }
+
+    Ok(count)
+}
+
 pub async fn cmd_check_contact_displayname_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "memberships"]).await?;
@@ -901,9 +1008,15 @@ async fn check_name_duplicate(
                             let resource_name = person.resource_name.as_deref()
                                 .ok_or("Contact missing resource name")?;
                             let mut updated = (*person).clone();
-                            if let Some(ref mut names) = updated.names {
-                                if let Some(first) = names.first_mut() {
-                                    first.honorific_suffix = Some(suffix.clone());
+                            match updated.names {
+                                Some(ref mut names) if !names.is_empty() => {
+                                    names[0].honorific_suffix = Some(suffix.clone());
+                                }
+                                _ => {
+                                    updated.names = Some(vec![google_people1::api::Name {
+                                        honorific_suffix: Some(suffix.clone()),
+                                        ..Default::default()
+                                    }]);
                                 }
                             }
                             hub.people()
@@ -2561,6 +2674,16 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         results.push(("check-contact-suffix-regexp", suffix_regexp));
     }
 
+    if !skip.contains("check-contact-name-is-company") {
+        log("check-contact-name-is-company");
+        let name_company = if !config.check_contact_name_is_company.companies.is_empty() {
+            check_name_is_company(&hub, &all_contacts, &config.check_contact_name_is_company.companies, fix, dry_run, prefix, hdr("Contact name matches company name (check-contact-name-is-company)"), stats, &user_groups_regexp, &label_names_regexp, &group_names_for_regexp).await?
+        } else {
+            0
+        };
+        results.push(("check-contact-name-is-company", name_company));
+    }
+
     if !skip.contains("check-contact-displayname-duplicate") {
         log("check-contact-displayname-duplicate");
         let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-displayname-duplicate)"), stats, &user_groups_regexp, &label_names_regexp, &group_names_for_regexp).await?;
@@ -2731,8 +2854,9 @@ pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<
         std::collections::HashMap::new();
     for person in &contacts {
         let base = person_base_name(person);
-        if !base.is_empty() {
-            base_groups.entry(base).or_default().push(person);
+        let key = if base.is_empty() { person_name(person) } else { base };
+        if !key.is_empty() {
+            base_groups.entry(key).or_default().push(person);
         }
     }
 
@@ -2833,9 +2957,15 @@ pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<
                     .as_deref()
                     .ok_or("Contact missing resource name")?;
                 let mut updated = (*person).clone();
-                if let Some(ref mut names) = updated.names {
-                    if let Some(first) = names.first_mut() {
-                        first.honorific_suffix = Some(hole.to_string());
+                match updated.names {
+                    Some(ref mut names) if !names.is_empty() => {
+                        names[0].honorific_suffix = Some(hole.to_string());
+                    }
+                    _ => {
+                        updated.names = Some(vec![google_people1::api::Name {
+                            honorific_suffix: Some(hole.to_string()),
+                            ..Default::default()
+                        }]);
                     }
                 }
                 hub.people()

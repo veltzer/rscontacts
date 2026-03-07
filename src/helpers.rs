@@ -20,6 +20,14 @@ pub struct Config {
     pub check_contact_suffix_regexp: NameRegexpConfig,
     #[serde(default, rename = "check-contact-label-regexp")]
     pub check_contact_label_regexp: NameRegexpConfig,
+    #[serde(default, rename = "check-contact-name-is-company")]
+    pub check_contact_name_is_company: CompanyNamesConfig,
+}
+
+#[derive(serde::Deserialize, Default, Debug)]
+pub struct CompanyNamesConfig {
+    #[serde(default)]
+    pub companies: Vec<String>,
 }
 
 #[derive(serde::Deserialize, Default, Debug)]
