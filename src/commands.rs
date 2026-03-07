@@ -2855,16 +2855,24 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         results.push(("check-phone-format", bad_format));
     }
 
-    if !skip.contains("check-contact-given-name-regexp") && config.check_contact_given_name_regexp.allow.is_some() {
+    if !skip.contains("check-contact-given-name-regexp") {
         log("check-contact-given-name-regexp");
-        let given_name_regexp = check_given_name_regexp(&hub, &all_contacts, &group_names_for_regexp, &config.check_contact_given_name_regexp, fix, dry_run, prefix, hdr("Given name doesn't match allow regex (check-contact-given-name-regexp)"), stats, &user_groups_regexp, &label_names_regexp).await?;
-        results.push(("check-contact-given-name-regexp", given_name_regexp));
+        if config.check_contact_given_name_regexp.allow.is_some() {
+            let given_name_regexp = check_given_name_regexp(&hub, &all_contacts, &group_names_for_regexp, &config.check_contact_given_name_regexp, fix, dry_run, prefix, hdr("Given name doesn't match allow regex (check-contact-given-name-regexp)"), stats, &user_groups_regexp, &label_names_regexp).await?;
+            results.push(("check-contact-given-name-regexp", given_name_regexp));
+        } else {
+            eprintln!("Warning: check-contact-given-name-regexp has no allow regex configured, skipping.");
+        }
     }
 
-    if !skip.contains("check-contact-family-name-regexp") && config.check_contact_family_name_regexp.allow.is_some() {
+    if !skip.contains("check-contact-family-name-regexp") {
         log("check-contact-family-name-regexp");
-        let family_name_regexp = check_family_name_regexp(&hub, &all_contacts, &group_names_for_regexp, &config.check_contact_family_name_regexp, fix, dry_run, prefix, hdr("Family name doesn't match allow regex (check-contact-family-name-regexp)"), stats, &user_groups_regexp, &label_names_regexp).await?;
-        results.push(("check-contact-family-name-regexp", family_name_regexp));
+        if config.check_contact_family_name_regexp.allow.is_some() {
+            let family_name_regexp = check_family_name_regexp(&hub, &all_contacts, &group_names_for_regexp, &config.check_contact_family_name_regexp, fix, dry_run, prefix, hdr("Family name doesn't match allow regex (check-contact-family-name-regexp)"), stats, &user_groups_regexp, &label_names_regexp).await?;
+            results.push(("check-contact-family-name-regexp", family_name_regexp));
+        } else {
+            eprintln!("Warning: check-contact-family-name-regexp has no allow regex configured, skipping.");
+        }
     }
 
     if !skip.contains("check-contact-suffix-regexp") {
@@ -2875,22 +2883,22 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-name-is-company") {
         log("check-contact-name-is-company");
-        let name_company = if !config.check_contact_name_is_company.companies.is_empty() {
-            check_name_is_company(&hub, &all_contacts, &config.check_contact_name_is_company.companies, fix, dry_run, prefix, hdr("Contact name matches company name (check-contact-name-is-company)"), stats, &user_groups_regexp, &label_names_regexp, &group_names_for_regexp).await?
+        if !config.check_contact_name_is_company.companies.is_empty() {
+            let name_company = check_name_is_company(&hub, &all_contacts, &config.check_contact_name_is_company.companies, fix, dry_run, prefix, hdr("Contact name matches company name (check-contact-name-is-company)"), stats, &user_groups_regexp, &label_names_regexp, &group_names_for_regexp).await?;
+            results.push(("check-contact-name-is-company", name_company));
         } else {
-            0
-        };
-        results.push(("check-contact-name-is-company", name_company));
+            eprintln!("Warning: check-contact-name-is-company has no companies configured, skipping.");
+        }
     }
 
     if !skip.contains("check-contact-company-known") {
         log("check-contact-company-known");
-        let company_regexp = if !config.check_contact_name_is_company.companies.is_empty() {
-            check_company_known(&hub, &all_contacts, &config.check_contact_name_is_company.companies, fix, dry_run, prefix, hdr("Company not in configured list (check-contact-company-known)"), stats, &user_groups_regexp, &label_names_regexp, &group_names_for_regexp).await?
+        if !config.check_contact_name_is_company.companies.is_empty() {
+            let company_known = check_company_known(&hub, &all_contacts, &config.check_contact_name_is_company.companies, fix, dry_run, prefix, hdr("Company not in configured list (check-contact-company-known)"), stats, &user_groups_regexp, &label_names_regexp, &group_names_for_regexp).await?;
+            results.push(("check-contact-company-known", company_known));
         } else {
-            0
-        };
-        results.push(("check-contact-company-known", company_regexp));
+            eprintln!("Warning: check-contact-company-known has no companies configured, skipping.");
+        }
     }
 
     if !skip.contains("check-contact-displayname-duplicate") {
@@ -3026,6 +3034,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
             }
             bad_labels.len()
         } else {
+            eprintln!("Warning: check-contact-label-regexp has no allow regex configured, skipping.");
             0
         };
         results.push(("check-contact-label-regexp", label_regexp_count));
