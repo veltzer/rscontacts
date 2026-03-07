@@ -296,6 +296,32 @@ pub fn person_display_name(person: &google_people1::api::Person) -> String {
     if name.is_empty() { "<no name>".to_string() } else { name }
 }
 
+/// Like person_display_name but appends company/suffix detail when present.
+pub fn person_display_name_detailed(person: &google_people1::api::Person) -> String {
+    format!("{}{}", person_display_name(person), person_detail(person))
+}
+
+/// Returns a detail string with company and suffix if present, e.g. " [company: Acme, suffix: 2]"
+/// Returns empty string if neither is set.
+pub fn person_detail(person: &google_people1::api::Person) -> String {
+    let suffix = person.names.as_ref()
+        .and_then(|n| n.first())
+        .and_then(|n| n.honorific_suffix.as_deref())
+        .unwrap_or("");
+    let company = person.organizations.as_ref()
+        .and_then(|orgs| orgs.first())
+        .and_then(|o| o.name.as_deref())
+        .unwrap_or("");
+    let mut parts = Vec::new();
+    if !company.is_empty() { parts.push(format!("company: {}", company)); }
+    if !suffix.is_empty() { parts.push(format!("suffix: {}", suffix)); }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", parts.join(", "))
+    }
+}
+
 pub fn build_group_name_map(groups: &[google_people1::api::ContactGroup]) -> std::collections::HashMap<String, String> {
     groups.iter()
         .filter_map(|g| {
