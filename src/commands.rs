@@ -668,7 +668,7 @@ async fn check_family_name_regexp(
                 println!("{}{} (given: \"{}\", family: \"{}\"{})", prefix, display, given, family, labels_str);
 
                 if fix && !dry_run {
-                    interactive_family_name_fix(hub, person, family).await?;
+                    interactive_family_name_fix(hub, person, family, user_groups, label_names).await?;
                 }
             }
             count += 1;
@@ -1886,6 +1886,22 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     let all_groups_for_regexp = fetch_all_contact_groups(&hub).await?;
     let group_names_for_regexp = build_group_name_map(&all_groups_for_regexp);
 
+    let (user_groups_owned_regexp, label_names_regexp) = if fix {
+        let ug: Vec<(String, String)> = all_groups_for_regexp.iter()
+            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+            .filter_map(|g| {
+                let name = g.name.as_deref()?;
+                let rn = g.resource_name.as_deref()?;
+                Some((name.to_string(), rn.to_string()))
+            })
+            .collect();
+        let ln: Vec<String> = ug.iter().map(|(name, _)| name.clone()).collect();
+        (ug, ln)
+    } else {
+        (vec![], vec![])
+    };
+    let user_groups_regexp: Vec<(&str, &str)> = user_groups_owned_regexp.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+
     let mut results: Vec<(&str, usize)> = Vec::new();
 
     let prefix = if stats { "" } else { "  " };
@@ -1918,13 +1934,13 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-given-name-regexp") && config.check_contact_given_name_regexp.allow.is_some() {
         log("check-contact-given-name-regexp");
-        let given_name_regexp = check_given_name_regexp(&hub, &all_contacts, &group_names_for_regexp, &config.check_contact_given_name_regexp, fix, dry_run, prefix, hdr("Given name doesn't match allow regex (check-contact-given-name-regexp)"), stats).await?;
+        let given_name_regexp = check_given_name_regexp(&hub, &all_contacts, &group_names_for_regexp, &config.check_contact_given_name_regexp, fix, dry_run, prefix, hdr("Given name doesn't match allow regex (check-contact-given-name-regexp)"), stats, &user_groups_regexp, &label_names_regexp).await?;
         results.push(("check-contact-given-name-regexp", given_name_regexp));
     }
 
     if !skip.contains("check-contact-family-name-regexp") && config.check_contact_family_name_regexp.allow.is_some() {
         log("check-contact-family-name-regexp");
-        let family_name_regexp = check_family_name_regexp(&hub, &all_contacts, &group_names_for_regexp, &config.check_contact_family_name_regexp, fix, dry_run, prefix, hdr("Family name doesn't match allow regex (check-contact-family-name-regexp)"), stats).await?;
+        let family_name_regexp = check_family_name_regexp(&hub, &all_contacts, &group_names_for_regexp, &config.check_contact_family_name_regexp, fix, dry_run, prefix, hdr("Family name doesn't match allow regex (check-contact-family-name-regexp)"), stats, &user_groups_regexp, &label_names_regexp).await?;
         results.push(("check-contact-family-name-regexp", family_name_regexp));
     }
 
