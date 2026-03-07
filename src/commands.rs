@@ -230,28 +230,31 @@ pub async fn cmd_check_contact_name_first_capital_letter(fix: bool, dry_run: boo
     Ok(())
 }
 
-pub async fn cmd_check_contact_firstname_regexp() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_firstname_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names"]).await?;
     let config = load_config();
-    check_firstname_regexp(&contacts, &config.check_contact_firstname_regexp, "", None, false);
+    check_firstname_regexp(&hub, &contacts, &config.check_contact_firstname_regexp, fix, dry_run, "", None, false).await?;
     Ok(())
 }
 
-fn check_firstname_regexp(
+async fn check_firstname_regexp(
+    hub: &HubType,
     contacts: &[google_people1::api::Person],
-    config: &crate::helpers::FirstnameRegexpConfig,
+    config: &crate::helpers::NameRegexpConfig,
+    fix: bool,
+    dry_run: bool,
     prefix: &str,
     header: Option<&str>,
     quiet: bool,
-) -> usize {
+) -> Result<usize, Box<dyn std::error::Error>> {
     let pattern = match &config.allow {
         Some(p) => p,
         None => {
             if !quiet {
                 eprintln!("No firstname allow regex configured in config.toml. Set [check-contact-firstname-regexp] allow = \"...\"");
             }
-            return 0;
+            return Ok(0);
         }
     };
 
@@ -259,7 +262,7 @@ fn check_firstname_regexp(
         Ok(re) => re,
         Err(e) => {
             eprintln!("Warning: invalid regex \"{}\": {}", pattern, e);
-            return 0;
+            return Ok(0);
         }
     };
 
@@ -281,15 +284,159 @@ fn check_firstname_regexp(
                     }
                 }
                 let display = person_display_name(person);
-                println!("{}{} (given: \"{}\")", prefix, display, given);
+                let family = person.names.as_ref()
+                    .and_then(|names| names.first())
+                    .and_then(|n| n.family_name.as_deref())
+                    .unwrap_or("");
+                println!("{}{} (given: \"{}\", family: \"{}\")", prefix, display, given, family);
+
+                if fix && !dry_run {
+                    interactive_firstname_fix(hub, person, given).await?;
+                }
             }
             count += 1;
         }
     }
     if !quiet && count > 0 && header.is_some() { println!(); }
-    count
+    Ok(count)
 }
 
+async fn interactive_firstname_fix(
+    hub: &HubType,
+    person: &google_people1::api::Person,
+    given: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let resource_name = person
+        .resource_name
+        .as_deref()
+        .ok_or("Contact missing resource name")?;
+    let family = person.names.as_ref()
+        .and_then(|names| names.first())
+        .and_then(|n| n.family_name.as_deref())
+        .unwrap_or("");
+
+    match prompt_firstname_fix_action(given, family)? {
+        'w' => {
+            // Swap: set given_name = family_name, clear family_name
+            let mut updated = person.clone();
+            if let Some(ref mut names) = updated.names {
+                if let Some(first) = names.first_mut() {
+                    first.given_name = first.family_name.take();
+                    first.family_name = None;
+                    let new_given = first.given_name.as_deref().unwrap_or("");
+                    first.unstructured_name = Some(new_given.to_string());
+                }
+            }
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                .doit()
+                .await?;
+            eprintln!("  Swapped: given name is now \"{}\"", family);
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        'r' => {
+            let new_name = prompt_new_name(given)?;
+            let mut updated = person.clone();
+            if let Some(ref mut names) = updated.names {
+                if let Some(first) = names.first_mut() {
+                    first.given_name = Some(new_name.clone());
+                    first.family_name = None;
+                    first.unstructured_name = Some(new_name.clone());
+                }
+            }
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                .doit()
+                .await?;
+            eprintln!("  Renamed to \"{}\"", new_name);
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        'd' => {
+            hub.people().delete_contact(resource_name).doit().await?;
+            eprintln!("  Deleted.");
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        's' => {
+            eprintln!("  Skipped.");
+        }
+        _ => unreachable!(),
+    }
+    Ok(())
+}
+
+
+pub async fn cmd_check_contact_lastname_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names"]).await?;
+    let config = load_config();
+    check_lastname_regexp(&hub, &contacts, &config.check_contact_lastname_regexp, fix, dry_run, "", None, false).await?;
+    Ok(())
+}
+
+async fn check_lastname_regexp(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    config: &crate::helpers::NameRegexpConfig,
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+    quiet: bool,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let pattern = match &config.allow {
+        Some(p) => p,
+        None => {
+            if !quiet {
+                eprintln!("No lastname allow regex configured in config.toml. Set [check-contact-lastname-regexp] allow = \"...\"");
+            }
+            return Ok(0);
+        }
+    };
+
+    let re = match regex::Regex::new(pattern) {
+        Ok(re) => re,
+        Err(e) => {
+            eprintln!("Warning: invalid regex \"{}\": {}", pattern, e);
+            return Ok(0);
+        }
+    };
+
+    let mut count = 0;
+    for person in contacts {
+        let family = person.names.as_ref()
+            .and_then(|names| names.first())
+            .and_then(|n| n.family_name.as_deref())
+            .unwrap_or("");
+        if family.is_empty() {
+            continue;
+        }
+
+        if !re.is_match(family) {
+            if !quiet {
+                if count == 0 {
+                    if let Some(header) = header {
+                        println!("=== {} ===", header);
+                    }
+                }
+                let display = person_display_name(person);
+                let given = person.names.as_ref()
+                    .and_then(|names| names.first())
+                    .and_then(|n| n.given_name.as_deref())
+                    .unwrap_or("");
+                println!("{}{} (given: \"{}\", family: \"{}\")", prefix, display, given, family);
+
+                if fix && !dry_run {
+                    interactive_name_fix(hub, person, &person_display_name(person)).await?;
+                }
+            }
+            count += 1;
+        }
+    }
+    if !quiet && count > 0 && header.is_some() { println!(); }
+    Ok(count)
+}
 
 async fn check_name_order(hub: &HubType, contacts: &[google_people1::api::Person], fix: bool, dry_run: bool, prefix: &str, header: Option<&str>, quiet: bool) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
@@ -1879,8 +2026,14 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-firstname-regexp") && config.check_contact_firstname_regexp.allow.is_some() {
         log("check-contact-firstname-regexp");
-        let firstname_regexp = check_firstname_regexp(&all_contacts, &config.check_contact_firstname_regexp, prefix, hdr("First name matches deny regex (check-contact-firstname-regexp)"), stats);
+        let firstname_regexp = check_firstname_regexp(&hub, &all_contacts, &config.check_contact_firstname_regexp, fix, dry_run, prefix, hdr("First name doesn't match allow regex (check-contact-firstname-regexp)"), stats).await?;
         results.push(("check-contact-firstname-regexp", firstname_regexp));
+    }
+
+    if !skip.contains("check-contact-lastname-regexp") && config.check_contact_lastname_regexp.allow.is_some() {
+        log("check-contact-lastname-regexp");
+        let lastname_regexp = check_lastname_regexp(&hub, &all_contacts, &config.check_contact_lastname_regexp, fix, dry_run, prefix, hdr("Last name doesn't match allow regex (check-contact-lastname-regexp)"), stats).await?;
+        results.push(("check-contact-lastname-regexp", lastname_regexp));
     }
 
     if !skip.contains("check-contact-name-order") {

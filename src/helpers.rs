@@ -10,10 +10,12 @@ pub const MUTATE_DELAY: Duration = Duration::from_millis(500);
 
 #[derive(serde::Deserialize, Default, Debug)]
 pub struct Config {
-    #[serde(default)]
+    #[serde(default, rename = "check-all")]
     pub check_all: CheckAllConfig,
-    #[serde(default)]
-    pub check_contact_firstname_regexp: FirstnameRegexpConfig,
+    #[serde(default, rename = "check-contact-firstname-regexp")]
+    pub check_contact_firstname_regexp: NameRegexpConfig,
+    #[serde(default, rename = "check-contact-lastname-regexp")]
+    pub check_contact_lastname_regexp: NameRegexpConfig,
 }
 
 #[derive(serde::Deserialize, Default, Debug)]
@@ -23,7 +25,7 @@ pub struct CheckAllConfig {
 }
 
 #[derive(serde::Deserialize, Default, Debug)]
-pub struct FirstnameRegexpConfig {
+pub struct NameRegexpConfig {
     #[serde(default)]
     pub allow: Option<String>,
 }
@@ -455,6 +457,20 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
 }
 
 // --- Prompt helpers ---
+
+pub fn prompt_firstname_fix_action(_given: &str, family: &str) -> Result<char, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    loop {
+        eprint!("  s[w]ap lastname \"{}\" to firstname / [r]ename / [d]elete / [s]kip? ", family);
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        match input.trim().chars().next() {
+            Some(c @ ('w' | 'r' | 'd' | 's')) => return Ok(c),
+            _ => eprintln!("  Invalid choice. Enter w, r, d, or s."),
+        }
+    }
+}
 
 pub fn prompt_fix_action(_name: &str) -> Result<char, Box<dyn std::error::Error>> {
     use std::io::Write;

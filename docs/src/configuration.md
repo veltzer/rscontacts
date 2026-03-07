@@ -36,6 +36,7 @@ The following check names can be used in the `skip` list:
 | `check-contact-name-caps` | All-caps contact names |
 | `check-contact-name-first-capital-letter` | Names not starting with a capital letter |
 | `check-contact-firstname-regexp` | First names not matching the configured allow regex |
+| `check-contact-lastname-regexp` | Last names not matching the configured allow regex |
 | `check-contact-name-order` | Reversed name order (e.g., "Family, Given") |
 | `check-contact-displayname-duplicate` | Multiple contacts with the same display name |
 | `check-contact-name-numeric-surname` | Numeric surnames (should be suffixes) |
@@ -53,20 +54,23 @@ The following check names can be used in the `skip` list:
 | `check-phone-label-english` | Non-English phone labels |
 | `check-phone-duplicate` | Duplicate phone numbers on a contact |
 
-## First name allow regex
+## Name allow regexes
 
-The `check-contact-firstname-regexp` check flags contacts whose first name (given name) does **not** match the configured regex pattern. This is an allowlist approach — define what a valid first name looks like, and anything that doesn't match gets flagged.
+The `check-contact-firstname-regexp` and `check-contact-lastname-regexp` checks flag contacts whose first name (given name) or last name (family name) does **not** match the configured regex pattern. This is an allowlist approach — define what a valid name looks like, and anything that doesn't match gets flagged.
 
 ```toml
 [check-contact-firstname-regexp]
 allow = '^[A-Z][a-z]+$'
+
+[check-contact-lastname-regexp]
+allow = '^[A-Z][a-z]+$'
 ```
 
-The `allow` value is a [Rust regex](https://docs.rs/regex/latest/regex/#syntax). The example above requires first names to start with an uppercase letter followed by one or more lowercase letters. Names like "Mike" pass, while "mike", "MIKE", "Mike 2", or "123" would be flagged.
+The `allow` value is a [Rust regex](https://docs.rs/regex/latest/regex/#syntax). The example above requires names to start with an uppercase letter followed by one or more lowercase letters. Names like "Smith" pass, while "smith", "SMITH", "Smith 2", or "123" would be flagged.
 
-If no `allow` regex is configured, the check is silently skipped in `check-all`. When run directly via `rscontacts check-contact-firstname-regexp`, it prints a message about the missing config.
+If no `allow` regex is configured, the check is silently skipped in `check-all`. When run directly, it prints a message about the missing config.
 
-This check is report-only (no `--fix` flag).
+Both checks support `--fix` for interactive fixing (rename/delete/skip, plus swap for firstname).
 
 ## Example configuration
 
@@ -81,5 +85,8 @@ skip = [
 ]
 
 [check-contact-firstname-regexp]
+allow = '^[A-Z][a-z]+$'
+
+[check-contact-lastname-regexp]
 allow = '^[A-Z][a-z]+$'
 ```

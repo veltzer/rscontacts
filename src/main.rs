@@ -62,7 +62,23 @@ enum Commands {
         dry_run: bool,
     },
     /// Check first names against allow regex defined in config.toml
-    CheckContactFirstnameRegexp,
+    CheckContactFirstnameRegexp {
+        /// Interactively fix each flagged contact (swap/rename/delete/skip)
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Check last names against allow regex defined in config.toml
+    CheckContactLastnameRegexp {
+        /// Interactively fix each flagged contact (rename/delete/skip)
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print contacts with reversed name order (e.g. "Family, Given")
     CheckContactNameOrder {
         /// Interactively fix each contact (rename/delete/skip)
@@ -276,7 +292,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactNameEnglish { fix, dry_run } => commands::cmd_check_contact_name_english(fix, dry_run).await?,
         Commands::CheckContactNameCaps { fix, dry_run } => commands::cmd_check_contact_name_caps(fix, dry_run).await?,
         Commands::CheckContactNameFirstCapitalLetter { fix, dry_run } => commands::cmd_check_contact_name_first_capital_letter(fix, dry_run).await?,
-        Commands::CheckContactFirstnameRegexp => commands::cmd_check_contact_firstname_regexp().await?,
+        Commands::CheckContactFirstnameRegexp { fix, dry_run } => commands::cmd_check_contact_firstname_regexp(fix, dry_run).await?,
+        Commands::CheckContactLastnameRegexp { fix, dry_run } => commands::cmd_check_contact_lastname_regexp(fix, dry_run).await?,
         Commands::CheckContactNameOrder { fix, dry_run } => commands::cmd_check_contact_name_order(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,
         Commands::CheckContactSamenameSuffix { fix, dry_run } => commands::cmd_check_contact_samename_suffix(fix, dry_run).await?,
