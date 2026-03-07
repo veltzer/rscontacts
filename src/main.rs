@@ -175,18 +175,9 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Print contact labels (groups) that have a space in their name
-    CheckContactLabelSpace {
-        /// Interactively rename labels with spaces
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Print contact labels (groups) that are not all lowercase (camelCase or uppercase)
-    CheckContactLabelCamelcase {
-        /// Rename labels to lowercase
+    /// Check contact labels (groups) against allow regex defined in config.toml
+    CheckContactLabelRegexp {
+        /// Interactively rename labels that don't match
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
@@ -267,8 +258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactEmailDuplicate { fix, dry_run } => commands::cmd_check_contact_email_duplicate(fix, dry_run).await?,
         Commands::CheckPhoneDuplicate { fix, dry_run } => commands::cmd_check_phone_duplicate(fix, dry_run).await?,
         Commands::CheckContactLabelNophone { fix, dry_run } => commands::cmd_check_contact_label_nophone(fix, dry_run).await?,
-        Commands::CheckContactLabelSpace { fix, dry_run } => commands::cmd_check_contact_label_space(fix, dry_run).await?,
-        Commands::CheckContactLabelCamelcase { fix, dry_run } => commands::cmd_check_contact_label_camelcase(fix, dry_run).await?,
+        Commands::CheckContactLabelRegexp { fix, dry_run } => commands::cmd_check_contact_label_regexp(fix, dry_run).await?,
         Commands::CompactSuffixesForContacts { dry_run } => commands::cmd_compact_suffixes_for_contacts(dry_run).await?,
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,

@@ -18,6 +18,8 @@ pub struct Config {
     pub check_contact_family_name_regexp: NameRegexpConfig,
     #[serde(default, rename = "check-contact-suffix-regexp")]
     pub check_contact_suffix_regexp: NameRegexpConfig,
+    #[serde(default, rename = "check-contact-label-regexp")]
+    pub check_contact_label_regexp: NameRegexpConfig,
 }
 
 #[derive(serde::Deserialize, Default, Debug)]
@@ -113,14 +115,6 @@ pub fn find_duplicates<'a>(values: &[&'a str]) -> Vec<&'a str> {
 pub fn phone_has_type(pn: &google_people1::api::PhoneNumber) -> bool {
     !pn.type_.as_deref().unwrap_or("").is_empty()
         || !pn.formatted_type.as_deref().unwrap_or("").is_empty()
-}
-
-pub fn capitalize_first(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
-        None => String::new(),
-    }
 }
 
 pub fn is_fixable_phone(phone: &str) -> bool {

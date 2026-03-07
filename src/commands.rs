@@ -17,8 +17,7 @@ skip = [
     # "check-contact-email",
     # "check-contact-email-duplicate",
     # "check-contact-label-nophone",
-    # "check-contact-label-space",
-    # "check-contact-label-camelcase",
+    # "check-contact-label-regexp",
     # "check-phone-countrycode",
     # "check-phone-format",
     # "check-phone-label-missing",
@@ -43,6 +42,12 @@ allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
 # Default (if not configured): numeric, no leading zero (^[1-9]\d*$).
 # [check-contact-suffix-regexp]
 # allow = '^[1-9]\d*$'
+
+# Allow regex for contact labels (groups). Labels that do NOT match
+# this pattern will be flagged by check-contact-label-regexp.
+# Capital first letter, rest lowercase, no spaces.
+[check-contact-label-regexp]
+allow = '^[A-Z][a-z]+$'
 "#;
 
 pub fn cmd_init_config(force: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -2217,16 +2222,29 @@ fn print_person_details(person: &google_people1::api::Person, group_names: Optio
     }
 }
 
-pub async fn cmd_check_contact_label_space(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_label_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config();
+    let allow = match config.check_contact_label_regexp.allow {
+        Some(ref pattern) => pattern.clone(),
+        None => {
+            eprintln!("No [check-contact-label-regexp] allow regex configured in config.toml.");
+            eprintln!("Add a section like:");
+            eprintln!("  [check-contact-label-regexp]");
+            eprintln!("  allow = '^[A-Z][a-z]+$'");
+            return Ok(());
+        }
+    };
+    let re = regex::Regex::new(&allow)?;
+
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
-    let with_space: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
+    let bad_labels: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
         g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-            && g.name.as_deref().unwrap_or("").contains(' ')
+            && g.name.as_deref().is_some_and(|n| !re.is_match(n))
     }).collect();
 
-    for group in &with_space {
+    for group in &bad_labels {
         let name = group.name.as_deref().unwrap_or("<unnamed>");
         println!("{}", name);
 
@@ -2249,43 +2267,6 @@ pub async fn cmd_check_contact_label_space(fix: bool, dry_run: bool) -> Result<(
             } else {
                 eprintln!("  Skipped.");
             }
-        }
-    }
-
-    Ok(())
-}
-
-pub async fn cmd_check_contact_label_camelcase(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let all_groups = fetch_all_contact_groups(&hub).await?;
-
-    let not_camelcase: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
-        g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-            && g.name.as_deref().is_some_and(|n| n.starts_with(char::is_lowercase))
-    }).collect();
-
-    for group in &not_camelcase {
-        let name = group.name.as_deref().unwrap_or("<unnamed>");
-        let camel = capitalize_first(name);
-        if fix || dry_run {
-            println!("{} -> {}", name, camel);
-        } else {
-            println!("{}", name);
-        }
-
-        if fix && !dry_run {
-            let resource_name = group.resource_name.as_deref()
-                .ok_or("Contact group missing resource name")?;
-            let mut updated_group = (*group).clone();
-            updated_group.name = Some(camel.clone());
-            let req = google_people1::api::UpdateContactGroupRequest {
-                contact_group: Some(updated_group),
-                read_group_fields: None,
-                update_group_fields: None,
-            };
-            hub.contact_groups().update(req, resource_name).doit().await?;
-            eprintln!("  Renamed \"{}\" -> \"{}\"", name, camel);
-            tokio::time::sleep(MUTATE_DELAY).await;
         }
     }
 
@@ -2641,79 +2622,48 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         results.push(("check-contact-label-nophone", empty.len()));
     }
 
-    if !skip.contains("check-contact-label-space") {
-        log("check-contact-label-space");
-        let with_space: Vec<_> = all_groups.iter().filter(|g| {
-            g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-                && g.name.as_deref().unwrap_or("").contains(' ')
-        }).collect();
-        if !stats && !with_space.is_empty() {
-            println!("=== Labels with spaces (check-contact-label-space) ({}) ===", with_space.len());
-            for group in &with_space {
-                let name = group.name.as_deref().unwrap_or("<unnamed>");
-                println!("  {}", name);
+    if !skip.contains("check-contact-label-regexp") {
+        log("check-contact-label-regexp");
+        let label_regexp_count = if let Some(ref pattern) = config.check_contact_label_regexp.allow {
+            let re = regex::Regex::new(pattern)?;
+            let bad_labels: Vec<_> = all_groups.iter().filter(|g| {
+                g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+                    && g.name.as_deref().is_some_and(|n| !re.is_match(n))
+            }).collect();
+            if !stats && !bad_labels.is_empty() {
+                println!("=== Labels not matching regex (check-contact-label-regexp) ({}) ===", bad_labels.len());
+                for group in &bad_labels {
+                    let name = group.name.as_deref().unwrap_or("<unnamed>");
+                    println!("  {}", name);
 
-                if fix && !dry_run {
-                    use std::io::Write;
-                    std::io::stdout().flush()?;
-                    if let Some(new_name) = prompt_rename_label(name)? {
-                        let resource_name = group.resource_name.as_deref()
-                            .ok_or("Contact group missing resource name")?;
-                        let mut updated_group = (*group).clone();
-                        updated_group.name = Some(new_name.clone());
-                        let req = google_people1::api::UpdateContactGroupRequest {
-                            contact_group: Some(updated_group),
-                            read_group_fields: None,
-                            update_group_fields: None,
-                        };
-                        hub.contact_groups().update(req, resource_name).doit().await?;
-                        eprintln!("  Renamed \"{}\" -> \"{}\"", name, new_name);
-                        tokio::time::sleep(MUTATE_DELAY).await;
-                    } else {
-                        eprintln!("  Skipped.");
+                    if fix && !dry_run {
+                        use std::io::Write;
+                        std::io::stdout().flush()?;
+                        if let Some(new_name) = prompt_rename_label(name)? {
+                            let resource_name = group.resource_name.as_deref()
+                                .ok_or("Contact group missing resource name")?;
+                            let mut updated_group = (*group).clone();
+                            updated_group.name = Some(new_name.clone());
+                            let req = google_people1::api::UpdateContactGroupRequest {
+                                contact_group: Some(updated_group),
+                                read_group_fields: None,
+                                update_group_fields: None,
+                            };
+                            hub.contact_groups().update(req, resource_name).doit().await?;
+                            eprintln!("  Renamed \"{}\" -> \"{}\"", name, new_name);
+                            tokio::time::sleep(MUTATE_DELAY).await;
+                        } else {
+                            eprintln!("  Skipped.");
+                        }
                     }
                 }
+                println!();
             }
-            println!();
-        }
-        results.push(("check-contact-label-space", with_space.len()));
-    }
-
-    if !skip.contains("check-contact-label-camelcase") {
-        log("check-contact-label-camelcase");
-        let not_camelcase: Vec<_> = all_groups.iter().filter(|g| {
-            g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-                && g.name.as_deref().is_some_and(|n| n.starts_with(char::is_lowercase))
-        }).collect();
-        if !stats && !not_camelcase.is_empty() {
-            println!("=== Labels not camelCase (check-contact-label-camelcase) ({}) ===", not_camelcase.len());
-            for group in &not_camelcase {
-                let name = group.name.as_deref().unwrap_or("<unnamed>");
-                let camel = capitalize_first(name);
-                if fix || dry_run {
-                    println!("  {} -> {}", name, camel);
-                } else {
-                    println!("  {}", name);
-                }
-
-                if fix && !dry_run {
-                    let resource_name = group.resource_name.as_deref()
-                        .ok_or("Contact group missing resource name")?;
-                    let mut updated_group = (*group).clone();
-                    updated_group.name = Some(camel.clone());
-                    let req = google_people1::api::UpdateContactGroupRequest {
-                        contact_group: Some(updated_group),
-                        read_group_fields: None,
-                        update_group_fields: None,
-                    };
-                    hub.contact_groups().update(req, resource_name).doit().await?;
-                    eprintln!("  Renamed \"{}\" -> \"{}\"", name, camel);
-                    tokio::time::sleep(MUTATE_DELAY).await;
-                }
-            }
-            println!();
-        }
-        results.push(("check-contact-label-camelcase", not_camelcase.len()));
+            bad_labels.len()
+        } else {
+            0
+        };
+        results.push(("check-contact-label-regexp", label_regexp_count));
     }
 
     if stats {

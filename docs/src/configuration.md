@@ -40,8 +40,7 @@ The following check names can be used in the `skip` list:
 | `check-contact-email` | Invalid or uppercase email addresses |
 | `check-contact-email-duplicate` | Duplicate email addresses on a contact |
 | `check-contact-label-nophone` | Empty labels (contact groups with no members) |
-| `check-contact-label-space` | Labels with spaces in their name |
-| `check-contact-label-camelcase` | Labels not starting with a capital letter |
+| `check-contact-label-regexp` | Labels not matching the configured allow regex |
 | `check-phone-countrycode` | Phone numbers missing a country code |
 | `check-phone-format` | Phone numbers not in +CC-NUMBER format |
 | `check-phone-label-missing` | Phone numbers without a label (mobile/home/work) |
@@ -50,7 +49,7 @@ The following check names can be used in the `skip` list:
 
 ## Name allow regexes
 
-The `check-contact-given-name-regexp` and `check-contact-family-name-regexp` checks flag contacts whose given name or family name does **not** match the configured regex pattern. This is an allowlist approach — define what a valid name looks like, and anything that doesn't match gets flagged.
+The `check-contact-given-name-regexp`, `check-contact-family-name-regexp`, and `check-contact-label-regexp` checks flag items whose value does **not** match the configured regex pattern. This is an allowlist approach — define what a valid value looks like, and anything that doesn't match gets flagged.
 
 ```toml
 [check-contact-given-name-regexp]
@@ -58,13 +57,16 @@ allow = '^[A-Z][a-z]+$'
 
 [check-contact-family-name-regexp]
 allow = '^[A-Z][a-z]+$'
+
+[check-contact-label-regexp]
+allow = '^[A-Z][a-z]+$'
 ```
 
-The `allow` value is a [Rust regex](https://docs.rs/regex/latest/regex/#syntax). The example above requires names to start with an uppercase letter followed by one or more lowercase letters. Names like "Smith" pass, while "smith", "SMITH", "Smith 2", or "123" would be flagged.
+The `allow` value is a [Rust regex](https://docs.rs/regex/latest/regex/#syntax). The example above requires values to start with an uppercase letter followed by one or more lowercase letters. Names like "Smith" pass, while "smith", "SMITH", "Smith 2", or "123" would be flagged.
 
 If no `allow` regex is configured, the check is silently skipped in `check-all`. When run directly, it prints a message about the missing config.
 
-Both checks support `--fix` for interactive fixing (rename/delete/skip, plus swap for given name).
+Name checks support `--fix` for interactive fixing (rename/delete/skip, plus swap for given name). The label check supports `--fix` for interactive renaming.
 
 ## Example configuration
 
@@ -82,5 +84,8 @@ skip = [
 allow = '^[A-Z][a-z]+$'
 
 [check-contact-family-name-regexp]
+allow = '^[A-Z][a-z]+$'
+
+[check-contact-label-regexp]
 allow = '^[A-Z][a-z]+$'
 ```
