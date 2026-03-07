@@ -2738,3 +2738,142 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     Ok(())
 }
+
+pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations"]).await?;
+
+    // Group contacts by base name (given + family, no suffix)
+    let mut base_groups: std::collections::HashMap<String, Vec<&google_people1::api::Person>> =
+        std::collections::HashMap::new();
+    for person in &contacts {
+        let base = person_base_name(person);
+        if !base.is_empty() {
+            base_groups.entry(base).or_default().push(person);
+        }
+    }
+
+    let mut sorted_groups: Vec<(&str, &Vec<&google_people1::api::Person>)> = base_groups
+        .iter()
+        .filter(|(_, group)| group.len() > 1)
+        .map(|(name, group)| (name.as_str(), group))
+        .collect();
+    sorted_groups.sort_by_key(|(name, _)| *name);
+
+    let mut total_changes = 0;
+
+    for (base_name, group) in &sorted_groups {
+        // Collect current suffixes
+        let suffix_contacts: Vec<(&google_people1::api::Person, Option<u32>)> = group
+            .iter()
+            .map(|p| {
+                let suffix = p.names.as_ref()
+                    .and_then(|names| names.first())
+                    .and_then(|n| n.honorific_suffix.as_deref())
+                    .and_then(|s| s.parse::<u32>().ok());
+                (*p, suffix)
+            })
+            .collect();
+
+        // Target: suffixes 1..=N for N contacts
+        let n = suffix_contacts.len() as u32;
+        let target: std::collections::BTreeSet<u32> = (1..=n).collect();
+
+        // Current valid suffixes (>= 1, <= N, no duplicates counted)
+        let mut suffix_counts: std::collections::HashMap<Option<u32>, usize> = std::collections::HashMap::new();
+        for (_, s) in &suffix_contacts {
+            *suffix_counts.entry(*s).or_default() += 1;
+        }
+        let has_duplicates = suffix_counts.values().any(|c| *c > 1);
+
+        let current: std::collections::BTreeSet<u32> = suffix_contacts
+            .iter()
+            .filter_map(|(_, s)| *s)
+            .filter(|s| *s >= 1 && *s <= n)
+            .collect();
+
+        if current == target && !has_duplicates {
+            continue; // Already compact
+        }
+
+        // Holes: target suffixes not in current set
+        let holes: Vec<u32> = target.difference(&current).copied().collect();
+
+        // Contacts that need a new suffix: no suffix, suffix=0, suffix>N, or duplicate
+        let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut needs_reassign: Vec<usize> = Vec::new();
+        for (i, (_, s)) in suffix_contacts.iter().enumerate() {
+            match s {
+                Some(v) if *v >= 1 && *v <= n => {
+                    if !seen.insert(*v) {
+                        needs_reassign.push(i);
+                    }
+                }
+                _ => {
+                    needs_reassign.push(i);
+                }
+            }
+        }
+
+        if needs_reassign.is_empty() {
+            continue;
+        }
+
+        println!("\"{}\" ({} contacts):", base_name, group.len());
+        for (person, suffix) in &suffix_contacts {
+            let display = person_display_name_detailed(person);
+            match suffix {
+                Some(s) => println!("  - {} [suffix: {}]", display, s),
+                None => println!("  - {} [no suffix]", display),
+            }
+        }
+
+        // Sort needs_reassign by current suffix descending (high suffixes folded into holes first)
+        needs_reassign.sort_by(|a, b| {
+            let sa = suffix_contacts[*a].1.unwrap_or(0);
+            let sb = suffix_contacts[*b].1.unwrap_or(0);
+            sb.cmp(&sa)
+        });
+
+        for (hole, idx) in holes.iter().zip(needs_reassign.iter()) {
+            let (person, old_suffix) = &suffix_contacts[*idx];
+            let old_str = match old_suffix {
+                Some(s) => s.to_string(),
+                None => "none".to_string(),
+            };
+            let display = person_display_name_detailed(person);
+            println!("  {} -> suffix \"{}\" (was \"{}\")", display, hole, old_str);
+
+            if !dry_run {
+                let resource_name = person
+                    .resource_name
+                    .as_deref()
+                    .ok_or("Contact missing resource name")?;
+                let mut updated = (*person).clone();
+                if let Some(ref mut names) = updated.names {
+                    if let Some(first) = names.first_mut() {
+                        first.honorific_suffix = Some(hole.to_string());
+                    }
+                }
+                hub.people()
+                    .update_contact(updated, resource_name)
+                    .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                    .doit()
+                    .await?;
+                tokio::time::sleep(MUTATE_DELAY).await;
+            }
+            total_changes += 1;
+        }
+        println!();
+    }
+
+    if total_changes == 0 {
+        println!("All suffixes are already compact.");
+    } else if dry_run {
+        println!("{} change(s) would be made.", total_changes);
+    } else {
+        println!("{} suffix(es) updated.", total_changes);
+    }
+
+    Ok(())
+}

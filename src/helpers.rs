@@ -291,6 +291,17 @@ pub fn person_name(person: &google_people1::api::Person) -> String {
     name_parts.join(" ")
 }
 
+/// Returns given + family name only (no suffix, no company).
+pub fn person_base_name(person: &google_people1::api::Person) -> String {
+    let names = person.names.as_ref().and_then(|n| n.first());
+    let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+    let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+    let mut parts = Vec::new();
+    if !given.is_empty() { parts.push(given); }
+    if !family.is_empty() { parts.push(family); }
+    parts.join(" ")
+}
+
 pub fn person_display_name(person: &google_people1::api::Person) -> String {
     let name = person_name(person);
     if name.is_empty() { "<no name>".to_string() } else { name }
