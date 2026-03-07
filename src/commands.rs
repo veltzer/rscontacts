@@ -45,9 +45,9 @@ allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
 
 # Allow regex for contact labels (groups). Labels that do NOT match
 # this pattern will be flagged by check-contact-label-regexp.
-# Capital first letter, rest lowercase, no spaces.
+# CamelCase: starts with uppercase, then any mix of upper/lowercase letters.
 [check-contact-label-regexp]
-allow = '^[A-Z][a-z]+$'
+allow = '^[A-Z][a-zA-Z]*$'
 "#;
 
 pub fn cmd_init_config(force: bool) -> Result<(), Box<dyn std::error::Error>> {
