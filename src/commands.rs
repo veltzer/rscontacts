@@ -883,14 +883,21 @@ async fn check_name_duplicate(
             }
 
             if fix && !dry_run {
-                // Ask to rename all but the first
-                for person in &group[1..] {
+                for person in *group {
                     let display = person_display_name(person);
+                    let phone = person.phone_numbers.as_ref()
+                        .and_then(|nums| nums.first())
+                        .and_then(|p| p.value.as_deref())
+                        .unwrap_or("");
                     let email = person_email(person);
-                    if !email.is_empty() {
-                        eprintln!("{}  Fix duplicate: {} ({})", prefix, display, email);
+                    let detail = person_detail(person);
+                    let mut info = vec![];
+                    if !phone.is_empty() { info.push(phone.to_string()); }
+                    if !email.is_empty() { info.push(email.to_string()); }
+                    if info.is_empty() {
+                        eprintln!("{}  Fix duplicate: {}{}", prefix, display, detail);
                     } else {
-                        eprintln!("{}  Fix duplicate: {}", prefix, display);
+                        eprintln!("{}  Fix duplicate: {} ({}){}", prefix, display, info.join(", "), detail);
                     }
                     interactive_name_duplicate_fix(hub, person, &display, user_groups, label_names, group_names).await?;
                 }
