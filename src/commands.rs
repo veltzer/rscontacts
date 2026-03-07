@@ -1870,7 +1870,7 @@ async fn interactive_edit_contact(
                     .and_then(|n| n.first())
                     .and_then(|n| n.given_name.as_deref())
                     .unwrap_or("");
-                eprint!("  Given name [{}]: ", current);
+                eprint!("  Given name [{}] (enter - to clear): ", current);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
@@ -1879,13 +1879,14 @@ async fn interactive_edit_contact(
                     eprintln!("  Unchanged.");
                     continue;
                 }
+                let new_val = if val == "-" { None } else { Some(val.to_string()) };
                 let mut updated = person.clone();
                 if updated.names.is_none() {
                     updated.names = Some(vec![google_people1::api::Name::default()]);
                 }
                 if let Some(ref mut names) = updated.names {
                     if let Some(first) = names.first_mut() {
-                        first.given_name = Some(val.to_string());
+                        first.given_name = new_val.clone();
                     }
                 }
                 hub.people()
@@ -1893,7 +1894,10 @@ async fn interactive_edit_contact(
                     .update_person_fields(FieldMask::new::<&str>(&["names"]))
                     .doit()
                     .await?;
-                eprintln!("  Set given name to \"{}\"", val);
+                match new_val {
+                    Some(v) => eprintln!("  Set given name to \"{}\"", v),
+                    None => eprintln!("  Cleared given name."),
+                }
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
             Some('f') => {
@@ -1901,7 +1905,7 @@ async fn interactive_edit_contact(
                     .and_then(|n| n.first())
                     .and_then(|n| n.family_name.as_deref())
                     .unwrap_or("");
-                eprint!("  Family name [{}]: ", current);
+                eprint!("  Family name [{}] (enter - to clear): ", current);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
