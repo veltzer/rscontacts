@@ -1439,8 +1439,9 @@ pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), 
         fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "memberships"]).await?
     };
 
-    let (user_groups_owned, label_names) = if fix {
+    let (user_groups_owned, label_names, group_names) = if fix {
         let all_groups = fetch_all_contact_groups(&hub).await?;
+        let gn = build_group_name_map(&all_groups);
         let ug: Vec<(String, String)> = all_groups.iter()
             .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
             .filter_map(|g| {
@@ -1450,13 +1451,13 @@ pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), 
             })
             .collect();
         let ln: Vec<String> = ug.iter().map(|(name, _)| name.clone()).collect();
-        (ug, ln)
+        (ug, ln, gn)
     } else {
-        (vec![], vec![])
+        (vec![], vec![], std::collections::HashMap::new())
     };
     let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
 
-    check_no_label(&hub, &contacts, fix, dry_run, "", None, false, &user_groups, &label_names).await?;
+    check_no_label(&hub, &contacts, fix, dry_run, "", None, false, &user_groups, &label_names, &group_names).await?;
     Ok(())
 }
 
@@ -2565,7 +2566,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-no-label") {
         log("check-contact-no-label");
-        let no_label = check_no_label(&hub, &all_contacts, fix, dry_run, prefix, hdr("Contacts without label (check-contact-no-label)"), stats, &user_groups, &label_names).await?;
+        let no_label = check_no_label(&hub, &all_contacts, fix, dry_run, prefix, hdr("Contacts without label (check-contact-no-label)"), stats, &user_groups, &label_names, &group_names_for_regexp).await?;
         results.push(("check-contact-no-label", no_label));
     }
 
