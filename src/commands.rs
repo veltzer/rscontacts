@@ -1127,7 +1127,7 @@ async fn check_no_label(
                 };
                 use std::io::Write;
                 loop {
-                    eprint!("[l]abel / [d]elete / [s]kip: ");
+                    eprint!("[l]abel / [e]dit / [d]elete / [s]kip: ");
                     std::io::stderr().flush()?;
                     let mut input = String::new();
                     std::io::stdin().read_line(&mut input)?;
@@ -1148,6 +1148,10 @@ async fn check_no_label(
                             }
                             break;
                         }
+                        Some('e') => {
+                            interactive_edit_contact(hub, person, user_groups, label_names, group_names).await?;
+                            break;
+                        }
                         Some('d') => {
                             if prompt_yes_no(&format!("Delete {}?", person_display_name(person)))? {
                                 hub.people().delete_contact(resource_name).doit().await?;
@@ -1162,7 +1166,7 @@ async fn check_no_label(
                             eprintln!("  Skipped.");
                             break;
                         }
-                        _ => eprintln!("  Invalid choice. Enter l, d, or s."),
+                        _ => eprintln!("  Invalid choice. Enter l, e, d, or s."),
                     }
                 }
             }
