@@ -34,7 +34,7 @@ enum Commands {
         #[arg(long)]
         starred: bool,
     },
-    /// Check first names against allow regex defined in config.toml
+    /// Check given names against allow regex defined in config.toml
     CheckContactFirstnameRegexp {
         /// Interactively fix each flagged contact (swap/rename/delete/skip)
         #[arg(long)]
@@ -52,7 +52,7 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Check last names against allow regex defined in config.toml
+    /// Check family names against allow regex defined in config.toml
     CheckContactLastnameRegexp {
         /// Interactively fix each flagged contact (rename/delete/skip)
         #[arg(long)]
@@ -122,7 +122,7 @@ enum Commands {
         dry_run: bool,
     },
     /// Print contacts with phone numbers missing a label (mobile/home/work/etc)
-    CheckPhoneNoLabel {
+    CheckPhoneLabelMissing {
         /// Interactively fix phones without labels
         #[arg(long)]
         fix: bool,
@@ -251,7 +251,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
-        Commands::CheckPhoneNoLabel { fix, dry_run } => commands::cmd_check_phone_no_label(fix, dry_run).await?,
+        Commands::CheckPhoneLabelMissing { fix, dry_run } => commands::cmd_check_phone_label_missing(fix, dry_run).await?,
         Commands::CheckPhoneLabelEnglish { fix, dry_run } => commands::cmd_check_phone_label_english(fix, dry_run).await?,
         Commands::CheckContactEmail => commands::cmd_check_contact_email().await?,
         Commands::CheckContactEmailCaps { fix, dry_run } => commands::cmd_check_contact_email_caps(fix, dry_run).await?,

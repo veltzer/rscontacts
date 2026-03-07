@@ -45,7 +45,7 @@ The following check names can be used in the `skip` list:
 | `check-contact-label-camelcase` | Labels not starting with a capital letter |
 | `check-phone-countrycode` | Phone numbers missing a country code |
 | `check-phone-format` | Phone numbers not in +CC-NUMBER format |
-| `check-phone-no-label` | Phone numbers without a label (mobile/home/work) |
+| `check-phone-label-missing` | Phone numbers without a label (mobile/home/work) |
 | `check-phone-label-english` | Non-English phone labels |
 | `check-phone-duplicate` | Duplicate phone numbers on a contact |
 
@@ -76,7 +76,7 @@ Both checks support `--fix` for interactive fixing (rename/delete/skip, plus swa
 skip = [
     "check-contact-name-english",
     "check-contact-no-label",
-    "check-phone-no-label",
+    "check-phone-label-missing",
 ]
 
 [check-contact-firstname-regexp]

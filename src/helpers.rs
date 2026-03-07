@@ -268,18 +268,55 @@ pub async fn fetch_all_contacts(hub: &HubType, fields: &[&str]) -> Result<Vec<go
     Ok(all)
 }
 
-pub fn person_name(person: &google_people1::api::Person) -> &str {
-    person
-        .names
-        .as_ref()
-        .and_then(|names| names.first())
-        .and_then(|n| n.display_name.as_deref())
-        .unwrap_or("")
+pub fn person_name(person: &google_people1::api::Person) -> String {
+    let names = person.names.as_ref().and_then(|n| n.first());
+    let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+    let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+    let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
+    let company = person.organizations.as_ref()
+        .and_then(|orgs| orgs.first())
+        .and_then(|o| o.name.as_deref())
+        .unwrap_or("");
+    let mut name_parts = Vec::new();
+    if !given.is_empty() { name_parts.push(given.to_string()); }
+    if !family.is_empty() { name_parts.push(family.to_string()); }
+    if !suffix.is_empty() { name_parts.push(suffix.to_string()); }
+    if !company.is_empty() {
+        if name_parts.is_empty() {
+            name_parts.push(company.to_string());
+        } else {
+            name_parts.push(format!("({})", company));
+        }
+    }
+    name_parts.join(" ")
 }
 
-pub fn person_display_name(person: &google_people1::api::Person) -> &str {
+pub fn person_display_name(person: &google_people1::api::Person) -> String {
     let name = person_name(person);
-    if name.is_empty() { "<no name>" } else { name }
+    if name.is_empty() { "<no name>".to_string() } else { name }
+}
+
+pub fn build_group_name_map(groups: &[google_people1::api::ContactGroup]) -> std::collections::HashMap<String, String> {
+    groups.iter()
+        .filter_map(|g| {
+            let rn = g.resource_name.as_deref()?;
+            let name = g.name.as_deref()?;
+            Some((rn.to_string(), name.to_string()))
+        })
+        .collect()
+}
+
+pub fn person_labels(person: &google_people1::api::Person, group_names: &std::collections::HashMap<String, String>) -> Vec<String> {
+    person.memberships.as_ref()
+        .map(|memberships| {
+            memberships.iter().filter_map(|m| {
+                let rn = m.contact_group_membership.as_ref()?
+                    .contact_group_resource_name.as_deref()?;
+                if rn == "contactGroups/myContacts" { return None; }
+                group_names.get(rn).cloned()
+            }).collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn person_email(person: &google_people1::api::Person) -> &str {
@@ -452,9 +489,9 @@ pub fn prompt_firstname_fix_action(_given: &str, family: &str, split_source: Opt
     loop {
         if let Some(source) = split_source {
             let (alpha, numeric) = split_alpha_numeric(source).unwrap();
-            eprint!("  s[w]ap lastname \"{}\" to firstname / s[p]lit \"{}\" -> firstname \"{}\", suffix \"{}\" / [c]ompany / [r]ename / [d]elete / [s]kip? ", family, source, alpha, numeric);
+            eprint!("  s[w]ap family name \"{}\" to given name / s[p]lit \"{}\" -> given name \"{}\", suffix \"{}\" / [c]ompany / [r]ename / [d]elete / [s]kip? ", family, source, alpha, numeric);
         } else {
-            eprint!("  s[w]ap lastname \"{}\" to firstname / [c]ompany / [r]ename / [d]elete / [s]kip? ", family);
+            eprint!("  s[w]ap family name \"{}\" to given name / [c]ompany / [r]ename / [d]elete / [s]kip? ", family);
         }
         std::io::stderr().flush()?;
         let mut input = String::new();
@@ -483,6 +520,20 @@ pub fn prompt_fix_action(_name: &str) -> Result<char, Box<dyn std::error::Error>
         match input.trim().chars().next() {
             Some(c @ ('r' | 'd' | 's')) => return Ok(c),
             _ => eprintln!("  Invalid choice. Enter r, d, or s."),
+        }
+    }
+}
+
+pub fn prompt_lastname_fix_action() -> Result<char, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    loop {
+        eprint!("  [x] remove family name / [r]ename / [d]elete / [s]kip? ");
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        match input.trim().chars().next() {
+            Some(c @ ('x' | 'r' | 'd' | 's')) => return Ok(c),
+            _ => eprintln!("  Invalid choice. Enter x, r, d, or s."),
         }
     }
 }
