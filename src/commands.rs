@@ -2,6 +2,61 @@ use google_people1::FieldMask;
 
 use crate::helpers::*;
 
+const DEFAULT_CONFIG: &str = r#"# rscontacts configuration
+
+[check-all]
+# List of checks to skip when running check-all.
+# All checks not listed here will run by default.
+# Uncomment any check name to skip it.
+skip = [
+    # "check-contact-given-name-regexp",
+    # "check-contact-family-name-regexp",
+    # "check-contact-suffix-regexp",
+    # "check-contact-displayname-duplicate",
+    # "check-contact-no-label",
+    # "check-contact-email",
+    # "check-contact-email-duplicate",
+    # "check-contact-label-nophone",
+    # "check-contact-label-space",
+    # "check-contact-label-camelcase",
+    # "check-phone-countrycode",
+    # "check-phone-format",
+    # "check-phone-label-missing",
+    # "check-phone-label-english",
+    # "check-phone-duplicate",
+]
+
+# Allow regex for given names. Contacts whose given name does NOT match
+# this pattern will be flagged by check-contact-given-name-regexp.
+# Single uppercase letter or uppercase followed by lowercase letters.
+[check-contact-given-name-regexp]
+allow = '^[A-Z][a-z]*$'
+
+# Allow regex for family names. Contacts whose family name does NOT match
+# this pattern will be flagged by check-contact-family-name-regexp.
+# First letter uppercase, rest lowercase. Hyphenated names allowed.
+[check-contact-family-name-regexp]
+allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
+
+# Allow regex for suffixes. Contacts whose suffix does NOT match
+# this pattern will be flagged by check-contact-suffix-regexp.
+# Default (if not configured): numeric, no leading zero (^[1-9]\d*$).
+# [check-contact-suffix-regexp]
+# allow = '^[1-9]\d*$'
+"#;
+
+pub fn cmd_init_config(force: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let path = config_path();
+    if path.exists() && !force {
+        eprintln!("Config file already exists at {}", path.display());
+        eprintln!("Use --force to overwrite.");
+        std::process::exit(1);
+    }
+    std::fs::write(&path, DEFAULT_CONFIG)?;
+    eprintln!("Created config file at {}", path.display());
+    Ok(())
+}
+
 pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::error::Error>> {
     if force {
         let cache = token_cache_path();
