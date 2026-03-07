@@ -806,8 +806,25 @@ async fn check_family_name_regexp(
 
 pub async fn cmd_check_contact_displayname_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers"]).await?;
-    check_name_duplicate(&hub, &contacts, fix, dry_run, "", None, false).await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "memberships"]).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = if fix {
+        let ug: Vec<(String, String)> = all_groups.iter()
+            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+            .filter_map(|g| {
+                let name = g.name.as_deref()?;
+                let rn = g.resource_name.as_deref()?;
+                Some((name.to_string(), rn.to_string()))
+            })
+            .collect();
+        let ln: Vec<String> = ug.iter().map(|(name, _)| name.clone()).collect();
+        (ug, ln)
+    } else {
+        (vec![], vec![])
+    };
+    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    check_name_duplicate(&hub, &contacts, fix, dry_run, "", None, false, &user_groups, &label_names, &group_names).await?;
     Ok(())
 }
 
@@ -1078,6 +1095,7 @@ async fn check_no_label(
     quiet: bool,
     user_groups: &[(&str, &str)],
     label_names: &[String],
+    group_names: &std::collections::HashMap<String, String>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
@@ -2519,7 +2537,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-displayname-duplicate") {
         log("check-contact-displayname-duplicate");
-        let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-displayname-duplicate)"), stats).await?;
+        let name_dup = check_name_duplicate(&hub, &all_contacts, fix, dry_run, prefix, hdr("Duplicate contact names (check-contact-displayname-duplicate)"), stats, &user_groups_regexp, &label_names_regexp, &group_names_for_regexp).await?;
         results.push(("check-contact-displayname-duplicate", name_dup));
     }
 
