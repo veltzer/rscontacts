@@ -224,7 +224,11 @@ async fn check_firstname_regexp(
                     .and_then(|names| names.first())
                     .and_then(|n| n.family_name.as_deref())
                     .unwrap_or("");
-                println!("{}{} (given: \"{}\", family: \"{}\")", prefix, display, given, family);
+                let suffix = person.names.as_ref()
+                    .and_then(|names| names.first())
+                    .and_then(|n| n.honorific_suffix.as_deref())
+                    .unwrap_or("");
+                println!("{}{} (given: \"{}\", family: \"{}\", suffix: \"{}\")", prefix, display, given, family, suffix);
 
                 if fix && !dry_run {
                     interactive_firstname_fix(hub, person, given).await?;
@@ -251,12 +255,17 @@ async fn interactive_firstname_fix(
         .and_then(|n| n.family_name.as_deref())
         .unwrap_or("");
 
-    // Try splitting given name alone, or given+family combined
-    let combined = format!("{}{}", given, family);
+    // Try splitting given name alone, given+family, or given+suffix
+    let suffix = person.names.as_ref()
+        .and_then(|names| names.first())
+        .and_then(|n| n.honorific_suffix.as_deref())
+        .unwrap_or("");
     let split_source = if split_alpha_numeric(given).is_some() {
         Some(given.to_string())
-    } else if split_alpha_numeric(&combined).is_some() {
-        Some(combined.clone())
+    } else if !family.is_empty() && split_alpha_numeric(&format!("{}{}", given, family)).is_some() {
+        Some(format!("{}{}", given, family))
+    } else if !suffix.is_empty() && split_alpha_numeric(&format!("{}{}", given, suffix)).is_some() {
+        Some(format!("{}{}", given, suffix))
     } else {
         None
     };
