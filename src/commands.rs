@@ -888,23 +888,56 @@ async fn check_name_duplicate(
             }
 
             if fix && !dry_run {
-                for person in *group {
-                    let display = person_display_name(person);
-                    let phone = person.phone_numbers.as_ref()
-                        .and_then(|nums| nums.first())
-                        .and_then(|p| p.value.as_deref())
-                        .unwrap_or("");
-                    let email = person_email(person);
-                    let detail = person_detail(person);
-                    let mut info = vec![];
-                    if !phone.is_empty() { info.push(phone.to_string()); }
-                    if !email.is_empty() { info.push(email.to_string()); }
-                    if info.is_empty() {
-                        eprintln!("{}  Fix duplicate: {}{}", prefix, display, detail);
-                    } else {
-                        eprintln!("{}  Fix duplicate: {} ({}){}", prefix, display, info.join(", "), detail);
+                eprint!("{}  [n]umber all / fix [i]ndividually / [s]kip? ", prefix);
+                use std::io::Write;
+                std::io::stderr().flush()?;
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                match input.trim() {
+                    "n" => {
+                        for (i, person) in group.iter().enumerate() {
+                            let suffix = (i + 1).to_string();
+                            let display = person_display_name_detailed(person);
+                            let resource_name = person.resource_name.as_deref()
+                                .ok_or("Contact missing resource name")?;
+                            let mut updated = (*person).clone();
+                            if let Some(ref mut names) = updated.names {
+                                if let Some(first) = names.first_mut() {
+                                    first.honorific_suffix = Some(suffix.clone());
+                                }
+                            }
+                            hub.people()
+                                .update_contact(updated, resource_name)
+                                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                                .doit()
+                                .await?;
+                            eprintln!("{}  {} -> suffix \"{}\"", prefix, display, suffix);
+                            tokio::time::sleep(MUTATE_DELAY).await;
+                        }
                     }
-                    interactive_name_duplicate_fix(hub, person, &display, user_groups, label_names, group_names).await?;
+                    "i" => {
+                        for person in *group {
+                            let display = person_display_name(person);
+                            let phone = person.phone_numbers.as_ref()
+                                .and_then(|nums| nums.first())
+                                .and_then(|p| p.value.as_deref())
+                                .unwrap_or("");
+                            let email = person_email(person);
+                            let detail = person_detail(person);
+                            let mut info = vec![];
+                            if !phone.is_empty() { info.push(phone.to_string()); }
+                            if !email.is_empty() { info.push(email.to_string()); }
+                            if info.is_empty() {
+                                eprintln!("{}  Fix duplicate: {}{}", prefix, display, detail);
+                            } else {
+                                eprintln!("{}  Fix duplicate: {} ({}){}", prefix, display, info.join(", "), detail);
+                            }
+                            interactive_name_duplicate_fix(hub, person, &display, user_groups, label_names, group_names).await?;
+                        }
+                    }
+                    _ => {
+                        eprintln!("{}  Skipped.", prefix);
+                    }
                 }
             }
         }
