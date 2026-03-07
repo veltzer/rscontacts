@@ -35,7 +35,7 @@ enum Commands {
         starred: bool,
     },
     /// Check given names against allow regex defined in config.toml
-    CheckContactFirstnameRegexp {
+    CheckContactGivenNameRegexp {
         /// Interactively fix each flagged contact (swap/rename/delete/skip)
         #[arg(long)]
         fix: bool,
@@ -53,7 +53,7 @@ enum Commands {
         dry_run: bool,
     },
     /// Check family names against allow regex defined in config.toml
-    CheckContactLastnameRegexp {
+    CheckContactFamilyNameRegexp {
         /// Interactively fix each flagged contact (rename/delete/skip)
         #[arg(long)]
         fix: bool,
@@ -244,9 +244,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Auth { no_browser, force } => commands::cmd_auth(no_browser, force).await?,
         Commands::List { emails, labels, starred } => commands::cmd_list(emails, labels, starred).await?,
-        Commands::CheckContactFirstnameRegexp { fix, dry_run } => commands::cmd_check_contact_firstname_regexp(fix, dry_run).await?,
+        Commands::CheckContactGivenNameRegexp { fix, dry_run } => commands::cmd_check_contact_given_name_regexp(fix, dry_run).await?,
         Commands::CheckContactSuffixRegexp { fix, dry_run } => commands::cmd_check_contact_suffix_regexp(fix, dry_run).await?,
-        Commands::CheckContactLastnameRegexp { fix, dry_run } => commands::cmd_check_contact_lastname_regexp(fix, dry_run).await?,
+        Commands::CheckContactFamilyNameRegexp { fix, dry_run } => commands::cmd_check_contact_family_name_regexp(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,

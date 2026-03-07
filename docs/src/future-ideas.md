@@ -15,7 +15,7 @@ Turn rscontacts into a web application that provides a browser-based UI for audi
 
 ## Distinguish Companies from Individuals
 
-Currently there is no way to tell whether a contact represents a company or an individual person. Knowing this distinction would allow checks to apply different rules (e.g., company contacts would not need a first/last name split, and name format checks like capitalization or suffix numbering would not apply).
+Currently there is no way to tell whether a contact represents a company or an individual person. Knowing this distinction would allow checks to apply different rules (e.g., company contacts would not need a given/family name split, and name format checks like capitalization or suffix numbering would not apply).
 
 One approach: maintain a local file listing known company names. A check could then compare each contact's organization field (or display name) against this list and flag ambiguous entries. Contacts matching a known company name could be tagged or moved into a dedicated label/group.
 

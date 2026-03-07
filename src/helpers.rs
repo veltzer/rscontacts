@@ -12,10 +12,10 @@ pub const MUTATE_DELAY: Duration = Duration::from_millis(500);
 pub struct Config {
     #[serde(default, rename = "check-all")]
     pub check_all: CheckAllConfig,
-    #[serde(default, rename = "check-contact-firstname-regexp")]
-    pub check_contact_firstname_regexp: NameRegexpConfig,
-    #[serde(default, rename = "check-contact-lastname-regexp")]
-    pub check_contact_lastname_regexp: NameRegexpConfig,
+    #[serde(default, rename = "check-contact-given-name-regexp")]
+    pub check_contact_given_name_regexp: NameRegexpConfig,
+    #[serde(default, rename = "check-contact-family-name-regexp")]
+    pub check_contact_family_name_regexp: NameRegexpConfig,
     #[serde(default, rename = "check-contact-suffix-regexp")]
     pub check_contact_suffix_regexp: NameRegexpConfig,
 }
@@ -484,26 +484,26 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
 
 // --- Prompt helpers ---
 
-pub fn prompt_firstname_fix_action(_given: &str, family: &str, split_source: Option<&str>) -> Result<char, Box<dyn std::error::Error>> {
+pub fn prompt_given_name_fix_action(_given: &str, family: &str, split_source: Option<&str>) -> Result<char, Box<dyn std::error::Error>> {
     use std::io::Write;
     loop {
         if let Some(source) = split_source {
             let (alpha, numeric) = split_alpha_numeric(source).unwrap();
-            eprint!("  s[w]ap family name \"{}\" to given name / s[p]lit \"{}\" -> given name \"{}\", suffix \"{}\" / [c]ompany / [r]ename / [d]elete / [s]kip? ", family, source, alpha, numeric);
+            eprint!("  s[w]ap family name \"{}\" to given name / s[p]lit \"{}\" -> given name \"{}\", suffix \"{}\" / [c]ompany / [r]ename / s[u]ffix / [l]abel / [d]elete / [s]kip? ", family, source, alpha, numeric);
         } else {
-            eprint!("  s[w]ap family name \"{}\" to given name / [c]ompany / [r]ename / [d]elete / [s]kip? ", family);
+            eprint!("  s[w]ap family name \"{}\" to given name / [c]ompany / [r]ename / s[u]ffix / [l]abel / [d]elete / [s]kip? ", family);
         }
         std::io::stderr().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         match input.trim().chars().next() {
-            Some(c @ ('w' | 'c' | 'r' | 'd' | 's')) => return Ok(c),
+            Some(c @ ('w' | 'c' | 'r' | 'u' | 'l' | 'd' | 's')) => return Ok(c),
             Some('p') if split_source.is_some() => return Ok('p'),
             _ => {
                 if split_source.is_some() {
-                    eprintln!("  Invalid choice. Enter w, p, c, r, d, or s.");
+                    eprintln!("  Invalid choice. Enter w, p, c, r, u, l, d, or s.");
                 } else {
-                    eprintln!("  Invalid choice. Enter w, c, r, d, or s.");
+                    eprintln!("  Invalid choice. Enter w, c, r, u, l, d, or s.");
                 }
             }
         }
@@ -524,16 +524,16 @@ pub fn prompt_fix_action(_name: &str) -> Result<char, Box<dyn std::error::Error>
     }
 }
 
-pub fn prompt_lastname_fix_action() -> Result<char, Box<dyn std::error::Error>> {
+pub fn prompt_family_name_fix_action() -> Result<char, Box<dyn std::error::Error>> {
     use std::io::Write;
     loop {
-        eprint!("  [x] remove family name / [r]ename / [d]elete / [s]kip? ");
+        eprint!("  [x] remove family name / [r]ename / s[u]ffix / [l]abel / [d]elete / [s]kip? ");
         std::io::stderr().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         match input.trim().chars().next() {
-            Some(c @ ('x' | 'r' | 'd' | 's')) => return Ok(c),
-            _ => eprintln!("  Invalid choice. Enter x, r, d, or s."),
+            Some(c @ ('x' | 'r' | 'u' | 'l' | 'd' | 's')) => return Ok(c),
+            _ => eprintln!("  Invalid choice. Enter x, r, u, l, d, or s."),
         }
     }
 }

@@ -2,7 +2,7 @@
 
 ## The Problem
 
-You may have multiple contacts with the same name. For example, two friends both called "Mike" whose last names you don't know. The `check-contact-name-duplicate` command will flag these as issues, but how should you actually resolve them?
+You may have multiple contacts with the same name. For example, two friends both called "Mike" whose family names you don't know. The `check-contact-name-duplicate` command will flag these as issues, but how should you actually resolve them?
 
 ## What Google Contacts Shows in the List View
 

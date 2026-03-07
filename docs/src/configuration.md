@@ -17,14 +17,14 @@ The `[check-all]` section controls which checks are included when running `check
 ```toml
 [check-all]
 skip = [
-    "check-contact-name-english",
+    "check-contact-given-name-regexp",
     "check-contact-label-nophone",
 ]
 ```
 
 Skipped checks will not run and will not appear in the `--stats` output.
 
-Individual check commands (e.g., `rscontacts check-contact-name-english`) are not affected by the config file and will always run when invoked directly.
+Individual check commands (e.g., `rscontacts check-contact-given-name-regexp`) are not affected by the config file and will always run when invoked directly.
 
 ## Available check names
 
@@ -32,8 +32,8 @@ The following check names can be used in the `skip` list:
 
 | Check name | Description |
 |---|---|
-| `check-contact-firstname-regexp` | First names not matching the configured allow regex |
-| `check-contact-lastname-regexp` | Last names not matching the configured allow regex |
+| `check-contact-given-name-regexp` | Given names not matching the configured allow regex |
+| `check-contact-family-name-regexp` | Family names not matching the configured allow regex |
 | `check-contact-suffix-regexp` | Suffixes not matching the allow regex (default: numeric) |
 | `check-contact-displayname-duplicate` | Multiple contacts with the same display name |
 | `check-contact-no-label` | Contacts not assigned to any label |
@@ -51,13 +51,13 @@ The following check names can be used in the `skip` list:
 
 ## Name allow regexes
 
-The `check-contact-firstname-regexp` and `check-contact-lastname-regexp` checks flag contacts whose first name (given name) or last name (family name) does **not** match the configured regex pattern. This is an allowlist approach — define what a valid name looks like, and anything that doesn't match gets flagged.
+The `check-contact-given-name-regexp` and `check-contact-family-name-regexp` checks flag contacts whose given name or family name does **not** match the configured regex pattern. This is an allowlist approach — define what a valid name looks like, and anything that doesn't match gets flagged.
 
 ```toml
-[check-contact-firstname-regexp]
+[check-contact-given-name-regexp]
 allow = '^[A-Z][a-z]+$'
 
-[check-contact-lastname-regexp]
+[check-contact-family-name-regexp]
 allow = '^[A-Z][a-z]+$'
 ```
 
@@ -65,7 +65,7 @@ The `allow` value is a [Rust regex](https://docs.rs/regex/latest/regex/#syntax).
 
 If no `allow` regex is configured, the check is silently skipped in `check-all`. When run directly, it prints a message about the missing config.
 
-Both checks support `--fix` for interactive fixing (rename/delete/skip, plus swap for firstname).
+Both checks support `--fix` for interactive fixing (rename/delete/skip, plus swap for given name).
 
 ## Example configuration
 
@@ -74,14 +74,14 @@ Both checks support `--fix` for interactive fixing (rename/delete/skip, plus swa
 
 [check-all]
 skip = [
-    "check-contact-name-english",
+    "check-contact-given-name-regexp",
     "check-contact-no-label",
     "check-phone-label-missing",
 ]
 
-[check-contact-firstname-regexp]
+[check-contact-given-name-regexp]
 allow = '^[A-Z][a-z]+$'
 
-[check-contact-lastname-regexp]
+[check-contact-family-name-regexp]
 allow = '^[A-Z][a-z]+$'
 ```
