@@ -919,11 +919,12 @@ async fn check_name_is_company(
 
 pub async fn cmd_check_contact_company_known(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config();
-    if config.check_contact_name_is_company.companies.is_empty() {
-        eprintln!("No [check-contact-name-is-company] companies configured in config.toml.");
-        eprintln!("Add a section like:");
+    if config.check_contact_name_is_company.companies.is_empty() && !fix {
+        eprintln!("No companies configured in config.toml.");
+        eprintln!("Add companies to the [check-contact-name-is-company] section:");
         eprintln!("  [check-contact-name-is-company]");
         eprintln!("  companies = [\"Google\", \"Microsoft\"]");
+        eprintln!("Or run with --fix to interactively add unknown companies.");
         return Ok(());
     }
     let hub = build_hub().await?;
