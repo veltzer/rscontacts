@@ -27,6 +27,7 @@ skip = [
     # "check-contact-no-identity",
     # "check-contact-name-is-company",
     # "check-contact-company-known",
+    # "check-contact-given-name-known",
     # "check-contact-displayname-duplicate",
     # "check-contact-no-label",
     # "check-contact-email",
@@ -68,6 +69,12 @@ allow = '^[A-Z][a-zA-Z]*$'
 # a company name (case-insensitive) will be flagged by check-contact-name-is-company.
 # [check-contact-name-is-company]
 # companies = ["Google", "Microsoft", "Apple"]
+
+# List of allowed given names (case-sensitive).
+# Contacts whose given name is NOT in this list will be flagged
+# by check-contact-given-name-known.
+# [check-contact-given-name-known]
+# names = ["John", "Jane", "Mark"]
 "#;
 
 pub fn cmd_init_config(force: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -1085,6 +1092,131 @@ fn save_company_list(companies: &[String]) -> Result<(), Box<dyn std::error::Err
         .map(|c| toml_edit::Value::from(c.as_str()))
         .collect::<toml_edit::Array>();
     table["companies"] = toml_edit::value(arr);
+
+    std::fs::write(&path, doc.to_string())?;
+    Ok(())
+}
+
+pub async fn cmd_check_contact_given_name_known(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config();
+    if config.check_contact_given_name_known.names.is_empty() {
+        eprintln!("No given names configured. Set [check-contact-given-name-known] names = [\"John\", ...] in config.toml");
+        std::process::exit(1);
+    }
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = if fix {
+        let ug: Vec<(String, String)> = all_groups.iter()
+            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+            .filter_map(|g| {
+                let name = g.name.as_deref()?;
+                let rn = g.resource_name.as_deref()?;
+                Some((name.to_string(), rn.to_string()))
+            })
+            .collect();
+        let ln: Vec<String> = ug.iter().map(|(name, _)| name.clone()).collect();
+        (ug, ln)
+    } else {
+        (vec![], vec![])
+    };
+    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    check_given_name_known(&hub, &contacts, &config.check_contact_given_name_known.names, &ctx).await?;
+    Ok(())
+}
+
+async fn check_given_name_known(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    names: &[String],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut name_set: std::collections::HashSet<String> = names.iter()
+        .map(|n| n.to_lowercase())
+        .collect();
+
+    let mut count = 0;
+    for person in contacts {
+        let given = person.names.as_ref()
+            .and_then(|n| n.first())
+            .and_then(|n| n.given_name.as_deref())
+            .unwrap_or("");
+
+        if given.is_empty() || name_set.contains(&given.to_lowercase()) {
+            continue;
+        }
+
+        if !ctx.quiet {
+            if count == 0
+                && let Some(header) = ctx.header {
+                    println!("=== {} ===", header);
+                }
+            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+
+            if ctx.fix && !ctx.dry_run {
+                use std::io::Write;
+                loop {
+                    eprint!("  [a]dd name to config / [e]dit contact / [s]kip? ");
+                    std::io::stderr().flush()?;
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input)?;
+                    match input.trim().chars().next() {
+                        Some('a') => {
+                            add_given_name_to_config(given)?;
+                            name_set.insert(given.to_lowercase());
+                            eprintln!("  Added \"{}\" to config.", given);
+                            break;
+                        }
+                        Some('e') => {
+                            interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                            break;
+                        }
+                        Some('s') => {
+                            eprintln!("  Skipped.");
+                            break;
+                        }
+                        _ => eprintln!("  Invalid choice. Enter a, e, or s."),
+                    }
+                }
+            }
+        }
+        count += 1;
+    }
+
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
+
+    Ok(count)
+}
+
+fn add_given_name_to_config(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = load_config();
+    if !config.check_contact_given_name_known.names.iter()
+        .any(|n| n.eq_ignore_ascii_case(name))
+    {
+        config.check_contact_given_name_known.names.push(name.to_string());
+    }
+    config.check_contact_given_name_known.names.sort_by_key(|a| a.to_lowercase());
+    save_given_name_list(&config.check_contact_given_name_known.names)?;
+    Ok(())
+}
+
+fn save_given_name_list(names: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let path = config_path();
+    let content = std::fs::read_to_string(&path)?;
+
+    let mut doc = content.parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse config: {}", e))?;
+
+    let table = doc.entry("check-contact-given-name-known")
+        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    let arr = names.iter()
+        .map(|n| toml_edit::Value::from(n.as_str()))
+        .collect::<toml_edit::Array>();
+    table["names"] = toml_edit::value(arr);
 
     std::fs::write(&path, doc.to_string())?;
     Ok(())
@@ -2885,6 +3017,17 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts with no given name and no company (check-contact-no-identity)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
         let no_identity = check_no_identity(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-no-identity", no_identity));
+    }
+
+    if !skip.contains("check-contact-given-name-known") {
+        log("check-contact-given-name-known");
+        if !config.check_contact_given_name_known.names.is_empty() {
+            let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Given name not in allowed list (check-contact-given-name-known)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+            let given_name_known = check_given_name_known(&hub, &all_contacts, &config.check_contact_given_name_known.names, &ctx).await?;
+            results.push(("check-contact-given-name-known", given_name_known));
+        } else {
+            eprintln!("Warning: check-contact-given-name-known has no names configured, skipping.");
+        }
     }
 
     if !skip.contains("check-contact-name-is-company") {

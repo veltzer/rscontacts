@@ -88,6 +88,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Check that all given names are in the allowed list from config
+    CheckContactGivenNameKnown {
+        /// Interactively fix each flagged contact
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Check that all company fields are in the known companies list from config
     CheckContactCompanyKnown {
         /// Interactively fix each flagged contact
@@ -292,6 +301,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactNoGivenName { fix, dry_run } => commands::cmd_check_contact_no_given_name(fix, dry_run).await?,
         Commands::CheckContactNoIdentity { fix, dry_run } => commands::cmd_check_contact_no_identity(fix, dry_run).await?,
         Commands::CheckContactNameIsCompany { fix, dry_run } => commands::cmd_check_contact_name_is_company(fix, dry_run).await?,
+        Commands::CheckContactGivenNameKnown { fix, dry_run } => commands::cmd_check_contact_given_name_known(fix, dry_run).await?,
         Commands::CheckContactCompanyKnown { fix, dry_run } => commands::cmd_check_contact_company_known(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
