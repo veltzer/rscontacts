@@ -2766,6 +2766,65 @@ pub async fn cmd_move_given_name_to_company(name: &str, dry_run: bool) -> Result
     Ok(())
 }
 
+pub async fn cmd_auto_contact_type(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let user_groups: Vec<(&str, &str)> = all_groups.iter()
+        .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+        .filter_map(|g| Some((g.name.as_deref()?, g.resource_name.as_deref()?)))
+        .collect();
+
+    let mut type_rns: Option<(String, String)> = None;
+    let mut count = 0;
+
+    for person in &contacts {
+        let (has_person, has_company) = person_type_labels(person, &group_names);
+        if has_person || has_company {
+            continue;
+        }
+
+        let names = person.names.as_ref().and_then(|n| n.first());
+        let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+        let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+        let is_company = given.is_empty() && family.is_empty();
+        let label = if is_company { TYPE_COMPANY_LABEL } else { TYPE_PERSON_LABEL };
+
+        println!("{} -> {}", format_person_line(person, Some(&group_names)), label);
+        count += 1;
+
+        if dry_run {
+            continue;
+        }
+
+        let resource_name = match person.resource_name.as_deref() {
+            Some(rn) => rn,
+            None => continue,
+        };
+
+        if type_rns.is_none() {
+            type_rns = Some(ensure_type_labels_exist(&hub, &user_groups).await?);
+        }
+        let (ref person_rn, ref company_rn) = *type_rns.as_ref().unwrap();
+        let target_rn = if is_company { company_rn } else { person_rn };
+
+        let req = google_people1::api::ModifyContactGroupMembersRequest {
+            resource_names_to_add: Some(vec![resource_name.to_string()]),
+            resource_names_to_remove: None,
+        };
+        hub.contact_groups().members_modify(req, target_rn).doit().await?;
+        tokio::time::sleep(MUTATE_DELAY).await;
+    }
+
+    if dry_run {
+        eprintln!("(dry-run) Would auto-assign type labels to {} contact(s).", count);
+    } else {
+        eprintln!("Done. {} contact(s) updated.", count);
+    }
+    Ok(())
+}
+
 pub async fn cmd_check_contact_no_middle_name(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
