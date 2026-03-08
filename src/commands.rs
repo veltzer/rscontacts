@@ -1969,7 +1969,7 @@ async fn interactive_edit_contact(
 
     loop {
         eprintln!();
-        eprintln!("  Edit: [g]iven name / [f]amily name / su[x]ffix / [c]ompany / [t] department / [p]hone / [m]ail / [a]dd label / re[v]ove label / [d]elete contact / [s]kip");
+        eprintln!("  Edit: [g]iven name / [f]amily name / su[x]ffix / [c]ompany / [t] department / [n]ickname / [p]hone / [m]ail / [a]dd label / re[v]ove label / [d]elete contact / [s]kip");
         eprint!("  > ");
         std::io::stderr().flush()?;
         let mut input = String::new();
@@ -2166,6 +2166,44 @@ async fn interactive_edit_contact(
                     eprintln!("  Cleared department.");
                 } else {
                     eprintln!("  Set department to \"{}\"", val);
+                }
+                tokio::time::sleep(MUTATE_DELAY).await;
+            }
+            Some('n') => {
+                let cur_val = current.nicknames.as_ref()
+                    .and_then(|n| n.first())
+                    .and_then(|n| n.value.as_deref())
+                    .unwrap_or("");
+                eprint!("  Nickname [{}] (new value / - to clear / Enter to skip): ", cur_val);
+                std::io::stderr().flush()?;
+                let mut val = String::new();
+                std::io::stdin().read_line(&mut val)?;
+                let val = val.trim();
+                if val.is_empty() {
+                    eprintln!("  Unchanged.");
+                    continue;
+                }
+                let mut updated = current.clone();
+                if val == "-" {
+                    updated.nicknames = Some(vec![]);
+                } else {
+                    let nick = google_people1::api::Nickname {
+                        value: Some(val.to_string()),
+                        ..Default::default()
+                    };
+                    updated.nicknames = Some(vec![nick]);
+                }
+                let (_, refreshed) = hub.people()
+                    .update_contact(updated, &resource_name)
+                    .update_person_fields(FieldMask::new::<&str>(&["nicknames"]))
+                    .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
+                    .doit()
+                    .await?;
+                current = refreshed;
+                if val == "-" {
+                    eprintln!("  Cleared nickname.");
+                } else {
+                    eprintln!("  Set nickname to \"{}\"", val);
                 }
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
