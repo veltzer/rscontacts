@@ -2738,15 +2738,16 @@ pub async fn cmd_move_given_name_to_company(name: &str, dry_run: bool) -> Result
                 first.given_name = None;
                 first.unstructured_name = None;
             }
-        hub.people()
+        let (_, refreshed) = hub.people()
             .update_contact(updated, resource_name)
             .update_person_fields(FieldMask::new::<&str>(&["names"]))
+            .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
             .doit()
             .await?;
         tokio::time::sleep(MUTATE_DELAY).await;
 
         // Set company
-        let mut updated2 = (*person).clone();
+        let mut updated2 = refreshed;
         updated2.organizations = Some(vec![google_people1::api::Organization {
             name: Some(given.to_string()),
             ..Default::default()
