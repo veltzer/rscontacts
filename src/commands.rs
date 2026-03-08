@@ -2609,8 +2609,8 @@ pub async fn cmd_check_contact_type(fix: bool, dry_run: bool) -> Result<(), Box<
     Ok(())
 }
 
-const TYPE_PERSON_LABEL: &str = "TypePerson";
-const TYPE_COMPANY_LABEL: &str = "TypeCompany";
+const TYPE_PERSON_LABEL: &str = "type:Person";
+const TYPE_COMPANY_LABEL: &str = "type:Company";
 
 fn person_type_labels(person: &google_people1::api::Person, group_names: &std::collections::HashMap<String, String>) -> (bool, bool) {
     let labels = person_labels(person, group_names);
