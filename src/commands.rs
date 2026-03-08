@@ -865,8 +865,8 @@ async fn check_no_identity(
     let mut type_rns: Option<(String, String)> = None;
 
     for person in contacts {
-        let (has_person, has_company) = person_type_labels(person, ctx.group_names);
-        if has_person || has_company {
+        let has_any_type = person_labels(person, ctx.group_names).iter().any(|l| l.starts_with("type:"));
+        if has_any_type {
             continue;
         }
 
