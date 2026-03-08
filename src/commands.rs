@@ -25,7 +25,6 @@ skip = [
     # "check-contact-suffix-regexp",
     # "check-contact-no-given-name",
     # "check-contact-no-identity",
-    # "check-contact-name-is-company",
     # "check-contact-company-known",
     # "check-contact-displayname-duplicate",
     # "check-contact-type",
@@ -66,11 +65,6 @@ allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
 # CamelCase: starts with uppercase, then any mix of upper/lowercase letters.
 [check-contact-label-regexp]
 allow = '^[A-Z][a-zA-Z]*$'
-
-# List of company names. Contacts whose given or family name matches
-# a company name (case-insensitive) will be flagged by check-contact-name-is-company.
-# [check-contact-name-is-company]
-# companies = ["Google", "Microsoft", "Apple"]
 
 # List of allowed given names (case-sensitive).
 # Contacts whose given name is NOT in this list will be flagged
@@ -924,99 +918,6 @@ async fn check_no_identity(
     Ok(count)
 }
 
-pub async fn cmd_check_contact_name_is_company(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let config = load_config();
-    if config.check_contact_name_is_company.companies.is_empty() {
-        eprintln!("No [check-contact-name-is-company] companies configured in config.toml.");
-        eprintln!("Add a section like:");
-        eprintln!("  [check-contact-name-is-company]");
-        eprintln!("  companies = [\"Google\", \"Microsoft\"]");
-        return Ok(());
-    }
-    let hub = build_hub().await?;
-    let all_fields = &[
-        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
-        "organizations", "memberships", "biographies", "urls", "events",
-        "relations", "nicknames", "occupations", "interests", "skills",
-        "userDefined", "imClients", "sipAddresses", "locations",
-        "externalIds", "clientData",
-    ];
-    let contacts = if fix {
-        fetch_all_contacts(&hub, all_fields).await?
-    } else {
-        fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?
-    };
-    let all_groups = fetch_all_contact_groups(&hub).await?;
-    let group_names = build_group_name_map(&all_groups);
-    let (user_groups_owned, label_names) = if fix {
-        let ug: Vec<(String, String)> = all_groups.iter()
-            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
-            .filter_map(|g| {
-                let name = g.name.as_deref()?;
-                let rn = g.resource_name.as_deref()?;
-                Some((name.to_string(), rn.to_string()))
-            })
-            .collect();
-        let ln: Vec<String> = ug.iter().map(|(name, _)| name.clone()).collect();
-        (ug, ln)
-    } else {
-        (vec![], vec![])
-    };
-    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
-    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
-    check_name_is_company(&hub, &contacts, &config.check_contact_name_is_company.companies, &ctx).await?;
-    Ok(())
-}
-
-async fn check_name_is_company(
-    hub: &HubType,
-    contacts: &[google_people1::api::Person],
-    companies: &[String],
-    ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let company_set: std::collections::HashSet<String> = companies.iter()
-        .map(|c| c.to_lowercase())
-        .collect();
-
-    let mut count = 0;
-    for person in contacts {
-        // Skip company contacts — their names are expected to be company names
-        if is_company(person, ctx.group_names) {
-            continue;
-        }
-
-        let names = person.names.as_ref().and_then(|n| n.first());
-        let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
-        let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
-
-        let given_match = !given.is_empty() && company_set.contains(&given.to_lowercase());
-        let family_match = !family.is_empty() && company_set.contains(&family.to_lowercase());
-
-        if !given_match && !family_match {
-            continue;
-        }
-
-        if !ctx.quiet {
-            if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
-        }
-        count += 1;
-
-        if ctx.fix && !ctx.dry_run {
-            interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
-        }
-    }
-
-    if !ctx.quiet && count > 0
-        && ctx.header.is_some() {
-            println!();
-        }
-
-    Ok(count)
-}
 
 pub async fn cmd_check_contact_company_known(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config();
@@ -2494,6 +2395,15 @@ async fn interactive_edit_contact(
                         resource_names_to_remove: None,
                     };
                     hub.contact_groups().members_modify(req, &group_rn).doit().await?;
+                    // Update local memberships
+                    let new_membership = google_people1::api::Membership {
+                        contact_group_membership: Some(google_people1::api::ContactGroupMembership {
+                            contact_group_id: None,
+                            contact_group_resource_name: Some(group_rn.clone()),
+                        }),
+                        ..Default::default()
+                    };
+                    current.memberships.get_or_insert_with(Vec::new).push(new_membership);
                     eprintln!("  Assigned label.");
                     tokio::time::sleep(MUTATE_DELAY).await;
                 }
@@ -2522,6 +2432,14 @@ async fn interactive_edit_contact(
                                 resource_names_to_remove: Some(vec![resource_name.to_string()]),
                             };
                             hub.contact_groups().members_modify(req, rn).doit().await?;
+                            // Update local memberships
+                            if let Some(ref mut memberships) = current.memberships {
+                                memberships.retain(|m| {
+                                    m.contact_group_membership.as_ref()
+                                        .and_then(|cgm| cgm.contact_group_resource_name.as_deref())
+                                        != Some(rn)
+                                });
+                            }
                             eprintln!("  Removed label \"{}\"", label_name);
                             tokio::time::sleep(MUTATE_DELAY).await;
                         } else {
@@ -3880,17 +3798,6 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Given name not in allowed list (check-contact-given-name-known)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
         let given_name_known = check_given_name_known(&hub, &all_contacts, &config.check_contact_given_name_known.names, &ctx).await?;
         results.push(("check-contact-given-name-known", given_name_known));
-    }
-
-    if !skip.contains("check-contact-name-is-company") {
-        log("check-contact-name-is-company");
-        if !config.check_contact_name_is_company.companies.is_empty() {
-            let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contact name matches company name (check-contact-name-is-company)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
-            let name_company = check_name_is_company(&hub, &all_contacts, &config.check_contact_name_is_company.companies, &ctx).await?;
-            results.push(("check-contact-name-is-company", name_company));
-        } else {
-            eprintln!("Warning: check-contact-name-is-company has no companies configured, skipping.");
-        }
     }
 
     if !skip.contains("check-contact-company-known") {
