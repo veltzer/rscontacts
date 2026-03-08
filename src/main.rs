@@ -97,6 +97,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Check that every company in the config has at least one contact
+    CheckContactCompanyExists {
+        /// Interactively fix each flagged contact
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print contacts that share the same display name
     CheckContactDisplaynameDuplicate {
         /// Interactively fix each duplicate (rename/delete/skip)
@@ -341,6 +350,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactNoIdentity { fix, dry_run } => commands::cmd_check_contact_no_identity(fix, dry_run).await?,
         Commands::CheckContactGivenNameKnown { fix, dry_run } => commands::cmd_check_contact_given_name_known(fix, dry_run).await?,
         Commands::CheckContactCompanyKnown { fix, dry_run } => commands::cmd_check_contact_company_known(fix, dry_run).await?,
+        Commands::CheckContactCompanyExists { fix, dry_run } => commands::cmd_check_contact_company_exists(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,
         Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,

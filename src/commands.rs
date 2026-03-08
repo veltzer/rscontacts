@@ -26,6 +26,7 @@ skip = [
     # "check-contact-no-given-name",
     # "check-contact-no-identity",
     # "check-contact-company-known",
+    # "check-contact-company-exists",
     # "check-contact-displayname-duplicate",
     # "check-contact-type",
     # "check-contact-no-middle-name",
@@ -1044,6 +1045,94 @@ fn add_company_to_config(company: &str) -> Result<(), Box<dyn std::error::Error>
     config.check_contact_name_is_company.companies.sort_by_key(|a| a.to_lowercase());
     save_company_list(&config.check_contact_name_is_company.companies)?;
     Ok(())
+}
+
+fn remove_company_from_config(company: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = load_config();
+    config.check_contact_name_is_company.companies.retain(|c| !c.eq_ignore_ascii_case(company));
+    save_company_list(&config.check_contact_name_is_company.companies)?;
+    Ok(())
+}
+
+pub async fn cmd_check_contact_company_exists(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config();
+    if config.check_contact_name_is_company.companies.is_empty() {
+        eprintln!("No companies configured in config.toml.");
+        return Ok(());
+    }
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations", "memberships"]).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &[], label_names: &[], group_names: &group_names };
+    check_company_exists(&contacts, &config.check_contact_name_is_company.companies, &ctx)?;
+    Ok(())
+}
+
+fn check_company_exists(
+    contacts: &[google_people1::api::Person],
+    companies: &[String],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    // Collect all org names from company contacts
+    let mut existing: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for person in contacts {
+        if !is_company(person, ctx.group_names) {
+            continue;
+        }
+        if let Some(org_name) = person.organizations.as_ref()
+            .and_then(|orgs| orgs.first())
+            .and_then(|o| o.name.as_deref())
+        {
+            if !org_name.is_empty() {
+                existing.insert(org_name.to_lowercase());
+            }
+        }
+    }
+
+    let mut count = 0;
+    for company in companies {
+        if existing.contains(&company.to_lowercase()) {
+            continue;
+        }
+
+        if !ctx.quiet {
+            if count == 0
+                && let Some(header) = ctx.header {
+                    println!("=== {} ===", header);
+                }
+            println!("{}\"{}\" - no contacts found", ctx.prefix, company);
+
+            if ctx.fix && !ctx.dry_run {
+                use std::io::Write;
+                loop {
+                    eprint!("  [r]emove from config / [s]kip? ");
+                    std::io::stderr().flush()?;
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input)?;
+                    match input.trim().chars().next() {
+                        Some('r') => {
+                            remove_company_from_config(company)?;
+                            eprintln!("  Removed \"{}\" from config.", company);
+                            break;
+                        }
+                        Some('s') => {
+                            eprintln!("  Skipped.");
+                            break;
+                        }
+                        _ => eprintln!("  Invalid choice. Enter r or s."),
+                    }
+                }
+            }
+        }
+        count += 1;
+    }
+
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
+
+    Ok(count)
 }
 
 fn save_company_list(companies: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -3808,6 +3897,15 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
             results.push(("check-contact-company-known", company_known));
         } else {
             eprintln!("Warning: check-contact-company-known has no companies configured, skipping.");
+        }
+    }
+
+    if !skip.contains("check-contact-company-exists") {
+        log("check-contact-company-exists");
+        if !config.check_contact_name_is_company.companies.is_empty() {
+            let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Configured companies with no contacts (check-contact-company-exists)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+            let company_exists = check_company_exists(&all_contacts, &config.check_contact_name_is_company.companies, &ctx)?;
+            results.push(("check-contact-company-exists", company_exists));
         }
     }
 
