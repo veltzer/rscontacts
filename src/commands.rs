@@ -1986,19 +1986,36 @@ fn display_edit_menu(person: &google_people1::api::Person, group_names: &std::co
     eprintln!("   7) Company       : {}", org.and_then(|o| o.name.as_deref()).unwrap_or(""));
     eprintln!("   8) Title         : {}", org.and_then(|o| o.title.as_deref()).unwrap_or(""));
     eprintln!("   9) Department    : {}", org.and_then(|o| o.department.as_deref()).unwrap_or(""));
-    eprintln!("  ---- Multi-value ----");
-    eprintln!("  10) Phones");
-    eprintln!("  11) Emails");
+    eprintln!("  ---- Phones ----");
+    if let Some(phones) = &person.phone_numbers {
+        for (i, pn) in phones.iter().enumerate() {
+            let val = pn.value.as_deref().unwrap_or("");
+            let label = get_phone_label(pn);
+            if label.is_empty() { eprintln!("       {}. {}", i + 1, val); }
+            else { eprintln!("       {}. {} [{}]", i + 1, val, label); }
+        }
+    }
+    eprintln!("  10) Edit phones");
+    eprintln!("  ---- Emails ----");
+    if let Some(emails) = &person.email_addresses {
+        for (i, e) in emails.iter().enumerate() {
+            let val = e.value.as_deref().unwrap_or("");
+            let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
+            if t.is_empty() { eprintln!("       {}. {}", i + 1, val); }
+            else { eprintln!("       {}. {} [{}]", i + 1, val, t); }
+        }
+    }
+    eprintln!("  11) Edit emails");
+    eprintln!("  ---- Labels ----");
+    let labels = person_labels(person, group_names);
+    if !labels.is_empty() {
+        eprintln!("       {}", labels.join(", "));
+    }
     eprintln!("  12) Add label");
     eprintln!("  13) Remove label");
     eprintln!("  ---- Actions ----");
     eprintln!("   d) Delete contact");
     eprintln!("   s) Skip (done editing)");
-
-    let labels = person_labels(person, group_names);
-    if !labels.is_empty() {
-        eprintln!("  ---- Current labels: {} ----", labels.join(", "));
-    }
 }
 
 async fn edit_simple_name_field(
@@ -2382,9 +2399,6 @@ async fn interactive_edit_contact(
     let mut current = person.clone();
 
     loop {
-        println!("{}", "=".repeat(60));
-        print_person_details(&current, Some(group_names));
-        println!("{}", "=".repeat(60));
         display_edit_menu(&current, group_names);
         eprint!("  > ");
         std::io::stderr().flush()?;
