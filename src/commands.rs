@@ -66,7 +66,7 @@ allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
 # this pattern will be flagged by check-contact-label-regexp.
 # Requires one of the known prefixes: type, company, person, service.
 [check-contact-label-regexp]
-allow = '^(type|company|person|service|group):[A-Z][a-zA-Z]*$'
+allow = '^(type|company|person|service|group|organization):[A-Z][a-zA-Z]*$'
 
 # List of allowed given names (case-sensitive).
 # Contacts whose given name is NOT in this list will be flagged
