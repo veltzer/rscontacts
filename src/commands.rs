@@ -13,6 +13,7 @@ skip = [
     # "check-contact-family-name-regexp",
     # "check-contact-suffix-regexp",
     # "check-contact-no-given-name",
+    # "check-contact-no-identity",
     # "check-contact-name-is-company",
     # "check-contact-company-known",
     # "check-contact-displayname-duplicate",
@@ -129,7 +130,17 @@ pub async fn cmd_list(emails: bool, labels: bool, starred: bool) -> Result<(), B
 
     for person in &contacts {
         let name = person_display_name(person);
-        let prefix = if person_has_given_name(person) { "person: " } else { "company: " };
+        let has_company = person.organizations.as_ref()
+            .and_then(|orgs| orgs.first())
+            .and_then(|o| o.name.as_deref())
+            .is_some_and(|c| !c.is_empty());
+        let prefix = if person_has_given_name(person) {
+            "person: "
+        } else if has_company {
+            "company: "
+        } else {
+            "unknown: "
+        };
 
         let phone = person
             .phone_numbers
@@ -889,6 +900,98 @@ async fn check_no_given_name(
                 format!(", labels: [{}]", labels.join(", "))
             };
             println!("{}{} (family: \"{}\"{})", prefix, display, family, labels_str);
+
+            if fix && !dry_run {
+                interactive_edit_contact(hub, person, user_groups, label_names, group_names).await?;
+            }
+        }
+        count += 1;
+    }
+    if !quiet && count > 0 && header.is_some() { println!(); }
+    Ok(count)
+}
+
+pub async fn cmd_check_contact_no_identity(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let all_fields = &[
+        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
+        "organizations", "memberships", "biographies", "urls", "events",
+        "relations", "nicknames", "occupations", "interests", "skills",
+        "userDefined", "imClients", "sipAddresses", "locations",
+        "externalIds", "clientData",
+    ];
+    let contacts = if fix {
+        fetch_all_contacts(&hub, all_fields).await?
+    } else {
+        fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "memberships"]).await?
+    };
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = if fix {
+        let ug: Vec<(String, String)> = all_groups.iter()
+            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+            .filter_map(|g| {
+                let name = g.name.as_deref()?;
+                let rn = g.resource_name.as_deref()?;
+                Some((name.to_string(), rn.to_string()))
+            })
+            .collect();
+        let ln: Vec<String> = ug.iter().map(|(name, _)| name.clone()).collect();
+        (ug, ln)
+    } else {
+        (vec![], vec![])
+    };
+    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    check_no_identity(&hub, &contacts, &group_names, fix, dry_run, "", None, false, &user_groups, &label_names).await?;
+    Ok(())
+}
+
+async fn check_no_identity(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    group_names: &std::collections::HashMap<String, String>,
+    fix: bool,
+    dry_run: bool,
+    prefix: &str,
+    header: Option<&str>,
+    quiet: bool,
+    user_groups: &[(&str, &str)],
+    label_names: &[String],
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+    for person in contacts {
+        let has_given = person_has_given_name(person);
+        let has_company = person.organizations.as_ref()
+            .and_then(|orgs| orgs.first())
+            .and_then(|o| o.name.as_deref())
+            .is_some_and(|c| !c.is_empty());
+
+        if has_given || has_company {
+            continue;
+        }
+
+        if !quiet {
+            if count == 0 {
+                if let Some(header) = header {
+                    println!("=== {} ===", header);
+                }
+            }
+            let display = person_display_name_detailed(person);
+            let email = person_email(person);
+            let phone = person.phone_numbers.as_ref()
+                .and_then(|nums| nums.first())
+                .and_then(|p| p.value.as_deref())
+                .unwrap_or("");
+            let labels = person_labels(person, group_names);
+            let mut info = vec![];
+            if !email.is_empty() { info.push(format!("email: {}", email)); }
+            if !phone.is_empty() { info.push(format!("phone: {}", phone)); }
+            if !labels.is_empty() { info.push(format!("labels: [{}]", labels.join(", "))); }
+            if info.is_empty() {
+                println!("{}{}", prefix, display);
+            } else {
+                println!("{}{} ({})", prefix, display, info.join(", "));
+            }
 
             if fix && !dry_run {
                 interactive_edit_contact(hub, person, user_groups, label_names, group_names).await?;
@@ -2989,6 +3092,12 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         log("check-contact-no-given-name");
         let no_given = check_no_given_name(&hub, &all_contacts, &group_names_for_regexp, fix, dry_run, prefix, hdr("Contacts with family name but no given name (check-contact-no-given-name)"), stats, &user_groups_regexp, &label_names_regexp).await?;
         results.push(("check-contact-no-given-name", no_given));
+    }
+
+    if !skip.contains("check-contact-no-identity") {
+        log("check-contact-no-identity");
+        let no_identity = check_no_identity(&hub, &all_contacts, &group_names_for_regexp, fix, dry_run, prefix, hdr("Contacts with no given name and no company (check-contact-no-identity)"), stats, &user_groups_regexp, &label_names_regexp).await?;
+        results.push(("check-contact-no-identity", no_identity));
     }
 
     if !skip.contains("check-contact-name-is-company") {
