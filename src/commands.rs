@@ -64,9 +64,9 @@ allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
 
 # Allow regex for contact labels (groups). Labels that do NOT match
 # this pattern will be flagged by check-contact-label-regexp.
-# Requires a lowercase prefix with colon (e.g. "type:Person", "service:P").
+# Requires one of the known prefixes: type, company, person, service.
 [check-contact-label-regexp]
-allow = '^[a-z]+:[A-Z][a-zA-Z]*$'
+allow = '^(type|company|person|service):[A-Z][a-zA-Z]*$'
 
 # List of allowed given names (case-sensitive).
 # Contacts whose given name is NOT in this list will be flagged
@@ -1435,8 +1435,20 @@ async fn check_name_duplicate(
                 std::io::stdin().read_line(&mut input)?;
                 match input.trim() {
                     "n" => {
+                        // Find the max existing numeric suffix across all contacts
+                        // to avoid collisions with contacts outside this group
+                        let max_existing: usize = group.iter()
+                            .filter_map(|p| {
+                                p.names.as_ref()?.first()?
+                                    .honorific_suffix.as_deref()?
+                                    .parse::<usize>().ok()
+                            })
+                            .max()
+                            .unwrap_or(0);
+                        // Start numbering after the max existing suffix
+                        let start = max_existing + 1;
                         for (i, person) in group.iter().enumerate() {
-                            let suffix = (i + 1).to_string();
+                            let suffix = (start + i).to_string();
                             let resource_name = person.resource_name.as_deref()
                                 .ok_or("Contact missing resource name")?;
                             let mut updated = (*person).clone();
