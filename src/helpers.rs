@@ -304,6 +304,13 @@ pub fn person_base_name(person: &google_people1::api::Person) -> String {
     parts.join(" ")
 }
 
+pub fn person_has_given_name(person: &google_people1::api::Person) -> bool {
+    person.names.as_ref()
+        .and_then(|n| n.first())
+        .and_then(|n| n.given_name.as_deref())
+        .is_some_and(|g| !g.is_empty())
+}
+
 pub fn person_display_name(person: &google_people1::api::Person) -> String {
     let name = person_name(person);
     if name.is_empty() { "<no name>".to_string() } else { name }
