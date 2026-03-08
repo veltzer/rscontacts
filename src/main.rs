@@ -13,117 +13,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Authenticate with Google (opens browser for OAuth2 consent)
-    Auth {
-        /// Don't open browser automatically; print URL instead
-        #[arg(long)]
-        no_browser: bool,
-        /// Force re-authentication even if a token is already cached
-        #[arg(long)]
-        force: bool,
-    },
-    /// List all contacts
-    List {
-        /// Also show email addresses
-        #[arg(long)]
-        emails: bool,
-        /// Also show contact labels (contact group memberships)
-        #[arg(long)]
-        labels: bool,
-        /// Only show starred contacts
-        #[arg(long)]
-        starred: bool,
-    },
-    /// Check given names against allow regex defined in config.toml
-    CheckContactGivenNameRegexp {
-        /// Interactively fix each flagged contact (swap/rename/delete/skip)
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Check suffixes against allow regex (default: numeric)
-    CheckContactSuffixRegexp {
-        /// Interactively fix each flagged contact (rename/delete/skip)
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Check family names against allow regex defined in config.toml
-    CheckContactFamilyNameRegexp {
-        /// Interactively fix each flagged contact (rename/delete/skip)
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Check contacts that have no given name but have a family name
-    CheckContactNoGivenName {
-        /// Interactively fix each flagged contact
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Check contacts that have no type tag (type:Person or type:Company)
-    CheckContactNoIdentity {
-        /// Interactively fix each flagged contact
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Check that all given names are in the allowed list from config
-    CheckContactGivenNameKnown {
-        /// Interactively fix each flagged contact
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Check that every given name in the config has at least one contact
-    CheckContactGivenNameExists {
-        /// Interactively fix each flagged entry
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Check that all company fields are in the known companies list from config
-    CheckContactCompanyKnown {
-        /// Interactively fix each flagged contact
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Check that every company in the config has at least one contact
-    CheckContactCompanyExists {
-        /// Interactively fix each flagged contact
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Print contacts that share the same display name
-    CheckContactDisplaynameDuplicate {
-        /// Interactively fix each duplicate (rename/delete/skip)
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
     /// Run all checks
     #[command(name = "all-checks")]
     AllChecks {
@@ -143,51 +32,42 @@ enum Commands {
         #[arg(long, default_value = "972")]
         country: String,
     },
-    /// Print contacts with phone numbers missing a country code
-    CheckPhoneCountrycode {
-        /// Fix by prepending country code
+    /// Authenticate with Google (opens browser for OAuth2 consent)
+    Auth {
+        /// Don't open browser automatically; print URL instead
         #[arg(long)]
-        fix: bool,
+        no_browser: bool,
+        /// Force re-authentication even if a token is already cached
+        #[arg(long)]
+        force: bool,
+    },
+    /// Auto-assign type:Person/type:Company to contacts missing a type label
+    AutoContactType {
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
-        /// Country code to prepend (without +)
-        #[arg(long, default_value = "972")]
-        country: String,
     },
-    /// Print phone numbers not in +CC-NUMBER format
-    CheckPhoneFormat {
-        /// Fix phone numbers to +CC-NUMBER format
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-        /// Country code to use when formatting
-        #[arg(long, default_value = "972")]
-        country: String,
-    },
-    /// Print contacts not assigned to any label (contact group)
-    CheckContactNoLabel {
-        /// Interactively fix: delete contact or assign a label
+    /// Check that all company fields are in the known companies list from config
+    CheckContactCompanyExists {
+        /// Interactively fix each flagged contact
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
     },
-    /// Print contacts with phone numbers missing a label (mobile/home/work/etc)
-    CheckPhoneLabelMissing {
-        /// Interactively fix phones without labels
+    /// Check that every company in the config has at least one contact
+    CheckContactCompanyKnown {
+        /// Interactively fix each flagged contact
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
     },
-    /// Print contacts with non-English phone labels
-    CheckPhoneLabelEnglish {
-        /// Interactively fix non-English phone labels
+    /// Print contacts that share the same display name
+    CheckContactDisplaynameDuplicate {
+        /// Interactively fix each duplicate (rename/delete/skip)
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
@@ -212,17 +92,26 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Print contacts that have the same phone number attached twice
-    CheckPhoneDuplicate {
-        /// Interactively remove duplicate phone numbers
+    /// Check family names against allow regex defined in config.toml
+    CheckContactFamilyNameRegexp {
+        /// Interactively fix each flagged contact (rename/delete/skip)
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
     },
-    /// Check that every contact has exactly one of type:Person or type:Company labels
-    CheckContactType {
+    /// Check that every given name in the config has at least one contact
+    CheckContactGivenNameExists {
+        /// Interactively fix each flagged entry
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Check that all given names are in the allowed list from config
+    CheckContactGivenNameKnown {
         /// Interactively fix each flagged contact
         #[arg(long)]
         fix: bool,
@@ -230,18 +119,9 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Check that no contact has a middle name set
-    CheckContactNoMiddleName {
-        /// Interactively fix each flagged contact
-        #[arg(long)]
-        fix: bool,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Check that no contact has a nickname set
-    CheckContactNoNickname {
-        /// Interactively fix each flagged contact
+    /// Check given names against allow regex defined in config.toml
+    CheckContactGivenNameRegexp {
+        /// Interactively fix each flagged contact (swap/rename/delete/skip)
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
@@ -266,19 +146,171 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Review all phones with a specific label (e.g. "Work Fax")
-    ReviewPhoneLabel {
-        /// The phone label to review (case-insensitive)
-        label: String,
-        /// Interactively fix each phone (delete/relabel/skip)
+    /// Check contacts that have no given name but have a family name
+    CheckContactNoGivenName {
+        /// Interactively fix each flagged contact
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
     },
+    /// Check contacts that have no type tag (type:Person or type:Company)
+    CheckContactNoIdentity {
+        /// Interactively fix each flagged contact
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Print contacts not assigned to any label (contact group)
+    CheckContactNoLabel {
+        /// Interactively fix: delete contact or assign a label
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Check that no contact has a middle name set
+    CheckContactNoMiddleName {
+        /// Interactively fix each flagged contact
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Check that no contact has a nickname set
+    CheckContactNoNickname {
+        /// Interactively fix each flagged contact
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Check suffixes against allow regex (default: numeric)
+    CheckContactSuffixRegexp {
+        /// Interactively fix each flagged contact (rename/delete/skip)
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Check that every contact has exactly one of type:Person or type:Company labels
+    CheckContactType {
+        /// Interactively fix each flagged contact
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Print contacts with phone numbers missing a country code
+    CheckPhoneCountrycode {
+        /// Fix by prepending country code
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+        /// Country code to prepend (without +)
+        #[arg(long, default_value = "972")]
+        country: String,
+    },
+    /// Print contacts that have the same phone number attached twice
+    CheckPhoneDuplicate {
+        /// Interactively remove duplicate phone numbers
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Print phone numbers not in +CC-NUMBER format
+    CheckPhoneFormat {
+        /// Fix phone numbers to +CC-NUMBER format
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+        /// Country code to use when formatting
+        #[arg(long, default_value = "972")]
+        country: String,
+    },
+    /// Print contacts with non-English phone labels
+    CheckPhoneLabelEnglish {
+        /// Interactively fix non-English phone labels
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Print contacts with phone numbers missing a label (mobile/home/work/etc)
+    CheckPhoneLabelMissing {
+        /// Interactively fix phones without labels
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Compact suffixes for contacts sharing the same base name (given + family)
+    CompactSuffixesForContacts {
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Rename labels of company contacts to "Company:[label]"
+    CompanyLabels {
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Generate shell completions
+    Complete {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Interactively edit a contact
+    EditContact {
+        /// Name (or part of name) to search for
+        name: String,
+    },
     /// Interactively fix labels that don't match the configured regexp
     FixLabels {
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Generate a default config file at ~/.config/rscontacts/config.toml
+    InitConfig {
+        /// Overwrite existing config file
+        #[arg(long)]
+        force: bool,
+    },
+    /// List all contacts
+    List {
+        /// Also show email addresses
+        #[arg(long)]
+        emails: bool,
+        /// Also show contact labels (contact group memberships)
+        #[arg(long)]
+        labels: bool,
+        /// Only show starred contacts
+        #[arg(long)]
+        starred: bool,
+    },
+    /// Move a given name to the company field for all contacts with that given name
+    MoveGivenNameToCompany {
+        /// The given name to move to company
+        name: String,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
@@ -291,14 +323,13 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Show all distinct phone labels in use
-    ShowPhoneLabels,
-    /// Show all distinct email labels in use
-    ShowEmailLabels,
-    /// Show all contact labels (contact groups) in use
-    ShowContactLabels,
-    /// Compact suffixes for contacts sharing the same base name (given + family)
-    CompactSuffixesForContacts {
+    /// Review all phones with a specific label (e.g. "Work Fax")
+    ReviewPhoneLabel {
+        /// The phone label to review (case-insensitive)
+        label: String,
+        /// Interactively fix each phone (delete/relabel/skip)
+        #[arg(long)]
+        fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
@@ -308,45 +339,14 @@ enum Commands {
         /// Name (or part of name) to search for
         name: String,
     },
-    /// Move a given name to the company field for all contacts with that given name
-    MoveGivenNameToCompany {
-        /// The given name to move to company
-        name: String,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Auto-assign type:Person/type:Company to contacts missing a type label
-    AutoContactType {
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Rename labels of company contacts to "Company:[label]"
-    CompanyLabels {
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Interactively edit a contact
-    EditContact {
-        /// Name (or part of name) to search for
-        name: String,
-    },
-    /// Generate a default config file at ~/.config/rscontacts/config.toml
-    InitConfig {
-        /// Overwrite existing config file
-        #[arg(long)]
-        force: bool,
-    },
+    /// Show all contact labels (contact groups) in use
+    ShowContactLabels,
+    /// Show all distinct email labels in use
+    ShowEmailLabels,
+    /// Show all distinct phone labels in use
+    ShowPhoneLabels,
     /// Print version information
     Version,
-    /// Generate shell completions
-    Complete {
-        /// Shell to generate completions for
-        #[arg(value_enum)]
-        shell: clap_complete::Shell,
-    },
 }
 
 #[tokio::main]
@@ -358,45 +358,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::AllChecks { fix, dry_run, stats, verbose, ref country } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
         Commands::Auth { no_browser, force } => commands::cmd_auth(no_browser, force).await?,
-        Commands::List { emails, labels, starred } => commands::cmd_list(emails, labels, starred).await?,
-        Commands::CheckContactGivenNameRegexp { fix, dry_run } => commands::cmd_check_contact_given_name_regexp(fix, dry_run).await?,
-        Commands::CheckContactSuffixRegexp { fix, dry_run } => commands::cmd_check_contact_suffix_regexp(fix, dry_run).await?,
-        Commands::CheckContactFamilyNameRegexp { fix, dry_run } => commands::cmd_check_contact_family_name_regexp(fix, dry_run).await?,
-        Commands::CheckContactNoGivenName { fix, dry_run } => commands::cmd_check_contact_no_given_name(fix, dry_run).await?,
-        Commands::CheckContactNoIdentity { fix, dry_run } => commands::cmd_check_contact_no_identity(fix, dry_run).await?,
-        Commands::CheckContactGivenNameKnown { fix, dry_run } => commands::cmd_check_contact_given_name_known(fix, dry_run).await?,
-        Commands::CheckContactGivenNameExists { fix, dry_run } => commands::cmd_check_contact_given_name_exists(fix, dry_run).await?,
-        Commands::CheckContactCompanyKnown { fix, dry_run } => commands::cmd_check_contact_company_known(fix, dry_run).await?,
+        Commands::AutoContactType { dry_run } => commands::cmd_auto_contact_type(dry_run).await?,
         Commands::CheckContactCompanyExists { fix, dry_run } => commands::cmd_check_contact_company_exists(fix, dry_run).await?,
+        Commands::CheckContactCompanyKnown { fix, dry_run } => commands::cmd_check_contact_company_known(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,
-        Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
-        Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
-        Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
-        Commands::CheckPhoneLabelMissing { fix, dry_run } => commands::cmd_check_phone_label_missing(fix, dry_run).await?,
-        Commands::CheckPhoneLabelEnglish { fix, dry_run } => commands::cmd_check_phone_label_english(fix, dry_run).await?,
         Commands::CheckContactEmail { fix, dry_run } => commands::cmd_check_contact_email(fix, dry_run).await?,
         Commands::CheckContactEmailDuplicate { fix, dry_run } => commands::cmd_check_contact_email_duplicate(fix, dry_run).await?,
-        Commands::CheckPhoneDuplicate { fix, dry_run } => commands::cmd_check_phone_duplicate(fix, dry_run).await?,
-        Commands::CheckContactType { fix, dry_run } => commands::cmd_check_contact_type(fix, dry_run).await?,
-        Commands::CheckContactNoMiddleName { fix, dry_run } => commands::cmd_check_contact_no_middle_name(fix, dry_run).await?,
-        Commands::CheckContactNoNickname { fix, dry_run } => commands::cmd_check_contact_no_nickname(fix, dry_run).await?,
+        Commands::CheckContactFamilyNameRegexp { fix, dry_run } => commands::cmd_check_contact_family_name_regexp(fix, dry_run).await?,
+        Commands::CheckContactGivenNameExists { fix, dry_run } => commands::cmd_check_contact_given_name_exists(fix, dry_run).await?,
+        Commands::CheckContactGivenNameKnown { fix, dry_run } => commands::cmd_check_contact_given_name_known(fix, dry_run).await?,
+        Commands::CheckContactGivenNameRegexp { fix, dry_run } => commands::cmd_check_contact_given_name_regexp(fix, dry_run).await?,
         Commands::CheckContactLabelNophone { fix, dry_run } => commands::cmd_check_contact_label_nophone(fix, dry_run).await?,
         Commands::CheckContactLabelRegexp { fix, dry_run } => commands::cmd_check_contact_label_regexp(fix, dry_run).await?,
+        Commands::CheckContactNoGivenName { fix, dry_run } => commands::cmd_check_contact_no_given_name(fix, dry_run).await?,
+        Commands::CheckContactNoIdentity { fix, dry_run } => commands::cmd_check_contact_no_identity(fix, dry_run).await?,
+        Commands::CheckContactNoLabel { fix, dry_run } => commands::cmd_check_contact_no_label(fix, dry_run).await?,
+        Commands::CheckContactNoMiddleName { fix, dry_run } => commands::cmd_check_contact_no_middle_name(fix, dry_run).await?,
+        Commands::CheckContactNoNickname { fix, dry_run } => commands::cmd_check_contact_no_nickname(fix, dry_run).await?,
+        Commands::CheckContactSuffixRegexp { fix, dry_run } => commands::cmd_check_contact_suffix_regexp(fix, dry_run).await?,
+        Commands::CheckContactType { fix, dry_run } => commands::cmd_check_contact_type(fix, dry_run).await?,
+        Commands::CheckPhoneCountrycode { fix, dry_run, ref country } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
+        Commands::CheckPhoneDuplicate { fix, dry_run } => commands::cmd_check_phone_duplicate(fix, dry_run).await?,
+        Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
+        Commands::CheckPhoneLabelEnglish { fix, dry_run } => commands::cmd_check_phone_label_english(fix, dry_run).await?,
+        Commands::CheckPhoneLabelMissing { fix, dry_run } => commands::cmd_check_phone_label_missing(fix, dry_run).await?,
         Commands::CompactSuffixesForContacts { dry_run } => commands::cmd_compact_suffixes_for_contacts(dry_run).await?,
-        Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
-        Commands::MoveGivenNameToCompany { ref name, dry_run } => commands::cmd_move_given_name_to_company(name, dry_run).await?,
-        Commands::AutoContactType { dry_run } => commands::cmd_auto_contact_type(dry_run).await?,
         Commands::CompanyLabels { dry_run } => commands::cmd_company_labels(dry_run).await?,
-        Commands::FixLabels { dry_run } => commands::cmd_fix_labels(dry_run).await?,
+        Commands::Complete { shell } => {
+            clap_complete::generate(shell, &mut Cli::command(), "rscontacts", &mut std::io::stdout());
+        }
         Commands::EditContact { ref name } => commands::cmd_edit_contact(name).await?,
+        Commands::FixLabels { dry_run } => commands::cmd_fix_labels(dry_run).await?,
+        Commands::InitConfig { force } => commands::cmd_init_config(force)?,
+        Commands::List { emails, labels, starred } => commands::cmd_list(emails, labels, starred).await?,
+        Commands::MoveGivenNameToCompany { ref name, dry_run } => commands::cmd_move_given_name_to_company(name, dry_run).await?,
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
-        Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,
-        Commands::ShowEmailLabels => commands::cmd_show_email_labels().await?,
+        Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
         Commands::ShowContactLabels => commands::cmd_show_contact_labels().await?,
-        Commands::AllChecks { fix, dry_run, stats, verbose, ref country } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
-        Commands::InitConfig { force } => commands::cmd_init_config(force)?,
+        Commands::ShowEmailLabels => commands::cmd_show_email_labels().await?,
+        Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,
         Commands::Version => {
             println!("rscontacts {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
             println!("GIT_DESCRIBE: {}", env!("GIT_DESCRIBE"));
@@ -406,9 +409,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("RUSTC_SEMVER: {}", env!("RUSTC_SEMVER"));
             println!("RUST_EDITION: {}", env!("RUST_EDITION"));
             println!("BUILD_TIMESTAMP: {}", env!("BUILD_TIMESTAMP"));
-        }
-        Commands::Complete { shell } => {
-            clap_complete::generate(shell, &mut Cli::command(), "rscontacts", &mut std::io::stdout());
         }
     }
 
