@@ -28,6 +28,7 @@ skip = [
     # "check-contact-name-is-company",
     # "check-contact-company-known",
     # "check-contact-displayname-duplicate",
+    # "check-contact-no-middle-name",
     # "check-contact-no-nickname",
     # "check-contact-no-label",
     # "check-contact-email",
@@ -2426,6 +2427,101 @@ async fn interactive_edit_contact(
     Ok(())
 }
 
+pub async fn cmd_check_contact_no_middle_name(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = if fix {
+        let ug: Vec<(String, String)> = all_groups.iter()
+            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+            .filter_map(|g| {
+                let name = g.name.as_deref()?;
+                let rn = g.resource_name.as_deref()?;
+                Some((name.to_string(), rn.to_string()))
+            })
+            .collect();
+        let ln: Vec<String> = ug.iter().map(|(name, _)| name.clone()).collect();
+        (ug, ln)
+    } else {
+        (vec![], vec![])
+    };
+    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    check_no_middle_name(&hub, &contacts, &ctx).await?;
+    Ok(())
+}
+
+async fn check_no_middle_name(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+    for person in contacts {
+        let has_middle = person.names.as_ref()
+            .and_then(|n| n.first())
+            .and_then(|n| n.middle_name.as_deref())
+            .is_some_and(|v| !v.is_empty());
+        if !has_middle {
+            continue;
+        }
+
+        if !ctx.quiet {
+            if count == 0
+                && let Some(header) = ctx.header {
+                    println!("=== {} ===", header);
+                }
+            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+
+            if ctx.fix && !ctx.dry_run {
+                use std::io::Write;
+                loop {
+                    eprint!("  [r]emove middle name / [e]dit contact / [s]kip? ");
+                    std::io::stderr().flush()?;
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input)?;
+                    match input.trim().chars().next() {
+                        Some('r') => {
+                            let resource_name = person.resource_name.as_deref()
+                                .ok_or("Contact missing resource name")?;
+                            let mut updated = person.clone();
+                            if let Some(ref mut names) = updated.names
+                                && let Some(first) = names.first_mut() {
+                                    first.middle_name = None;
+                                }
+                            hub.people()
+                                .update_contact(updated, resource_name)
+                                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                                .doit()
+                                .await?;
+                            eprintln!("  Removed middle name.");
+                            tokio::time::sleep(MUTATE_DELAY).await;
+                            break;
+                        }
+                        Some('e') => {
+                            interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                            break;
+                        }
+                        Some('s') => {
+                            eprintln!("  Skipped.");
+                            break;
+                        }
+                        _ => eprintln!("  Invalid choice. Enter r, e, or s."),
+                    }
+                }
+            }
+        }
+        count += 1;
+    }
+
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
+
+    Ok(count)
+}
+
 pub async fn cmd_check_contact_no_nickname(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
@@ -3200,6 +3296,13 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Duplicate contact names (check-contact-displayname-duplicate)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
         let name_dup = check_name_duplicate(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-displayname-duplicate", name_dup));
+    }
+
+    if !skip.contains("check-contact-no-middle-name") {
+        log("check-contact-no-middle-name");
+        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts with middle name (check-contact-no-middle-name)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let middle_name_count = check_no_middle_name(&hub, &all_contacts, &ctx).await?;
+        results.push(("check-contact-no-middle-name", middle_name_count));
     }
 
     if !skip.contains("check-contact-no-nickname") {
