@@ -2060,7 +2060,7 @@ async fn interactive_edit_contact(
 
     loop {
         eprintln!();
-        eprintln!("  Edit: [g]iven name / [f]amily name / su[x]ffix / [c]ompany / [p]hone / [m]ail / [a]dd label / re[v]ove label / [d]elete contact / [q]uit");
+        eprintln!("  Edit: [g]iven name / [f]amily name / su[x]ffix / [c]ompany / [p]hone / [m]ail / [a]dd label / re[v]ove label / [d]elete contact / [s]kip");
         eprint!("  > ");
         std::io::stderr().flush()?;
         let mut input = String::new();
@@ -2453,7 +2453,8 @@ async fn interactive_edit_contact(
                 }
                 break;
             }
-            Some('q') => {
+            Some('s') => {
+                eprintln!("  Skipped.");
                 break;
             }
             _ => {
