@@ -27,6 +27,7 @@ skip = [
     # "check-contact-no-identity",
     # "check-contact-company-known",
     # "check-contact-company-exists",
+    # "check-contact-given-name-exists",
     # "check-contact-displayname-duplicate",
     # "check-contact-type",
     # "check-contact-no-middle-name",
@@ -1259,6 +1260,94 @@ fn add_given_name_to_config(name: &str) -> Result<(), Box<dyn std::error::Error>
     config.check_contact_given_name_known.names.sort_by_key(|a| a.to_lowercase());
     save_given_name_list(&config.check_contact_given_name_known.names)?;
     Ok(())
+}
+
+fn remove_given_name_from_config(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = load_config();
+    config.check_contact_given_name_known.names.retain(|n| !n.eq_ignore_ascii_case(name));
+    save_given_name_list(&config.check_contact_given_name_known.names)?;
+    Ok(())
+}
+
+pub async fn cmd_check_contact_given_name_exists(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config();
+    if config.check_contact_given_name_known.names.is_empty() {
+        eprintln!("No given names configured in config.toml.");
+        return Ok(());
+    }
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "memberships"]).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &[], label_names: &[], group_names: &group_names };
+    check_given_name_exists(&contacts, &config.check_contact_given_name_known.names, &ctx)?;
+    Ok(())
+}
+
+fn check_given_name_exists(
+    contacts: &[google_people1::api::Person],
+    names: &[String],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    // Collect all given names from person contacts
+    let mut existing: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for person in contacts {
+        if is_company(person, ctx.group_names) {
+            continue;
+        }
+        if let Some(given) = person.names.as_ref()
+            .and_then(|n| n.first())
+            .and_then(|n| n.given_name.as_deref())
+        {
+            if !given.is_empty() {
+                existing.insert(given.to_lowercase());
+            }
+        }
+    }
+
+    let mut count = 0;
+    for name in names {
+        if existing.contains(&name.to_lowercase()) {
+            continue;
+        }
+
+        if !ctx.quiet {
+            if count == 0
+                && let Some(header) = ctx.header {
+                    println!("=== {} ===", header);
+                }
+            println!("{}\"{}\" - no contacts found", ctx.prefix, name);
+
+            if ctx.fix && !ctx.dry_run {
+                use std::io::Write;
+                loop {
+                    eprint!("  [r]emove from config / [s]kip? ");
+                    std::io::stderr().flush()?;
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input)?;
+                    match input.trim().chars().next() {
+                        Some('r') => {
+                            remove_given_name_from_config(name)?;
+                            eprintln!("  Removed \"{}\" from config.", name);
+                            break;
+                        }
+                        Some('s') => {
+                            eprintln!("  Skipped.");
+                            break;
+                        }
+                        _ => eprintln!("  Invalid choice. Enter r or s."),
+                    }
+                }
+            }
+        }
+        count += 1;
+    }
+
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
+
+    Ok(count)
 }
 
 fn save_given_name_list(names: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -2648,11 +2737,12 @@ async fn check_contact_type(
 
     for person in contacts {
         let (has_person, has_company) = person_type_labels(person, ctx.group_names);
+        let has_any_type = person_labels(person, ctx.group_names).iter().any(|l| l.starts_with("type:"));
 
         let issue = if has_person && has_company {
             Some("has both type:Person and type:Company")
-        } else if !has_person && !has_company {
-            Some("missing type:Person or type:Company")
+        } else if !has_any_type {
+            Some("missing type tag")
         } else {
             None
         };
@@ -3887,6 +3977,15 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Given name not in allowed list (check-contact-given-name-known)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
         let given_name_known = check_given_name_known(&hub, &all_contacts, &config.check_contact_given_name_known.names, &ctx).await?;
         results.push(("check-contact-given-name-known", given_name_known));
+    }
+
+    if !skip.contains("check-contact-given-name-exists") {
+        log("check-contact-given-name-exists");
+        if !config.check_contact_given_name_known.names.is_empty() {
+            let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Configured given names with no contacts (check-contact-given-name-exists)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+            let given_name_exists = check_given_name_exists(&all_contacts, &config.check_contact_given_name_known.names, &ctx)?;
+            results.push(("check-contact-given-name-exists", given_name_exists));
+        }
     }
 
     if !skip.contains("check-contact-company-known") {
