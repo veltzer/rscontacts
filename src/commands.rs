@@ -103,8 +103,7 @@ pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::
 
 pub async fn cmd_list(emails: bool, labels: bool, starred: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
-    let mut fields = vec!["names", "organizations", "phoneNumbers"];
-    if emails { fields.push("emailAddresses"); }
+    let mut fields = vec!["names", "organizations", "phoneNumbers", "nicknames", "emailAddresses"];
     if labels || starred { fields.push("memberships"); }
     let contacts = fetch_all_contacts(&hub, &fields).await?;
 
@@ -129,37 +128,73 @@ pub async fn cmd_list(emails: bool, labels: bool, starred: bool) -> Result<(), B
     };
 
     for person in &contacts {
-        let name = person_display_name(person);
-        let has_company = person.organizations.as_ref()
+        let names = person.names.as_ref().and_then(|n| n.first());
+        let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+        let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+        let middle = names.and_then(|n| n.middle_name.as_deref()).unwrap_or("");
+        let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
+        let prefix_name = names.and_then(|n| n.honorific_prefix.as_deref()).unwrap_or("");
+        let company = person.organizations.as_ref()
             .and_then(|orgs| orgs.first())
             .and_then(|o| o.name.as_deref())
-            .is_some_and(|c| !c.is_empty());
-        let prefix = if person_has_given_name(person) {
-            "person: "
-        } else if has_company {
-            "company: "
-        } else {
-            "unknown: "
-        };
-
-        let phone = person
-            .phone_numbers
-            .as_ref()
-            .and_then(|phones| phones.first())
-            .and_then(|p| p.value.as_deref())
+            .unwrap_or("");
+        let title = person.organizations.as_ref()
+            .and_then(|orgs| orgs.first())
+            .and_then(|o| o.title.as_deref())
+            .unwrap_or("");
+        let department = person.organizations.as_ref()
+            .and_then(|orgs| orgs.first())
+            .and_then(|o| o.department.as_deref())
             .unwrap_or("");
 
-        let mut parts = vec![format!("{}{}", prefix, name)];
+        let mut parts = Vec::new();
+        if !prefix_name.is_empty() { parts.push(format!("prefix: {}", prefix_name)); }
+        if !given.is_empty() { parts.push(format!("given: {}", given)); }
+        if !middle.is_empty() { parts.push(format!("middle: {}", middle)); }
+        if !family.is_empty() { parts.push(format!("family: {}", family)); }
+        if !suffix.is_empty() { parts.push(format!("suffix: {}", suffix)); }
+        if !company.is_empty() { parts.push(format!("company: {}", company)); }
+        if !title.is_empty() { parts.push(format!("title: {}", title)); }
+        if !department.is_empty() { parts.push(format!("dept: {}", department)); }
 
-        if emails {
-            let email = person_email(person);
-            if !email.is_empty() {
-                parts.push(email.to_string());
+        if let Some(nicknames) = &person.nicknames {
+            for n in nicknames {
+                if let Some(val) = &n.value {
+                    parts.push(format!("nickname: {}", val));
+                }
             }
         }
 
-        if !phone.is_empty() {
-            parts.push(phone.to_string());
+        if emails {
+            if let Some(email_addrs) = &person.email_addresses {
+                for e in email_addrs {
+                    if let Some(val) = e.value.as_deref() {
+                        if !val.is_empty() {
+                            let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
+                            if t.is_empty() {
+                                parts.push(format!("email: {}", val));
+                            } else {
+                                parts.push(format!("email: {} [{}]", val, t));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(phones) = &person.phone_numbers {
+            for p in phones {
+                if let Some(val) = p.value.as_deref() {
+                    if !val.is_empty() {
+                        let t = p.formatted_type.as_deref().or(p.type_.as_deref()).unwrap_or("");
+                        if t.is_empty() {
+                            parts.push(format!("phone: {}", val));
+                        } else {
+                            parts.push(format!("phone: {} [{}]", val, t));
+                        }
+                    }
+                }
+            }
         }
 
         if labels {
@@ -174,11 +209,15 @@ pub async fn cmd_list(emails: bool, labels: bool, starred: bool) -> Result<(), B
                 })
                 .unwrap_or_default();
             if !contact_labels.is_empty() {
-                parts.push(format!("[{}]", contact_labels.join(", ")));
+                parts.push(format!("labels: [{}]", contact_labels.join(", ")));
             }
         }
 
-        println!("{}", parts.join(" | "));
+        if parts.is_empty() {
+            println!("<no fields>");
+        } else {
+            println!("{}", parts.join(" | "));
+        }
     }
 
     Ok(())
