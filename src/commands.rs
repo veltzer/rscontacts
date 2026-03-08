@@ -1435,9 +1435,31 @@ async fn check_name_duplicate(
                 std::io::stdin().read_line(&mut input)?;
                 match input.trim() {
                     "n" => {
-                        // Find the max existing numeric suffix across all contacts
-                        // to avoid collisions with contacts outside this group
-                        let max_existing: usize = group.iter()
+                        // Compute the base name (without suffix) for this group
+                        // to find ALL contacts sharing this base, not just duplicates
+                        let base_name = {
+                            let sample = group[0];
+                            let names = sample.names.as_ref().and_then(|n| n.first());
+                            let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+                            let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+                            let company = sample.organizations.as_ref()
+                                .and_then(|orgs| orgs.first())
+                                .and_then(|o| o.name.as_deref())
+                                .unwrap_or("");
+                            (given.to_string(), family.to_string(), company.to_string())
+                        };
+                        // Find the max numeric suffix across ALL contacts with the same base name
+                        let max_existing: usize = contacts.iter()
+                            .filter(|p| {
+                                let names = p.names.as_ref().and_then(|n| n.first());
+                                let g = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+                                let f = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+                                let c = p.organizations.as_ref()
+                                    .and_then(|orgs| orgs.first())
+                                    .and_then(|o| o.name.as_deref())
+                                    .unwrap_or("");
+                                g == base_name.0 && f == base_name.1 && c == base_name.2
+                            })
                             .filter_map(|p| {
                                 p.names.as_ref()?.first()?
                                     .honorific_suffix.as_deref()?
