@@ -862,21 +862,31 @@ async fn check_no_identity(
     ctx: &CheckContext<'_>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
-    for person in contacts {
-        let has_identity = if is_company(person, ctx.group_names) {
-            // Company contacts need a company name
-            person.organizations.as_ref()
-                .and_then(|orgs| orgs.first())
-                .and_then(|o| o.name.as_deref())
-                .is_some_and(|c| !c.is_empty())
-        } else {
-            // Person contacts need a given name
-            person_has_given_name(person)
-        };
+    let mut type_rns: Option<(String, String)> = None;
 
+    for person in contacts {
+        let contact_is_company = is_company(person, ctx.group_names);
+        let has_given = person_has_given_name(person);
+        let has_company_name = person.organizations.as_ref()
+            .and_then(|orgs| orgs.first())
+            .and_then(|o| o.name.as_deref())
+            .is_some_and(|c| !c.is_empty());
+
+        let has_identity = if contact_is_company { has_company_name } else { has_given };
         if has_identity {
             continue;
         }
+
+        // Can we suggest a type change?
+        // Person with no given name but has company name -> suggest TypeCompany
+        // Company with no company name but has given name -> suggest TypePerson
+        let suggest_type_change = if !contact_is_company && has_company_name {
+            Some(TYPE_COMPANY_LABEL)
+        } else if contact_is_company && has_given {
+            Some(TYPE_PERSON_LABEL)
+        } else {
+            None
+        };
 
         if !ctx.quiet {
             if count == 0
@@ -886,7 +896,59 @@ async fn check_no_identity(
             println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
 
             if ctx.fix && !ctx.dry_run {
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                let resource_name = person.resource_name.as_deref();
+
+                if let Some(new_type) = suggest_type_change {
+                    use std::io::Write;
+                    loop {
+                        eprint!("  Change type to {} / [e]dit / [s]kip? [y/e/s] ", new_type);
+                        std::io::stderr().flush()?;
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input)?;
+                        match input.trim().chars().next() {
+                            Some('y') => {
+                                if let Some(rn) = resource_name {
+                                    if type_rns.is_none() {
+                                        type_rns = Some(ensure_type_labels_exist(hub, ctx.user_groups).await?);
+                                    }
+                                    let (ref person_rn, ref company_rn) = *type_rns.as_ref().unwrap();
+                                    let (add_rn, remove_rn) = if new_type == TYPE_COMPANY_LABEL {
+                                        (company_rn.as_str(), person_rn.as_str())
+                                    } else {
+                                        (person_rn.as_str(), company_rn.as_str())
+                                    };
+                                    // Add new type
+                                    let req = google_people1::api::ModifyContactGroupMembersRequest {
+                                        resource_names_to_add: Some(vec![rn.to_string()]),
+                                        resource_names_to_remove: None,
+                                    };
+                                    hub.contact_groups().members_modify(req, add_rn).doit().await?;
+                                    tokio::time::sleep(MUTATE_DELAY).await;
+                                    // Remove old type
+                                    let req = google_people1::api::ModifyContactGroupMembersRequest {
+                                        resource_names_to_add: None,
+                                        resource_names_to_remove: Some(vec![rn.to_string()]),
+                                    };
+                                    hub.contact_groups().members_modify(req, remove_rn).doit().await?;
+                                    tokio::time::sleep(MUTATE_DELAY).await;
+                                    eprintln!("  Changed type to {}.", new_type);
+                                }
+                                break;
+                            }
+                            Some('e') => {
+                                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                                break;
+                            }
+                            Some('s') => {
+                                eprintln!("  Skipped.");
+                                break;
+                            }
+                            _ => eprintln!("  Invalid choice. Enter y, e, or s."),
+                        }
+                    }
+                } else {
+                    interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                }
             }
         }
         count += 1;
