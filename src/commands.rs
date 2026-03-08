@@ -2829,362 +2829,6 @@ async fn check_contact_type(
     Ok(count)
 }
 
-pub async fn cmd_move_given_name_to_company(name: &str, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
-    let all_groups = fetch_all_contact_groups(&hub).await?;
-    let group_names = build_group_name_map(&all_groups);
-
-    let matching: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
-        p.names.as_ref()
-            .and_then(|n| n.first())
-            .and_then(|n| n.given_name.as_deref())
-            .is_some_and(|g| g.eq_ignore_ascii_case(name))
-    }).collect();
-
-    if matching.is_empty() {
-        eprintln!("No contacts found with given name \"{}\"", name);
-        return Ok(());
-    }
-
-    eprintln!("Found {} contact(s) with given name \"{}\":", matching.len(), name);
-    for person in &matching {
-        println!("  {}", format_person_line(person, Some(&group_names)));
-    }
-
-    if dry_run {
-        eprintln!("(dry-run) Would move given name to company for all above contacts.");
-        return Ok(());
-    }
-
-    if !prompt_yes_no(&format!("Move given name \"{}\" to company for all {} contact(s)?", name, matching.len()))? {
-        eprintln!("Cancelled.");
-        return Ok(());
-    }
-
-    for person in &matching {
-        let resource_name = match person.resource_name.as_deref() {
-            Some(rn) => rn,
-            None => continue,
-        };
-        let given = person.names.as_ref()
-            .and_then(|n| n.first())
-            .and_then(|n| n.given_name.as_deref())
-            .unwrap_or("");
-
-        // Clear given name and unstructured_name
-        let mut updated = (*person).clone();
-        if let Some(ref mut names) = updated.names
-            && let Some(first) = names.first_mut() {
-                first.given_name = None;
-                first.unstructured_name = None;
-            }
-        let (_, refreshed) = hub.people()
-            .update_contact(updated, resource_name)
-            .update_person_fields(FieldMask::new::<&str>(&["names"]))
-            .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-            .doit()
-            .await?;
-        tokio::time::sleep(MUTATE_DELAY).await;
-
-        // Set company
-        let mut updated2 = refreshed;
-        updated2.organizations = Some(vec![google_people1::api::Organization {
-            name: Some(given.to_string()),
-            ..Default::default()
-        }]);
-        hub.people()
-            .update_contact(updated2, resource_name)
-            .update_person_fields(FieldMask::new::<&str>(&["organizations"]))
-            .doit()
-            .await?;
-
-        eprintln!("  Moved \"{}\" -> company for {}", given, person_display_name(person));
-        tokio::time::sleep(MUTATE_DELAY).await;
-    }
-
-    eprintln!("Done. {} contact(s) updated.", matching.len());
-    Ok(())
-}
-
-pub async fn cmd_auto_contact_type(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
-    let all_groups = fetch_all_contact_groups(&hub).await?;
-    let group_names = build_group_name_map(&all_groups);
-    let user_groups: Vec<(&str, &str)> = all_groups.iter()
-        .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
-        .filter_map(|g| Some((g.name.as_deref()?, g.resource_name.as_deref()?)))
-        .collect();
-
-    let mut type_rns: Option<(String, String)> = None;
-    let mut count = 0;
-
-    for person in &contacts {
-        let (has_person, has_company) = person_type_labels(person, &group_names);
-        if has_person || has_company {
-            continue;
-        }
-
-        let names = person.names.as_ref().and_then(|n| n.first());
-        let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
-        let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
-        let looks_like_company = given.is_empty() && family.is_empty();
-        let label = if looks_like_company { TYPE_COMPANY_LABEL } else { TYPE_PERSON_LABEL };
-
-        println!("{} -> {}", format_person_line(person, Some(&group_names)), label);
-        count += 1;
-
-        if dry_run {
-            continue;
-        }
-
-        let resource_name = match person.resource_name.as_deref() {
-            Some(rn) => rn,
-            None => continue,
-        };
-
-        if type_rns.is_none() {
-            type_rns = Some(ensure_type_labels_exist(&hub, &user_groups).await?);
-        }
-        let (ref person_rn, ref company_rn) = *type_rns.as_ref().unwrap();
-        let target_rn = if looks_like_company { company_rn } else { person_rn };
-
-        let req = google_people1::api::ModifyContactGroupMembersRequest {
-            resource_names_to_add: Some(vec![resource_name.to_string()]),
-            resource_names_to_remove: None,
-        };
-        hub.contact_groups().members_modify(req, target_rn).doit().await?;
-        tokio::time::sleep(MUTATE_DELAY).await;
-    }
-
-    if dry_run {
-        eprintln!("(dry-run) Would auto-assign type labels to {} contact(s).", count);
-    } else {
-        eprintln!("Done. {} contact(s) updated.", count);
-    }
-    Ok(())
-}
-
-pub async fn cmd_company_labels(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let hub = build_hub().await?;
-    let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
-    let all_groups = fetch_all_contact_groups(&hub).await?;
-    let group_names = build_group_name_map(&all_groups);
-
-    // Build a map from group resource_name to group type
-    let group_types: std::collections::HashMap<&str, &str> = all_groups.iter()
-        .filter_map(|g| Some((g.resource_name.as_deref()?, g.group_type.as_deref().unwrap_or(""))))
-        .collect();
-
-    // Find all company contacts (those with type:Company label)
-    let companies: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
-        is_company(p, &group_names)
-    }).collect();
-
-    if companies.is_empty() {
-        eprintln!("No contacts with type:Company label found.");
-        return Ok(());
-    }
-
-    // Collect all label renames needed: (contact_resource_name, old_group_rn, old_label_name)
-    // where old_label_name doesn't already start with "company:"
-    let mut renames: Vec<(&str, &str, &str)> = Vec::new();
-    for person in &companies {
-        let resource_name = match person.resource_name.as_deref() {
-            Some(rn) => rn,
-            None => continue,
-        };
-        if let Some(memberships) = &person.memberships {
-            for m in memberships {
-                let group_rn = match m.contact_group_membership.as_ref()
-                    .and_then(|cgm| cgm.contact_group_resource_name.as_deref()) {
-                    Some(rn) => rn,
-                    None => continue,
-                };
-                // Skip system groups
-                if IGNORED_SYSTEM_GROUPS.contains(&group_rn) {
-                    continue;
-                }
-                // Skip non-user groups
-                if group_types.get(group_rn) != Some(&"USER_CONTACT_GROUP") {
-                    continue;
-                }
-                let label_name = match group_names.get(group_rn) {
-                    Some(n) => n.as_str(),
-                    None => continue,
-                };
-                // Skip type:Person/type:Company
-                if label_name == TYPE_PERSON_LABEL || label_name == TYPE_COMPANY_LABEL {
-                    continue;
-                }
-                // Skip already prefixed
-                if label_name.starts_with("company:") {
-                    continue;
-                }
-                renames.push((resource_name, group_rn, label_name));
-            }
-        }
-    }
-
-    if renames.is_empty() {
-        eprintln!("All company contact labels already have the \"company:\" prefix.");
-        return Ok(());
-    }
-
-    // Group by old label name to process all contacts per label at once
-    let mut by_label: std::collections::HashMap<&str, (/*old_group_rn*/ &str, Vec<&str>)> = std::collections::HashMap::new();
-    for (contact_rn, group_rn, label_name) in &renames {
-        by_label.entry(label_name)
-            .or_insert((group_rn, Vec::new()))
-            .1.push(contact_rn);
-    }
-
-    let mut total = 0;
-    for (label_name, (old_group_rn, contact_rns)) in &by_label {
-        let new_name = format!("company:{}", label_name);
-        println!("\"{}\" -> \"{}\" ({} contacts)", label_name, new_name, contact_rns.len());
-        total += contact_rns.len();
-
-        if dry_run {
-            continue;
-        }
-
-        // Find or create the new label
-        let new_group_rn = if let Some(g) = all_groups.iter().find(|g| g.name.as_deref() == Some(new_name.as_str())) {
-            g.resource_name.as_deref().unwrap().to_string()
-        } else {
-            let new_group = google_people1::api::ContactGroup {
-                name: Some(new_name.clone()),
-                ..Default::default()
-            };
-            let req = google_people1::api::CreateContactGroupRequest {
-                contact_group: Some(new_group),
-                read_group_fields: None,
-            };
-            let (_, created) = hub.contact_groups().create(req).doit().await?;
-            eprintln!("  Created label \"{}\"", new_name);
-            tokio::time::sleep(MUTATE_DELAY).await;
-            created.resource_name.ok_or("Created group missing resource name")?
-        };
-
-        // Add all contacts to the new label
-        let contact_rn_strings: Vec<String> = contact_rns.iter().map(|s| s.to_string()).collect();
-        for chunk in contact_rn_strings.chunks(1000) {
-            let req = google_people1::api::ModifyContactGroupMembersRequest {
-                resource_names_to_add: Some(chunk.to_vec()),
-                resource_names_to_remove: None,
-            };
-            hub.contact_groups().members_modify(req, &new_group_rn).doit().await?;
-            tokio::time::sleep(MUTATE_DELAY).await;
-        }
-
-        // Remove all contacts from the old label
-        for chunk in contact_rn_strings.chunks(1000) {
-            let req = google_people1::api::ModifyContactGroupMembersRequest {
-                resource_names_to_add: None,
-                resource_names_to_remove: Some(chunk.to_vec()),
-            };
-            hub.contact_groups().members_modify(req, old_group_rn).doit().await?;
-            tokio::time::sleep(MUTATE_DELAY).await;
-        }
-    }
-
-    if dry_run {
-        eprintln!("(dry-run) Would rename {} label assignments across {} companies.", total, companies.len());
-    } else {
-        eprintln!("Done. Renamed {} label assignments.", total);
-    }
-    Ok(())
-}
-
-pub async fn cmd_fix_labels(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let config = load_config();
-    let allow = match config.check_contact_label_regexp.allow {
-        Some(ref pattern) => pattern.clone(),
-        None => {
-            eprintln!("No [check-contact-label-regexp] allow regex configured in config.toml.");
-            return Ok(());
-        }
-    };
-    let re = regex::Regex::new(&allow)?;
-
-    let hub = build_hub().await?;
-    let all_groups = fetch_all_contact_groups(&hub).await?;
-
-    let bad_labels: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
-        g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-            && g.name.as_deref().is_some_and(|n| !re.is_match(n))
-    }).collect();
-
-    if bad_labels.is_empty() {
-        eprintln!("All labels match the configured regexp.");
-        return Ok(());
-    }
-
-    eprintln!("Found {} label(s) not matching regexp:", bad_labels.len());
-
-    use std::io::Write;
-    for group in &bad_labels {
-        let name = group.name.as_deref().unwrap_or("<unnamed>");
-        let resource_name = match group.resource_name.as_deref() {
-            Some(rn) => rn,
-            None => continue,
-        };
-
-        println!("  \"{}\"", name);
-
-        if dry_run {
-            continue;
-        }
-
-        loop {
-            eprint!("  [r]ename / add [c]ompany: / add [s]ervice: / add [g]roup: / [d]elete / s[k]ip? ");
-            std::io::stderr().flush()?;
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
-            match input.trim().chars().next() {
-                Some('r') => {
-                    if let Some(new_name) = prompt_rename_label(name)? {
-                        rename_contact_group(&hub, group, resource_name, &new_name, name).await?;
-                    }
-                    break;
-                }
-                Some('c') => {
-                    let new_name = format!("company:{}", name);
-                    rename_contact_group(&hub, group, resource_name, &new_name, name).await?;
-                    break;
-                }
-                Some('s') => {
-                    let new_name = format!("service:{}", name);
-                    rename_contact_group(&hub, group, resource_name, &new_name, name).await?;
-                    break;
-                }
-                Some('g') => {
-                    let new_name = format!("group:{}", name);
-                    rename_contact_group(&hub, group, resource_name, &new_name, name).await?;
-                    break;
-                }
-                Some('d') => {
-                    if prompt_yes_no(&format!("Delete label \"{}\"?", name))? {
-                        hub.contact_groups().delete(resource_name).doit().await?;
-                        eprintln!("  Deleted label \"{}\".", name);
-                        tokio::time::sleep(MUTATE_DELAY).await;
-                    }
-                    break;
-                }
-                Some('k') => {
-                    eprintln!("  Skipped.");
-                    break;
-                }
-                _ => eprintln!("  Invalid choice. Enter r, c, s, g, d, or k."),
-            }
-        }
-    }
-
-    Ok(())
-}
-
 pub async fn cmd_check_contact_no_middle_name(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
@@ -3892,6 +3536,96 @@ pub async fn cmd_review_phone_label(label: &str, fix: bool, dry_run: bool) -> Re
         println!("No phones found with label \"{}\"", label);
     } else {
         println!("{} phone(s) with label \"{}\"", count, label);
+    }
+    Ok(())
+}
+
+pub async fn cmd_review_email_label(label: &str, fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
+    let label_lower = label.to_lowercase();
+    let mut count = 0;
+    for person in &contacts {
+        if let Some(emails) = &person.email_addresses {
+            let matching: Vec<_> = emails.iter().enumerate()
+                .filter(|(_, e)| get_email_label(e).to_lowercase() == label_lower)
+                .collect();
+            if matching.is_empty() { continue; }
+            let name = person_display_name(person);
+            for (idx, e) in &matching {
+                println!("{}", format_person_line(person, None));
+                if let Some(val) = e.value.as_deref() {
+                    println!("  {} [{}]", val, get_email_label(e));
+                }
+                count += 1;
+                if fix {
+                    if dry_run {
+                        eprintln!("  (dry-run) would prompt for action");
+                        continue;
+                    }
+                    let email = e.value.as_deref().unwrap_or("");
+                    use std::io::Write;
+                    loop {
+                        eprint!("  [d]elete / [r]elabel / [s]kip: ");
+                        std::io::stderr().flush()?;
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input)?;
+                        match input.trim().chars().next() {
+                            Some('d') => {
+                                let resource_name = person.resource_name.as_deref()
+                                    .ok_or("Contact missing resource name")?;
+                                let mut updated = person.clone();
+                                if let Some(ref mut email_addrs) = updated.email_addresses {
+                                    email_addrs.remove(*idx);
+                                }
+                                hub.people()
+                                    .update_contact(updated, resource_name)
+                                    .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
+                                    .doit()
+                                    .await?;
+                                eprintln!("  Deleted email {} from {}", email, name);
+                                tokio::time::sleep(MUTATE_DELAY).await;
+                                break;
+                            }
+                            Some('r') => {
+                                eprint!("  New label (Home/Work/Other): ");
+                                std::io::stderr().flush()?;
+                                let mut new_label = String::new();
+                                std::io::stdin().read_line(&mut new_label)?;
+                                let new_label = new_label.trim().to_string();
+                                if !new_label.is_empty() {
+                                    let resource_name = person.resource_name.as_deref()
+                                        .ok_or("Contact missing resource name")?;
+                                    let mut updated = person.clone();
+                                    if let Some(ref mut email_addrs) = updated.email_addresses {
+                                        email_addrs[*idx].type_ = Some(new_label.clone());
+                                        email_addrs[*idx].formatted_type = Some(new_label);
+                                    }
+                                    hub.people()
+                                        .update_contact(updated, resource_name)
+                                        .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
+                                        .doit()
+                                        .await?;
+                                    eprintln!("  Relabeled email for {}", name);
+                                    tokio::time::sleep(MUTATE_DELAY).await;
+                                }
+                                break;
+                            }
+                            Some('s') => {
+                                eprintln!("  Skipped.");
+                                break;
+                            }
+                            _ => eprintln!("  Invalid choice. Enter d, r, or s."),
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if count == 0 {
+        println!("No emails found with label \"{}\"", label);
+    } else {
+        println!("{} email(s) with label \"{}\"", count, label);
     }
     Ok(())
 }

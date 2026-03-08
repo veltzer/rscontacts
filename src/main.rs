@@ -41,12 +41,6 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
-    /// Auto-assign type:Person/type:Company to contacts missing a type label
-    AutoContactType {
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
     /// Check that all company fields are in the known companies list from config
     CheckContactCompanyExists {
         /// Interactively fix each flagged contact
@@ -266,12 +260,6 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Rename labels of company contacts to "Company:[label]"
-    CompanyLabels {
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
     /// Generate shell completions
     Complete {
         /// Shell to generate completions for
@@ -282,12 +270,6 @@ enum Commands {
     EditContact {
         /// Name (or part of name) to search for
         name: String,
-    },
-    /// Interactively fix labels that don't match the configured regexp
-    FixLabels {
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
     },
     /// Generate a default config file at ~/.config/rscontacts/config.toml
     InitConfig {
@@ -307,18 +289,21 @@ enum Commands {
         #[arg(long)]
         starred: bool,
     },
-    /// Move a given name to the company field for all contacts with that given name
-    MoveGivenNameToCompany {
-        /// The given name to move to company
-        name: String,
-        /// Show what would be changed without modifying anything
-        #[arg(long)]
-        dry_run: bool,
-    },
     /// Remove a contact label (group) from all contacts that have it
     RemoveLabelFromAllContacts {
         /// The label name to remove (case-insensitive)
         label: String,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Review all emails with a specific label (e.g. "Work")
+    ReviewEmailLabel {
+        /// The email label to review (case-insensitive)
+        label: String,
+        /// Interactively fix each email (delete/relabel/skip)
+        #[arg(long)]
+        fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
@@ -360,7 +345,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::AllChecks { fix, dry_run, stats, verbose, ref country } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
         Commands::Auth { no_browser, force } => commands::cmd_auth(no_browser, force).await?,
-        Commands::AutoContactType { dry_run } => commands::cmd_auto_contact_type(dry_run).await?,
         Commands::CheckContactCompanyExists { fix, dry_run } => commands::cmd_check_contact_company_exists(fix, dry_run).await?,
         Commands::CheckContactCompanyKnown { fix, dry_run } => commands::cmd_check_contact_company_known(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,
@@ -385,16 +369,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneLabelEnglish { fix, dry_run } => commands::cmd_check_phone_label_english(fix, dry_run).await?,
         Commands::CheckPhoneLabelMissing { fix, dry_run } => commands::cmd_check_phone_label_missing(fix, dry_run).await?,
         Commands::CompactSuffixesForContacts { dry_run } => commands::cmd_compact_suffixes_for_contacts(dry_run).await?,
-        Commands::CompanyLabels { dry_run } => commands::cmd_company_labels(dry_run).await?,
         Commands::Complete { shell } => {
             clap_complete::generate(shell, &mut Cli::command(), "rscontacts", &mut std::io::stdout());
         }
         Commands::EditContact { ref name } => commands::cmd_edit_contact(name).await?,
-        Commands::FixLabels { dry_run } => commands::cmd_fix_labels(dry_run).await?,
         Commands::InitConfig { force } => commands::cmd_init_config(force)?,
         Commands::List { emails, labels, starred } => commands::cmd_list(emails, labels, starred).await?,
-        Commands::MoveGivenNameToCompany { ref name, dry_run } => commands::cmd_move_given_name_to_company(name, dry_run).await?,
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,
+        Commands::ReviewEmailLabel { ref label, fix, dry_run } => commands::cmd_review_email_label(label, fix, dry_run).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
         Commands::ShowContactLabels => commands::cmd_show_contact_labels().await?,
