@@ -64,9 +64,9 @@ allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
 
 # Allow regex for contact labels (groups). Labels that do NOT match
 # this pattern will be flagged by check-contact-label-regexp.
-# Allows "CamelCase" or "prefix:CamelCase" (e.g. "type:Person", "service:P").
+# Requires a lowercase prefix with colon (e.g. "type:Person", "service:P").
 [check-contact-label-regexp]
-allow = '^([a-z]+:)?[A-Z][a-zA-Z]*$'
+allow = '^[a-z]+:[A-Z][a-zA-Z]*$'
 
 # List of allowed given names (case-sensitive).
 # Contacts whose given name is NOT in this list will be flagged
@@ -3019,7 +3019,7 @@ pub async fn cmd_company_labels(dry_run: bool) -> Result<(), Box<dyn std::error:
     }
 
     // Collect all label renames needed: (contact_resource_name, old_group_rn, old_label_name)
-    // where old_label_name doesn't already start with "Company:"
+    // where old_label_name doesn't already start with "company:"
     let mut renames: Vec<(&str, &str, &str)> = Vec::new();
     for person in &companies {
         let resource_name = match person.resource_name.as_deref() {
@@ -3050,7 +3050,7 @@ pub async fn cmd_company_labels(dry_run: bool) -> Result<(), Box<dyn std::error:
                     continue;
                 }
                 // Skip already prefixed
-                if label_name.starts_with("Company:") {
+                if label_name.starts_with("company:") {
                     continue;
                 }
                 renames.push((resource_name, group_rn, label_name));
@@ -3059,7 +3059,7 @@ pub async fn cmd_company_labels(dry_run: bool) -> Result<(), Box<dyn std::error:
     }
 
     if renames.is_empty() {
-        eprintln!("All company contact labels already have the \"Company:\" prefix.");
+        eprintln!("All company contact labels already have the \"company:\" prefix.");
         return Ok(());
     }
 
@@ -3073,7 +3073,7 @@ pub async fn cmd_company_labels(dry_run: bool) -> Result<(), Box<dyn std::error:
 
     let mut total = 0;
     for (label_name, (old_group_rn, contact_rns)) in &by_label {
-        let new_name = format!("Company:{}", label_name);
+        let new_name = format!("company:{}", label_name);
         println!("\"{}\" -> \"{}\" ({} contacts)", label_name, new_name, contact_rns.len());
         total += contact_rns.len();
 
@@ -3191,7 +3191,7 @@ pub async fn cmd_fix_labels(dry_run: bool) -> Result<(), Box<dyn std::error::Err
                     break;
                 }
                 Some('c') => {
-                    let new_name = format!("Company:{}", name);
+                    let new_name = format!("company:{}", name);
                     let mut updated_group = (*group).clone();
                     updated_group.name = Some(new_name.clone());
                     let req = google_people1::api::UpdateContactGroupRequest {
