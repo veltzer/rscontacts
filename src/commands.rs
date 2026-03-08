@@ -263,6 +263,10 @@ async fn check_given_name_regexp(
 
     let mut count = 0;
     for person in contacts {
+        if is_company(person, ctx.group_names) {
+            continue;
+        }
+
         let given = person.names.as_ref()
             .and_then(|names| names.first())
             .and_then(|n| n.given_name.as_deref())
@@ -580,6 +584,10 @@ async fn check_suffix_regexp(
 
     let mut count = 0;
     for person in contacts {
+        if is_company(person, ctx.group_names) {
+            continue;
+        }
+
         let suffix = person.names.as_ref()
             .and_then(|names| names.first())
             .and_then(|n| n.honorific_suffix.as_deref())
@@ -704,6 +712,10 @@ async fn check_family_name_regexp(
 
     let mut count = 0;
     for person in contacts {
+        if is_company(person, ctx.group_names) {
+            continue;
+        }
+
         let family = person.names.as_ref()
             .and_then(|names| names.first())
             .and_then(|n| n.family_name.as_deref())
@@ -774,6 +786,11 @@ async fn check_no_given_name(
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
+        // Skip companies — they don't need a given name
+        if is_company(person, ctx.group_names) {
+            continue;
+        }
+
         let names = person.names.as_ref().and_then(|n| n.first());
         let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
         let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
@@ -842,13 +859,18 @@ async fn check_no_identity(
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
-        let has_given = person_has_given_name(person);
-        let has_company = person.organizations.as_ref()
-            .and_then(|orgs| orgs.first())
-            .and_then(|o| o.name.as_deref())
-            .is_some_and(|c| !c.is_empty());
+        let has_identity = if is_company(person, ctx.group_names) {
+            // Company contacts need a company name
+            person.organizations.as_ref()
+                .and_then(|orgs| orgs.first())
+                .and_then(|o| o.name.as_deref())
+                .is_some_and(|c| !c.is_empty())
+        } else {
+            // Person contacts need a given name
+            person_has_given_name(person)
+        };
 
-        if has_given || has_company {
+        if has_identity {
             continue;
         }
 
@@ -925,6 +947,11 @@ async fn check_name_is_company(
 
     let mut count = 0;
     for person in contacts {
+        // Skip company contacts — their names are expected to be company names
+        if is_company(person, ctx.group_names) {
+            continue;
+        }
+
         let names = person.names.as_ref().and_then(|n| n.first());
         let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
         let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
@@ -1015,6 +1042,11 @@ async fn check_company_known(
 
     let mut count = 0;
     for person in contacts {
+        // Only check company contacts
+        if !is_company(person, ctx.group_names) {
+            continue;
+        }
+
         let org_name = person.organizations.as_ref()
             .and_then(|orgs| orgs.first())
             .and_then(|o| o.name.as_deref())
@@ -1137,6 +1169,10 @@ async fn check_given_name_known(
 
     let mut count = 0;
     for person in contacts {
+        if is_company(person, ctx.group_names) {
+            continue;
+        }
+
         let given = person.names.as_ref()
             .and_then(|n| n.first())
             .and_then(|n| n.given_name.as_deref())
@@ -2517,6 +2553,12 @@ fn person_type_labels(person: &google_people1::api::Person, group_names: &std::c
     (has_person, has_company)
 }
 
+fn is_company(person: &google_people1::api::Person, group_names: &std::collections::HashMap<String, String>) -> bool {
+    let (_, has_company) = person_type_labels(person, group_names);
+    has_company
+}
+
+
 async fn ensure_type_labels_exist(
     hub: &HubType,
     user_groups: &[(&str, &str)],
@@ -2788,8 +2830,8 @@ pub async fn cmd_auto_contact_type(dry_run: bool) -> Result<(), Box<dyn std::err
         let names = person.names.as_ref().and_then(|n| n.first());
         let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
         let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
-        let is_company = given.is_empty() && family.is_empty();
-        let label = if is_company { TYPE_COMPANY_LABEL } else { TYPE_PERSON_LABEL };
+        let looks_like_company = given.is_empty() && family.is_empty();
+        let label = if looks_like_company { TYPE_COMPANY_LABEL } else { TYPE_PERSON_LABEL };
 
         println!("{} -> {}", format_person_line(person, Some(&group_names)), label);
         count += 1;
@@ -2807,7 +2849,7 @@ pub async fn cmd_auto_contact_type(dry_run: bool) -> Result<(), Box<dyn std::err
             type_rns = Some(ensure_type_labels_exist(&hub, &user_groups).await?);
         }
         let (ref person_rn, ref company_rn) = *type_rns.as_ref().unwrap();
-        let target_rn = if is_company { company_rn } else { person_rn };
+        let target_rn = if looks_like_company { company_rn } else { person_rn };
 
         let req = google_people1::api::ModifyContactGroupMembersRequest {
             resource_names_to_add: Some(vec![resource_name.to_string()]),
@@ -2821,6 +2863,138 @@ pub async fn cmd_auto_contact_type(dry_run: bool) -> Result<(), Box<dyn std::err
         eprintln!("(dry-run) Would auto-assign type labels to {} contact(s).", count);
     } else {
         eprintln!("Done. {} contact(s) updated.", count);
+    }
+    Ok(())
+}
+
+pub async fn cmd_company_labels(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+
+    // Build a map from group resource_name to group type
+    let group_types: std::collections::HashMap<&str, &str> = all_groups.iter()
+        .filter_map(|g| Some((g.resource_name.as_deref()?, g.group_type.as_deref().unwrap_or(""))))
+        .collect();
+
+    // Find all company contacts (those with TypeCompany label)
+    let companies: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
+        is_company(p, &group_names)
+    }).collect();
+
+    if companies.is_empty() {
+        eprintln!("No contacts with TypeCompany label found.");
+        return Ok(());
+    }
+
+    // Collect all label renames needed: (contact_resource_name, old_group_rn, old_label_name)
+    // where old_label_name doesn't already start with "Company:"
+    let mut renames: Vec<(&str, &str, &str)> = Vec::new();
+    for person in &companies {
+        let resource_name = match person.resource_name.as_deref() {
+            Some(rn) => rn,
+            None => continue,
+        };
+        if let Some(memberships) = &person.memberships {
+            for m in memberships {
+                let group_rn = match m.contact_group_membership.as_ref()
+                    .and_then(|cgm| cgm.contact_group_resource_name.as_deref()) {
+                    Some(rn) => rn,
+                    None => continue,
+                };
+                // Skip system groups
+                if IGNORED_SYSTEM_GROUPS.contains(&group_rn) {
+                    continue;
+                }
+                // Skip non-user groups
+                if group_types.get(group_rn) != Some(&"USER_CONTACT_GROUP") {
+                    continue;
+                }
+                let label_name = match group_names.get(group_rn) {
+                    Some(n) => n.as_str(),
+                    None => continue,
+                };
+                // Skip TypePerson/TypeCompany
+                if label_name == TYPE_PERSON_LABEL || label_name == TYPE_COMPANY_LABEL {
+                    continue;
+                }
+                // Skip already prefixed
+                if label_name.starts_with("Company:") {
+                    continue;
+                }
+                renames.push((resource_name, group_rn, label_name));
+            }
+        }
+    }
+
+    if renames.is_empty() {
+        eprintln!("All company contact labels already have the \"Company:\" prefix.");
+        return Ok(());
+    }
+
+    // Group by old label name to process all contacts per label at once
+    let mut by_label: std::collections::HashMap<&str, (/*old_group_rn*/ &str, Vec<&str>)> = std::collections::HashMap::new();
+    for (contact_rn, group_rn, label_name) in &renames {
+        by_label.entry(label_name)
+            .or_insert((group_rn, Vec::new()))
+            .1.push(contact_rn);
+    }
+
+    let mut total = 0;
+    for (label_name, (old_group_rn, contact_rns)) in &by_label {
+        let new_name = format!("Company:{}", label_name);
+        println!("\"{}\" -> \"{}\" ({} contacts)", label_name, new_name, contact_rns.len());
+        total += contact_rns.len();
+
+        if dry_run {
+            continue;
+        }
+
+        // Find or create the new label
+        let new_group_rn = if let Some(g) = all_groups.iter().find(|g| g.name.as_deref() == Some(new_name.as_str())) {
+            g.resource_name.as_deref().unwrap().to_string()
+        } else {
+            let new_group = google_people1::api::ContactGroup {
+                name: Some(new_name.clone()),
+                ..Default::default()
+            };
+            let req = google_people1::api::CreateContactGroupRequest {
+                contact_group: Some(new_group),
+                read_group_fields: None,
+            };
+            let (_, created) = hub.contact_groups().create(req).doit().await?;
+            eprintln!("  Created label \"{}\"", new_name);
+            tokio::time::sleep(MUTATE_DELAY).await;
+            created.resource_name.ok_or("Created group missing resource name")?
+        };
+
+        // Add all contacts to the new label
+        let contact_rn_strings: Vec<String> = contact_rns.iter().map(|s| s.to_string()).collect();
+        for chunk in contact_rn_strings.chunks(1000) {
+            let req = google_people1::api::ModifyContactGroupMembersRequest {
+                resource_names_to_add: Some(chunk.to_vec()),
+                resource_names_to_remove: None,
+            };
+            hub.contact_groups().members_modify(req, &new_group_rn).doit().await?;
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+
+        // Remove all contacts from the old label
+        for chunk in contact_rn_strings.chunks(1000) {
+            let req = google_people1::api::ModifyContactGroupMembersRequest {
+                resource_names_to_add: None,
+                resource_names_to_remove: Some(chunk.to_vec()),
+            };
+            hub.contact_groups().members_modify(req, old_group_rn).doit().await?;
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+    }
+
+    if dry_run {
+        eprintln!("(dry-run) Would rename {} label assignments across {} companies.", total, companies.len());
+    } else {
+        eprintln!("Done. Renamed {} label assignments.", total);
     }
     Ok(())
 }
@@ -2857,6 +3031,10 @@ async fn check_no_middle_name(
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
+        if is_company(person, ctx.group_names) {
+            continue;
+        }
+
         let has_middle = person.names.as_ref()
             .and_then(|n| n.first())
             .and_then(|n| n.middle_name.as_deref())
@@ -2952,6 +3130,10 @@ async fn check_no_nickname(
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
+        if is_company(person, ctx.group_names) {
+            continue;
+        }
+
         let has_nickname = person.nicknames.as_ref()
             .is_some_and(|nicks| nicks.iter().any(|n| n.value.as_ref().is_some_and(|v| !v.is_empty())));
         if !has_nickname {

@@ -305,6 +305,12 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Rename labels of company contacts to "Company:[label]"
+    CompanyLabels {
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Interactively edit a contact
     EditContact {
         /// Name (or part of name) to search for
@@ -363,6 +369,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
         Commands::MoveGivenNameToCompany { ref name, dry_run } => commands::cmd_move_given_name_to_company(name, dry_run).await?,
         Commands::AutoContactType { dry_run } => commands::cmd_auto_contact_type(dry_run).await?,
+        Commands::CompanyLabels { dry_run } => commands::cmd_company_labels(dry_run).await?,
         Commands::EditContact { ref name } => commands::cmd_edit_contact(name).await?,
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
