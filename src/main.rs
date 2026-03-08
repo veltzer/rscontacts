@@ -116,7 +116,8 @@ enum Commands {
         dry_run: bool,
     },
     /// Run all checks
-    CheckAll {
+    #[command(name = "all-checks")]
+    AllChecks {
         /// Fix all issues found
         #[arg(long)]
         fix: bool,
@@ -290,6 +291,14 @@ enum Commands {
         /// Name (or part of name) to search for
         name: String,
     },
+    /// Move a given name to the company field for all contacts with that given name
+    MoveGivenNameToCompany {
+        /// The given name to move to company
+        name: String,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Interactively edit a contact
     EditContact {
         /// Name (or part of name) to search for
@@ -346,12 +355,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactLabelRegexp { fix, dry_run } => commands::cmd_check_contact_label_regexp(fix, dry_run).await?,
         Commands::CompactSuffixesForContacts { dry_run } => commands::cmd_compact_suffixes_for_contacts(dry_run).await?,
         Commands::ShowContact { ref name } => commands::cmd_show_contact(name).await?,
+        Commands::MoveGivenNameToCompany { ref name, dry_run } => commands::cmd_move_given_name_to_company(name, dry_run).await?,
         Commands::EditContact { ref name } => commands::cmd_edit_contact(name).await?,
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
         Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,
         Commands::ShowContactLabels => commands::cmd_show_contact_labels().await?,
-        Commands::CheckAll { fix, dry_run, stats, verbose, ref country } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
+        Commands::AllChecks { fix, dry_run, stats, verbose, ref country } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
         Commands::InitConfig { force } => commands::cmd_init_config(force)?,
         Commands::Version => {
             println!("rscontacts {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
@@ -413,26 +423,26 @@ mod tests {
 
     #[test]
     fn test_cli_check_all_subcommand() {
-        let cli = Cli::parse_from(["rscontacts", "check-all"]);
-        assert!(matches!(cli.command, Commands::CheckAll { fix: false, dry_run: false, .. }));
+        let cli = Cli::parse_from(["rscontacts", "all-checks"]);
+        assert!(matches!(cli.command, Commands::AllChecks { fix: false, dry_run: false, .. }));
     }
 
     #[test]
     fn test_cli_check_all_fix() {
-        let cli = Cli::parse_from(["rscontacts", "check-all", "--fix"]);
-        assert!(matches!(cli.command, Commands::CheckAll { fix: true, dry_run: false, .. }));
+        let cli = Cli::parse_from(["rscontacts", "all-checks", "--fix"]);
+        assert!(matches!(cli.command, Commands::AllChecks { fix: true, dry_run: false, .. }));
     }
 
     #[test]
     fn test_cli_check_all_dry_run() {
-        let cli = Cli::parse_from(["rscontacts", "check-all", "--fix", "--dry-run"]);
-        assert!(matches!(cli.command, Commands::CheckAll { fix: true, dry_run: true, .. }));
+        let cli = Cli::parse_from(["rscontacts", "all-checks", "--fix", "--dry-run"]);
+        assert!(matches!(cli.command, Commands::AllChecks { fix: true, dry_run: true, .. }));
     }
 
     #[test]
     fn test_cli_check_all_custom_country() {
-        let cli = Cli::parse_from(["rscontacts", "check-all", "--country", "1"]);
-        if let Commands::CheckAll { country, .. } = cli.command {
+        let cli = Cli::parse_from(["rscontacts", "all-checks", "--country", "1"]);
+        if let Commands::AllChecks { country, .. } = cli.command {
             assert_eq!(country, "1");
         } else {
             panic!("wrong command");

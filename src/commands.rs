@@ -2688,6 +2688,83 @@ async fn check_contact_type(
     Ok(count)
 }
 
+pub async fn cmd_move_given_name_to_company(name: &str, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+
+    let matching: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
+        p.names.as_ref()
+            .and_then(|n| n.first())
+            .and_then(|n| n.given_name.as_deref())
+            .is_some_and(|g| g.eq_ignore_ascii_case(name))
+    }).collect();
+
+    if matching.is_empty() {
+        eprintln!("No contacts found with given name \"{}\"", name);
+        return Ok(());
+    }
+
+    eprintln!("Found {} contact(s) with given name \"{}\":", matching.len(), name);
+    for person in &matching {
+        println!("  {}", format_person_line(person, Some(&group_names)));
+    }
+
+    if dry_run {
+        eprintln!("(dry-run) Would move given name to company for all above contacts.");
+        return Ok(());
+    }
+
+    if !prompt_yes_no(&format!("Move given name \"{}\" to company for all {} contact(s)?", name, matching.len()))? {
+        eprintln!("Cancelled.");
+        return Ok(());
+    }
+
+    for person in &matching {
+        let resource_name = match person.resource_name.as_deref() {
+            Some(rn) => rn,
+            None => continue,
+        };
+        let given = person.names.as_ref()
+            .and_then(|n| n.first())
+            .and_then(|n| n.given_name.as_deref())
+            .unwrap_or("");
+
+        // Clear given name and unstructured_name
+        let mut updated = (*person).clone();
+        if let Some(ref mut names) = updated.names
+            && let Some(first) = names.first_mut() {
+                first.given_name = None;
+                first.unstructured_name = None;
+            }
+        hub.people()
+            .update_contact(updated, resource_name)
+            .update_person_fields(FieldMask::new::<&str>(&["names"]))
+            .doit()
+            .await?;
+        tokio::time::sleep(MUTATE_DELAY).await;
+
+        // Set company
+        let mut updated2 = (*person).clone();
+        updated2.organizations = Some(vec![google_people1::api::Organization {
+            name: Some(given.to_string()),
+            ..Default::default()
+        }]);
+        hub.people()
+            .update_contact(updated2, resource_name)
+            .update_person_fields(FieldMask::new::<&str>(&["organizations"]))
+            .doit()
+            .await?;
+
+        eprintln!("  Moved \"{}\" -> company for {}", given, person_display_name(person));
+        tokio::time::sleep(MUTATE_DELAY).await;
+    }
+
+    eprintln!("Done. {} contact(s) updated.", matching.len());
+    Ok(())
+}
+
 pub async fn cmd_check_contact_no_middle_name(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
