@@ -2381,11 +2381,10 @@ async fn interactive_edit_contact(
 
     let mut current = person.clone();
 
-    println!("{}", "=".repeat(60));
-    print_person_details(&current, Some(group_names));
-    println!("{}", "=".repeat(60));
-
     loop {
+        println!("{}", "=".repeat(60));
+        print_person_details(&current, Some(group_names));
+        println!("{}", "=".repeat(60));
         display_edit_menu(&current, group_names);
         eprint!("  > ");
         std::io::stderr().flush()?;
