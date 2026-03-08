@@ -66,7 +66,7 @@ allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
 # this pattern will be flagged by check-contact-label-regexp.
 # Requires one of the known prefixes: type, company, person, service.
 [check-contact-label-regexp]
-allow = '^(type|company|person|service):[A-Z][a-zA-Z]*$'
+allow = '^(type|company|person|service|group):[A-Z][a-zA-Z]*$'
 
 # List of allowed given names (case-sensitive).
 # Contacts whose given name is NOT in this list will be flagged
@@ -3182,7 +3182,7 @@ pub async fn cmd_fix_labels(dry_run: bool) -> Result<(), Box<dyn std::error::Err
         }
 
         loop {
-            eprint!("  [r]ename / add [c]ompany: prefix / add [s]ervice: prefix / [d]elete label / s[k]ip? ");
+            eprint!("  [r]ename / add [c]ompany: / add [s]ervice: / add [g]roup: / [d]elete / s[k]ip? ");
             std::io::stderr().flush()?;
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
@@ -3230,6 +3230,20 @@ pub async fn cmd_fix_labels(dry_run: bool) -> Result<(), Box<dyn std::error::Err
                     tokio::time::sleep(MUTATE_DELAY).await;
                     break;
                 }
+                Some('g') => {
+                    let new_name = format!("group:{}", name);
+                    let mut updated_group = (*group).clone();
+                    updated_group.name = Some(new_name.clone());
+                    let req = google_people1::api::UpdateContactGroupRequest {
+                        contact_group: Some(updated_group),
+                        read_group_fields: None,
+                        update_group_fields: None,
+                    };
+                    hub.contact_groups().update(req, resource_name).doit().await?;
+                    eprintln!("  Renamed \"{}\" -> \"{}\"", name, new_name);
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                    break;
+                }
                 Some('d') => {
                     if prompt_yes_no(&format!("Delete label \"{}\"?", name))? {
                         hub.contact_groups().delete(resource_name).doit().await?;
@@ -3242,7 +3256,7 @@ pub async fn cmd_fix_labels(dry_run: bool) -> Result<(), Box<dyn std::error::Err
                     eprintln!("  Skipped.");
                     break;
                 }
-                _ => eprintln!("  Invalid choice. Enter r, c, s, d, or k."),
+                _ => eprintln!("  Invalid choice. Enter r, c, s, g, d, or k."),
             }
         }
     }
