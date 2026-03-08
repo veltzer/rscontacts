@@ -1887,6 +1887,11 @@ async fn interactive_edit_contact(
                 if let Some(ref mut names) = updated.names {
                     if let Some(first) = names.first_mut() {
                         first.given_name = new_val.clone();
+                        // Rebuild unstructured_name so the API doesn't regenerate from stale value
+                        let g = first.given_name.as_deref().unwrap_or("");
+                        let f = first.family_name.as_deref().unwrap_or("");
+                        let combined = [g, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
+                        first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
                     }
                 }
                 hub.people()
@@ -1922,6 +1927,11 @@ async fn interactive_edit_contact(
                 if let Some(ref mut names) = updated.names {
                     if let Some(first) = names.first_mut() {
                         first.family_name = new_val.clone();
+                        // Rebuild unstructured_name so the API doesn't regenerate from stale value
+                        let g = first.given_name.as_deref().unwrap_or("");
+                        let f = first.family_name.as_deref().unwrap_or("");
+                        let combined = [g, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
+                        first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
                     }
                 }
                 hub.people()
