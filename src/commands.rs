@@ -1954,10 +1954,14 @@ async fn interactive_edit_contact(
     let resource_name = person
         .resource_name
         .as_deref()
-        .ok_or("Contact missing resource name")?;
+        .ok_or("Contact missing resource name")?
+        .to_string();
+
+    // Keep a local copy that gets refreshed after each mutation
+    let mut current = person.clone();
 
     println!("{}", "=".repeat(60));
-    print_person_details(person, Some(group_names));
+    print_person_details(&current, Some(group_names));
     println!("{}", "=".repeat(60));
 
     loop {
@@ -1969,11 +1973,11 @@ async fn interactive_edit_contact(
         std::io::stdin().read_line(&mut input)?;
         match input.trim().chars().next() {
             Some('g') => {
-                let current = person.names.as_ref()
+                let cur_val = current.names.as_ref()
                     .and_then(|n| n.first())
                     .and_then(|n| n.given_name.as_deref())
                     .unwrap_or("");
-                eprint!("  Given name [{}] (new value / - to clear / Enter to skip): ", current);
+                eprint!("  Given name [{}] (new value / - to clear / Enter to skip): ", cur_val);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
@@ -1983,24 +1987,25 @@ async fn interactive_edit_contact(
                     continue;
                 }
                 let new_val = if val == "-" { None } else { Some(val.to_string()) };
-                let mut updated = person.clone();
+                let mut updated = current.clone();
                 if updated.names.is_none() {
                     updated.names = Some(vec![google_people1::api::Name::default()]);
                 }
                 if let Some(ref mut names) = updated.names
                     && let Some(first) = names.first_mut() {
                         first.given_name = new_val.clone();
-                        // Rebuild unstructured_name so the API doesn't regenerate from stale value
                         let g = first.given_name.as_deref().unwrap_or("");
                         let f = first.family_name.as_deref().unwrap_or("");
                         let combined = [g, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
                         first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
                     }
-                hub.people()
-                    .update_contact(updated, resource_name)
+                let (_, refreshed) = hub.people()
+                    .update_contact(updated, &resource_name)
                     .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                    .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
                     .doit()
                     .await?;
+                current = refreshed;
                 match new_val {
                     Some(v) => eprintln!("  Set given name to \"{}\"", v),
                     None => eprintln!("  Cleared given name."),
@@ -2008,11 +2013,11 @@ async fn interactive_edit_contact(
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
             Some('f') => {
-                let current = person.names.as_ref()
+                let cur_val = current.names.as_ref()
                     .and_then(|n| n.first())
                     .and_then(|n| n.family_name.as_deref())
                     .unwrap_or("");
-                eprint!("  Family name [{}] (new value / - to clear / Enter to skip): ", current);
+                eprint!("  Family name [{}] (new value / - to clear / Enter to skip): ", cur_val);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
@@ -2022,24 +2027,25 @@ async fn interactive_edit_contact(
                     continue;
                 }
                 let new_val = if val == "-" { None } else { Some(val.to_string()) };
-                let mut updated = person.clone();
+                let mut updated = current.clone();
                 if updated.names.is_none() {
                     updated.names = Some(vec![google_people1::api::Name::default()]);
                 }
                 if let Some(ref mut names) = updated.names
                     && let Some(first) = names.first_mut() {
                         first.family_name = new_val.clone();
-                        // Rebuild unstructured_name so the API doesn't regenerate from stale value
                         let g = first.given_name.as_deref().unwrap_or("");
                         let f = first.family_name.as_deref().unwrap_or("");
                         let combined = [g, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
                         first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
                     }
-                hub.people()
-                    .update_contact(updated, resource_name)
+                let (_, refreshed) = hub.people()
+                    .update_contact(updated, &resource_name)
                     .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                    .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
                     .doit()
                     .await?;
+                current = refreshed;
                 match new_val {
                     Some(v) => eprintln!("  Set family name to \"{}\"", v),
                     None => eprintln!("  Cleared family name."),
@@ -2047,11 +2053,11 @@ async fn interactive_edit_contact(
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
             Some('x') => {
-                let current = person.names.as_ref()
+                let cur_val = current.names.as_ref()
                     .and_then(|n| n.first())
                     .and_then(|n| n.honorific_suffix.as_deref())
                     .unwrap_or("");
-                eprint!("  Suffix [{}] (new value / - to clear / Enter to skip): ", current);
+                eprint!("  Suffix [{}] (new value / - to clear / Enter to skip): ", cur_val);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
@@ -2061,7 +2067,7 @@ async fn interactive_edit_contact(
                     continue;
                 }
                 let new_val = if val == "-" { None } else { Some(val.to_string()) };
-                let mut updated = person.clone();
+                let mut updated = current.clone();
                 if updated.names.is_none() {
                     updated.names = Some(vec![google_people1::api::Name::default()]);
                 }
@@ -2069,11 +2075,13 @@ async fn interactive_edit_contact(
                     && let Some(first) = names.first_mut() {
                         first.honorific_suffix = new_val.clone();
                     }
-                hub.people()
-                    .update_contact(updated, resource_name)
+                let (_, refreshed) = hub.people()
+                    .update_contact(updated, &resource_name)
                     .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                    .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
                     .doit()
                     .await?;
+                current = refreshed;
                 match new_val {
                     Some(v) => eprintln!("  Set suffix to \"{}\"", v),
                     None => eprintln!("  Cleared suffix."),
@@ -2081,11 +2089,11 @@ async fn interactive_edit_contact(
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
             Some('c') => {
-                let current = person.organizations.as_ref()
+                let cur_val = current.organizations.as_ref()
                     .and_then(|orgs| orgs.first())
                     .and_then(|o| o.name.as_deref())
                     .unwrap_or("");
-                eprint!("  Company [{}] (new value / - to clear / Enter to skip): ", current);
+                eprint!("  Company [{}] (new value / - to clear / Enter to skip): ", cur_val);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
@@ -2094,7 +2102,7 @@ async fn interactive_edit_contact(
                     eprintln!("  Unchanged.");
                     continue;
                 }
-                let mut updated = person.clone();
+                let mut updated = current.clone();
                 if val == "-" {
                     updated.organizations = Some(vec![]);
                 } else {
@@ -2104,11 +2112,13 @@ async fn interactive_edit_contact(
                     };
                     updated.organizations = Some(vec![org]);
                 }
-                hub.people()
-                    .update_contact(updated, resource_name)
+                let (_, refreshed) = hub.people()
+                    .update_contact(updated, &resource_name)
                     .update_person_fields(FieldMask::new::<&str>(&["organizations"]))
+                    .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
                     .doit()
                     .await?;
+                current = refreshed;
                 if val == "-" {
                     eprintln!("  Cleared company.");
                 } else {
@@ -2117,7 +2127,7 @@ async fn interactive_edit_contact(
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
             Some('p') => {
-                let phones: Vec<String> = person.phone_numbers.as_ref()
+                let phones: Vec<String> = current.phone_numbers.as_ref()
                     .map(|nums| nums.iter().enumerate().map(|(i, pn)| {
                         let val = pn.value.as_deref().unwrap_or("");
                         let label = get_phone_label(pn);
@@ -2142,8 +2152,8 @@ async fn interactive_edit_contact(
                     std::io::stdin().read_line(&mut num)?;
                     let num = num.trim();
                     if num.is_empty() { continue; }
-                    let label = prompt_phone_label_fix(&person_display_name(person))?;
-                    let mut updated = person.clone();
+                    let label = prompt_phone_label_fix(&person_display_name(&current))?;
+                    let mut updated = current.clone();
                     let mut pn = google_people1::api::PhoneNumber {
                         value: Some(num.to_string()),
                         ..Default::default()
@@ -2152,24 +2162,28 @@ async fn interactive_edit_contact(
                         pn.type_ = Some(l);
                     }
                     updated.phone_numbers.get_or_insert_with(Vec::new).push(pn);
-                    hub.people()
-                        .update_contact(updated, resource_name)
+                    let (_, refreshed) = hub.people()
+                        .update_contact(updated, &resource_name)
                         .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                        .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
                         .doit()
                         .await?;
+                    current = refreshed;
                     eprintln!("  Added phone \"{}\"", num);
                     tokio::time::sleep(MUTATE_DELAY).await;
                 } else if let Some(rest) = sub.strip_prefix('r') {
                     if let Ok(idx) = rest.trim().parse::<usize>() {
-                        let mut updated = person.clone();
+                        let mut updated = current.clone();
                         if let Some(ref mut nums) = updated.phone_numbers {
                             if idx >= 1 && idx <= nums.len() {
                                 nums.remove(idx - 1);
-                                hub.people()
-                                    .update_contact(updated, resource_name)
+                                let (_, refreshed) = hub.people()
+                                    .update_contact(updated, &resource_name)
                                     .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                                    .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
                                     .doit()
                                     .await?;
+                                current = refreshed;
                                 eprintln!("  Removed phone #{}", idx);
                                 tokio::time::sleep(MUTATE_DELAY).await;
                             } else {
@@ -2181,24 +2195,26 @@ async fn interactive_edit_contact(
                     }
                 } else if let Some(rest) = sub.strip_prefix('e') {
                     if let Ok(idx) = rest.trim().parse::<usize>() {
-                        let nums_len = person.phone_numbers.as_ref().map_or(0, |n| n.len());
+                        let nums_len = current.phone_numbers.as_ref().map_or(0, |n| n.len());
                         if idx >= 1 && idx <= nums_len {
-                            let current = person.phone_numbers.as_ref().unwrap()[idx - 1].value.as_deref().unwrap_or("");
-                            eprint!("  Phone [{}]: ", current);
+                            let cur_phone = current.phone_numbers.as_ref().unwrap()[idx - 1].value.as_deref().unwrap_or("");
+                            eprint!("  Phone [{}]: ", cur_phone);
                             std::io::stderr().flush()?;
                             let mut val = String::new();
                             std::io::stdin().read_line(&mut val)?;
                             let val = val.trim();
                             if val.is_empty() { continue; }
-                            let mut updated = person.clone();
+                            let mut updated = current.clone();
                             if let Some(ref mut nums) = updated.phone_numbers {
                                 nums[idx - 1].value = Some(val.to_string());
                             }
-                            hub.people()
-                                .update_contact(updated, resource_name)
+                            let (_, refreshed) = hub.people()
+                                .update_contact(updated, &resource_name)
                                 .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                                .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
                                 .doit()
                                 .await?;
+                            current = refreshed;
                             eprintln!("  Updated phone #{} to \"{}\"", idx, val);
                             tokio::time::sleep(MUTATE_DELAY).await;
                         } else {
@@ -2210,7 +2226,7 @@ async fn interactive_edit_contact(
                 }
             }
             Some('m') => {
-                let emails: Vec<String> = person.email_addresses.as_ref()
+                let emails: Vec<String> = current.email_addresses.as_ref()
                     .map(|ems| ems.iter().enumerate().map(|(i, e)| {
                         let val = e.value.as_deref().unwrap_or("");
                         let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
@@ -2235,30 +2251,34 @@ async fn interactive_edit_contact(
                     std::io::stdin().read_line(&mut val)?;
                     let val = val.trim();
                     if val.is_empty() { continue; }
-                    let mut updated = person.clone();
+                    let mut updated = current.clone();
                     let em = google_people1::api::EmailAddress {
                         value: Some(val.to_string()),
                         ..Default::default()
                     };
                     updated.email_addresses.get_or_insert_with(Vec::new).push(em);
-                    hub.people()
-                        .update_contact(updated, resource_name)
+                    let (_, refreshed) = hub.people()
+                        .update_contact(updated, &resource_name)
                         .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
+                        .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
                         .doit()
                         .await?;
+                    current = refreshed;
                     eprintln!("  Added email \"{}\"", val);
                     tokio::time::sleep(MUTATE_DELAY).await;
                 } else if let Some(rest) = sub.strip_prefix('r') {
                     if let Ok(idx) = rest.trim().parse::<usize>() {
-                        let mut updated = person.clone();
+                        let mut updated = current.clone();
                         if let Some(ref mut ems) = updated.email_addresses {
                             if idx >= 1 && idx <= ems.len() {
                                 ems.remove(idx - 1);
-                                hub.people()
-                                    .update_contact(updated, resource_name)
+                                let (_, refreshed) = hub.people()
+                                    .update_contact(updated, &resource_name)
                                     .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
+                                    .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
                                     .doit()
                                     .await?;
+                                current = refreshed;
                                 eprintln!("  Removed email #{}", idx);
                                 tokio::time::sleep(MUTATE_DELAY).await;
                             } else {
@@ -2270,24 +2290,26 @@ async fn interactive_edit_contact(
                     }
                 } else if let Some(rest) = sub.strip_prefix('e') {
                     if let Ok(idx) = rest.trim().parse::<usize>() {
-                        let ems_len = person.email_addresses.as_ref().map_or(0, |e| e.len());
+                        let ems_len = current.email_addresses.as_ref().map_or(0, |e| e.len());
                         if idx >= 1 && idx <= ems_len {
-                            let current = person.email_addresses.as_ref().unwrap()[idx - 1].value.as_deref().unwrap_or("");
-                            eprint!("  Email [{}]: ", current);
+                            let cur_email = current.email_addresses.as_ref().unwrap()[idx - 1].value.as_deref().unwrap_or("");
+                            eprint!("  Email [{}]: ", cur_email);
                             std::io::stderr().flush()?;
                             let mut val = String::new();
                             std::io::stdin().read_line(&mut val)?;
                             let val = val.trim();
                             if val.is_empty() { continue; }
-                            let mut updated = person.clone();
+                            let mut updated = current.clone();
                             if let Some(ref mut ems) = updated.email_addresses {
                                 ems[idx - 1].value = Some(val.to_string());
                             }
-                            hub.people()
-                                .update_contact(updated, resource_name)
+                            let (_, refreshed) = hub.people()
+                                .update_contact(updated, &resource_name)
                                 .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
+                                .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
                                 .doit()
                                 .await?;
+                            current = refreshed;
                             eprintln!("  Updated email #{} to \"{}\"", idx, val);
                             tokio::time::sleep(MUTATE_DELAY).await;
                         } else {
@@ -2310,7 +2332,7 @@ async fn interactive_edit_contact(
                 }
             }
             Some('v') => {
-                let labels = person_labels(person, group_names);
+                let labels = person_labels(&current, group_names);
                 if labels.is_empty() {
                     eprintln!("  No labels to remove.");
                     continue;
@@ -2327,7 +2349,6 @@ async fn interactive_edit_contact(
                 if let Ok(idx) = val.parse::<usize>() {
                     if idx >= 1 && idx <= labels.len() {
                         let label_name = &labels[idx - 1];
-                        // Find the group resource name for this label
                         if let Some((_, rn)) = user_groups.iter().find(|(name, _)| name == label_name) {
                             let req = google_people1::api::ModifyContactGroupMembersRequest {
                                 resource_names_to_add: None,
@@ -2345,8 +2366,8 @@ async fn interactive_edit_contact(
                 }
             }
             Some('d') => {
-                if prompt_yes_no(&format!("Delete {}?", person_display_name(person)))? {
-                    hub.people().delete_contact(resource_name).doit().await?;
+                if prompt_yes_no(&format!("Delete {}?", person_display_name(&current)))? {
+                    hub.people().delete_contact(&resource_name).doit().await?;
                     eprintln!("  Deleted.");
                     tokio::time::sleep(MUTATE_DELAY).await;
                 }
