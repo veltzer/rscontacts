@@ -64,9 +64,9 @@ allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
 
 # Allow regex for contact labels (groups). Labels that do NOT match
 # this pattern will be flagged by check-contact-label-regexp.
-# CamelCase: starts with uppercase, then any mix of upper/lowercase letters.
+# Allows "CamelCase" or "prefix:CamelCase" (e.g. "type:Person", "service:P").
 [check-contact-label-regexp]
-allow = '^[A-Z][a-zA-Z]*$'
+allow = '^([a-z]+:)?[A-Z][a-zA-Z]*$'
 
 # List of allowed given names (case-sensitive).
 # Contacts whose given name is NOT in this list will be flagged
@@ -3126,6 +3126,115 @@ pub async fn cmd_company_labels(dry_run: bool) -> Result<(), Box<dyn std::error:
     } else {
         eprintln!("Done. Renamed {} label assignments.", total);
     }
+    Ok(())
+}
+
+pub async fn cmd_fix_labels(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config();
+    let allow = match config.check_contact_label_regexp.allow {
+        Some(ref pattern) => pattern.clone(),
+        None => {
+            eprintln!("No [check-contact-label-regexp] allow regex configured in config.toml.");
+            return Ok(());
+        }
+    };
+    let re = regex::Regex::new(&allow)?;
+
+    let hub = build_hub().await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+
+    let bad_labels: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
+        g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+            && g.name.as_deref().is_some_and(|n| !re.is_match(n))
+    }).collect();
+
+    if bad_labels.is_empty() {
+        eprintln!("All labels match the configured regexp.");
+        return Ok(());
+    }
+
+    eprintln!("Found {} label(s) not matching regexp:", bad_labels.len());
+
+    use std::io::Write;
+    for group in &bad_labels {
+        let name = group.name.as_deref().unwrap_or("<unnamed>");
+        let resource_name = match group.resource_name.as_deref() {
+            Some(rn) => rn,
+            None => continue,
+        };
+
+        println!("  \"{}\"", name);
+
+        if dry_run {
+            continue;
+        }
+
+        loop {
+            eprint!("  [r]ename / add [c]ompany: prefix / add [s]ervice: prefix / [d]elete label / s[k]ip? ");
+            std::io::stderr().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            match input.trim().chars().next() {
+                Some('r') => {
+                    if let Some(new_name) = prompt_rename_label(name)? {
+                        let mut updated_group = (*group).clone();
+                        updated_group.name = Some(new_name.clone());
+                        let req = google_people1::api::UpdateContactGroupRequest {
+                            contact_group: Some(updated_group),
+                            read_group_fields: None,
+                            update_group_fields: None,
+                        };
+                        hub.contact_groups().update(req, resource_name).doit().await?;
+                        eprintln!("  Renamed \"{}\" -> \"{}\"", name, new_name);
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    }
+                    break;
+                }
+                Some('c') => {
+                    let new_name = format!("Company:{}", name);
+                    let mut updated_group = (*group).clone();
+                    updated_group.name = Some(new_name.clone());
+                    let req = google_people1::api::UpdateContactGroupRequest {
+                        contact_group: Some(updated_group),
+                        read_group_fields: None,
+                        update_group_fields: None,
+                    };
+                    hub.contact_groups().update(req, resource_name).doit().await?;
+                    eprintln!("  Renamed \"{}\" -> \"{}\"", name, new_name);
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                    break;
+                }
+                Some('s') => {
+                    let new_name = format!("service:{}", name);
+                    let mut updated_group = (*group).clone();
+                    updated_group.name = Some(new_name.clone());
+                    let req = google_people1::api::UpdateContactGroupRequest {
+                        contact_group: Some(updated_group),
+                        read_group_fields: None,
+                        update_group_fields: None,
+                    };
+                    hub.contact_groups().update(req, resource_name).doit().await?;
+                    eprintln!("  Renamed \"{}\" -> \"{}\"", name, new_name);
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                    break;
+                }
+                Some('d') => {
+                    if prompt_yes_no(&format!("Delete label \"{}\"?", name))? {
+                        hub.contact_groups().delete(resource_name).doit().await?;
+                        eprintln!("  Deleted label \"{}\".", name);
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    }
+                    break;
+                }
+                Some('k') => {
+                    eprintln!("  Skipped.");
+                    break;
+                }
+                _ => eprintln!("  Invalid choice. Enter r, c, s, d, or k."),
+            }
+        }
+    }
+
     Ok(())
 }
 
