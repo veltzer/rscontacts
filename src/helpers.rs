@@ -133,6 +133,12 @@ pub fn get_phone_label(pn: &google_people1::api::PhoneNumber) -> &str {
         .unwrap_or("")
 }
 
+pub fn get_email_label(e: &google_people1::api::EmailAddress) -> &str {
+    e.formatted_type.as_deref()
+        .or(e.type_.as_deref())
+        .unwrap_or("")
+}
+
 pub fn find_duplicates<'a>(values: &[&'a str]) -> Vec<&'a str> {
     let mut seen = std::collections::HashSet::new();
     values.iter().filter(|v| !seen.insert(**v)).copied().collect()

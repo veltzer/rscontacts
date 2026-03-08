@@ -3794,6 +3794,26 @@ pub async fn cmd_show_phone_labels() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+pub async fn cmd_show_email_labels() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["emailAddresses"]).await?;
+    let mut labels = std::collections::BTreeSet::new();
+    for person in &contacts {
+        if let Some(emails) = &person.email_addresses {
+            for e in emails {
+                let label = get_email_label(e);
+                if !label.is_empty() {
+                    labels.insert(label.to_string());
+                }
+            }
+        }
+    }
+    for label in &labels {
+        println!("{}", label);
+    }
+    Ok(())
+}
+
 pub async fn cmd_review_phone_label(label: &str, fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;

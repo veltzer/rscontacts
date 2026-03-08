@@ -293,6 +293,8 @@ enum Commands {
     },
     /// Show all distinct phone labels in use
     ShowPhoneLabels,
+    /// Show all distinct email labels in use
+    ShowEmailLabels,
     /// Show all contact labels (contact groups) in use
     ShowContactLabels,
     /// Compact suffixes for contacts sharing the same base name (given + family)
@@ -391,6 +393,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,
         Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,
+        Commands::ShowEmailLabels => commands::cmd_show_email_labels().await?,
         Commands::ShowContactLabels => commands::cmd_show_contact_labels().await?,
         Commands::AllChecks { fix, dry_run, stats, verbose, ref country } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
         Commands::InitConfig { force } => commands::cmd_init_config(force)?,
