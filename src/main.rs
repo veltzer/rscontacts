@@ -70,7 +70,7 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Check contacts that have no given name and no company (unidentifiable)
+    /// Check contacts that have no type tag (type:Person or type:Company)
     CheckContactNoIdentity {
         /// Interactively fix each flagged contact
         #[arg(long)]

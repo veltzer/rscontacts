@@ -865,28 +865,10 @@ async fn check_no_identity(
     let mut type_rns: Option<(String, String)> = None;
 
     for person in contacts {
-        let contact_is_company = is_company(person, ctx.group_names);
-        let has_given = person_has_given_name(person);
-        let has_company_name = person.organizations.as_ref()
-            .and_then(|orgs| orgs.first())
-            .and_then(|o| o.name.as_deref())
-            .is_some_and(|c| !c.is_empty());
-
-        let has_identity = if contact_is_company { has_company_name } else { has_given };
-        if has_identity {
+        let (has_person, has_company) = person_type_labels(person, ctx.group_names);
+        if has_person || has_company {
             continue;
         }
-
-        // Can we suggest a type change?
-        // Person with no given name but has company name -> suggest TypeCompany
-        // Company with no company name but has given name -> suggest TypePerson
-        let suggest_type_change = if !contact_is_company && has_company_name {
-            Some(TYPE_COMPANY_LABEL)
-        } else if contact_is_company && has_given {
-            Some(TYPE_PERSON_LABEL)
-        } else {
-            None
-        };
 
         if !ctx.quiet {
             if count == 0
@@ -897,57 +879,42 @@ async fn check_no_identity(
 
             if ctx.fix && !ctx.dry_run {
                 let resource_name = person.resource_name.as_deref();
-
-                if let Some(new_type) = suggest_type_change {
-                    use std::io::Write;
-                    loop {
-                        eprint!("  Change type to {} / [e]dit / [s]kip? [y/e/s] ", new_type);
-                        std::io::stderr().flush()?;
-                        let mut input = String::new();
-                        std::io::stdin().read_line(&mut input)?;
-                        match input.trim().chars().next() {
-                            Some('y') => {
-                                if let Some(rn) = resource_name {
-                                    if type_rns.is_none() {
-                                        type_rns = Some(ensure_type_labels_exist(hub, ctx.user_groups).await?);
-                                    }
-                                    let (ref person_rn, ref company_rn) = *type_rns.as_ref().unwrap();
-                                    let (add_rn, remove_rn) = if new_type == TYPE_COMPANY_LABEL {
-                                        (company_rn.as_str(), person_rn.as_str())
-                                    } else {
-                                        (person_rn.as_str(), company_rn.as_str())
-                                    };
-                                    // Add new type
-                                    let req = google_people1::api::ModifyContactGroupMembersRequest {
-                                        resource_names_to_add: Some(vec![rn.to_string()]),
-                                        resource_names_to_remove: None,
-                                    };
-                                    hub.contact_groups().members_modify(req, add_rn).doit().await?;
-                                    tokio::time::sleep(MUTATE_DELAY).await;
-                                    // Remove old type
-                                    let req = google_people1::api::ModifyContactGroupMembersRequest {
-                                        resource_names_to_add: None,
-                                        resource_names_to_remove: Some(vec![rn.to_string()]),
-                                    };
-                                    hub.contact_groups().members_modify(req, remove_rn).doit().await?;
-                                    tokio::time::sleep(MUTATE_DELAY).await;
-                                    eprintln!("  Changed type to {}.", new_type);
+                use std::io::Write;
+                loop {
+                    eprint!("  Assign [p]erson / [c]ompany / [e]dit / [s]kip? ");
+                    std::io::stderr().flush()?;
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input)?;
+                    match input.trim().chars().next() {
+                        Some('p') | Some('c') => {
+                            let is_company_choice = input.trim().starts_with('c');
+                            if let Some(rn) = resource_name {
+                                if type_rns.is_none() {
+                                    type_rns = Some(ensure_type_labels_exist(hub, ctx.user_groups).await?);
                                 }
-                                break;
+                                let (ref person_rn, ref company_rn) = *type_rns.as_ref().unwrap();
+                                let target_rn = if is_company_choice { company_rn } else { person_rn };
+                                let label = if is_company_choice { TYPE_COMPANY_LABEL } else { TYPE_PERSON_LABEL };
+                                let req = google_people1::api::ModifyContactGroupMembersRequest {
+                                    resource_names_to_add: Some(vec![rn.to_string()]),
+                                    resource_names_to_remove: None,
+                                };
+                                hub.contact_groups().members_modify(req, target_rn).doit().await?;
+                                tokio::time::sleep(MUTATE_DELAY).await;
+                                eprintln!("  Assigned {}.", label);
                             }
-                            Some('e') => {
-                                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
-                                break;
-                            }
-                            Some('s') => {
-                                eprintln!("  Skipped.");
-                                break;
-                            }
-                            _ => eprintln!("  Invalid choice. Enter y, e, or s."),
+                            break;
                         }
+                        Some('e') => {
+                            interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                            break;
+                        }
+                        Some('s') => {
+                            eprintln!("  Skipped.");
+                            break;
+                        }
+                        _ => eprintln!("  Invalid choice. Enter p, c, e, or s."),
                     }
-                } else {
-                    interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
                 }
             }
         }
@@ -3903,7 +3870,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-no-identity") {
         log("check-contact-no-identity");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts with no given name and no company (check-contact-no-identity)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts with no type tag (check-contact-no-identity)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
         let no_identity = check_no_identity(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-no-identity", no_identity));
     }
