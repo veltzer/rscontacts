@@ -557,73 +557,6 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
 
 // --- Prompt helpers ---
 
-pub fn prompt_given_name_fix_action(_given: &str, family: &str, split_source: Option<&str>) -> Result<char, Box<dyn std::error::Error>> {
-    use std::io::Write;
-    loop {
-        if let Some(source) = split_source {
-            let (alpha, numeric) = split_alpha_numeric(source).unwrap();
-            eprint!("  s[w]ap family name \"{}\" to given name / s[p]lit \"{}\" -> given name \"{}\", suffix \"{}\" / [c]ompany / [r]ename / s[u]ffix / [l]abel / [e]dit / [d]elete / [s]kip? ", family, source, alpha, numeric);
-        } else {
-            eprint!("  s[w]ap family name \"{}\" to given name / [c]ompany / [r]ename / s[u]ffix / [l]abel / [e]dit / [d]elete / [s]kip? ", family);
-        }
-        std::io::stderr().flush()?;
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        match input.trim().chars().next() {
-            Some(c @ ('w' | 'c' | 'r' | 'u' | 'l' | 'e' | 'd' | 's')) => return Ok(c),
-            Some('p') if split_source.is_some() => return Ok('p'),
-            _ => {
-                if split_source.is_some() {
-                    eprintln!("  Invalid choice. Enter w, p, c, r, u, l, e, d, or s.");
-                } else {
-                    eprintln!("  Invalid choice. Enter w, c, r, u, l, e, d, or s.");
-                }
-            }
-        }
-    }
-}
-
-pub fn prompt_fix_action(_name: &str) -> Result<char, Box<dyn std::error::Error>> {
-    use std::io::Write;
-    loop {
-        eprint!("  [r]ename / [e]dit / [d]elete / [s]kip? ");
-        std::io::stderr().flush()?;
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        match input.trim().chars().next() {
-            Some(c @ ('r' | 'e' | 'd' | 's')) => return Ok(c),
-            _ => eprintln!("  Invalid choice. Enter r, e, d, or s."),
-        }
-    }
-}
-
-pub fn prompt_family_name_fix_action() -> Result<char, Box<dyn std::error::Error>> {
-    use std::io::Write;
-    loop {
-        eprint!("  [x] remove family name / [r]ename / s[u]ffix / [l]abel / [e]dit / [d]elete / [s]kip? ");
-        std::io::stderr().flush()?;
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        match input.trim().chars().next() {
-            Some(c @ ('x' | 'r' | 'u' | 'l' | 'e' | 'd' | 's')) => return Ok(c),
-            _ => eprintln!("  Invalid choice. Enter x, r, u, l, e, d, or s."),
-        }
-    }
-}
-
-pub fn prompt_new_name(old_name: &str) -> Result<String, Box<dyn std::error::Error>> {
-    use std::io::Write;
-    eprint!("  New name for \"{}\": ", old_name);
-    std::io::stderr().flush()?;
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let new_name = input.trim().to_string();
-    if new_name.is_empty() {
-        return Err("Empty name not allowed".into());
-    }
-    Ok(new_name)
-}
-
 pub fn prompt_yes_no(message: &str) -> Result<bool, Box<dyn std::error::Error>> {
     use std::io::Write;
     loop {
@@ -683,22 +616,6 @@ pub fn prompt_rename_label(name: &str) -> Result<Option<String>, Box<dyn std::er
 }
 
 // --- Display helpers ---
-
-/// Split a string into its alpha prefix and numeric suffix.
-/// E.g. "Mike2" -> Some(("Mike", "2")), "Mike" -> None, "123" -> None
-pub fn split_alpha_numeric(s: &str) -> Option<(&str, &str)> {
-    let num_start = s.find(|c: char| c.is_ascii_digit())?;
-    if num_start == 0 {
-        return None;
-    }
-    let alpha = &s[..num_start];
-    let numeric = &s[num_start..];
-    if numeric.chars().all(|c| c.is_ascii_digit()) {
-        Some((alpha, numeric))
-    } else {
-        None
-    }
-}
 
 pub fn is_starred(person: &google_people1::api::Person) -> bool {
     person.memberships.as_ref().is_some_and(|memberships| {
