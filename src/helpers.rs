@@ -24,11 +24,13 @@ pub struct Config {
     pub check_contact_name_is_company: CompanyNamesConfig,
     #[serde(default, rename = "check-contact-given-name-known")]
     pub check_contact_given_name_known: GivenNamesConfig,
+    #[allow(dead_code)]
     #[serde(default)]
     pub services: ServicesConfig,
 }
 
 #[derive(serde::Deserialize, Default, Debug)]
+#[allow(dead_code)]
 pub struct ServicesConfig {
     #[serde(default)]
     pub names: Vec<String>,
