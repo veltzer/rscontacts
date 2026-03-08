@@ -304,6 +304,89 @@ pub fn person_base_name(person: &google_people1::api::Person) -> String {
     parts.join(" ")
 }
 
+/// Format a person as a pipe-delimited line showing all non-empty fields.
+/// This is the canonical way to display a contact — used by `list` and all checks.
+/// `group_names` is optional; when provided, labels are included.
+pub fn format_person_line(person: &google_people1::api::Person, group_names: Option<&std::collections::HashMap<String, String>>) -> String {
+    let names = person.names.as_ref().and_then(|n| n.first());
+    let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+    let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+    let middle = names.and_then(|n| n.middle_name.as_deref()).unwrap_or("");
+    let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
+    let prefix_name = names.and_then(|n| n.honorific_prefix.as_deref()).unwrap_or("");
+    let company = person.organizations.as_ref()
+        .and_then(|orgs| orgs.first())
+        .and_then(|o| o.name.as_deref())
+        .unwrap_or("");
+    let title = person.organizations.as_ref()
+        .and_then(|orgs| orgs.first())
+        .and_then(|o| o.title.as_deref())
+        .unwrap_or("");
+    let department = person.organizations.as_ref()
+        .and_then(|orgs| orgs.first())
+        .and_then(|o| o.department.as_deref())
+        .unwrap_or("");
+
+    let mut parts = Vec::new();
+    if !prefix_name.is_empty() { parts.push(format!("prefix: {}", prefix_name)); }
+    if !given.is_empty() { parts.push(format!("given: {}", given)); }
+    if !middle.is_empty() { parts.push(format!("middle: {}", middle)); }
+    if !family.is_empty() { parts.push(format!("family: {}", family)); }
+    if !suffix.is_empty() { parts.push(format!("suffix: {}", suffix)); }
+    if !company.is_empty() { parts.push(format!("company: {}", company)); }
+    if !title.is_empty() { parts.push(format!("title: {}", title)); }
+    if !department.is_empty() { parts.push(format!("dept: {}", department)); }
+
+    if let Some(nicknames) = &person.nicknames {
+        for n in nicknames {
+            if let Some(val) = &n.value {
+                parts.push(format!("nickname: {}", val));
+            }
+        }
+    }
+
+    if let Some(email_addrs) = &person.email_addresses {
+        for e in email_addrs {
+            if let Some(val) = e.value.as_deref()
+                && !val.is_empty() {
+                    let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
+                    if t.is_empty() {
+                        parts.push(format!("email: {}", val));
+                    } else {
+                        parts.push(format!("email: {} [{}]", val, t));
+                    }
+                }
+        }
+    }
+
+    if let Some(phones) = &person.phone_numbers {
+        for p in phones {
+            if let Some(val) = p.value.as_deref()
+                && !val.is_empty() {
+                    let t = p.formatted_type.as_deref().or(p.type_.as_deref()).unwrap_or("");
+                    if t.is_empty() {
+                        parts.push(format!("phone: {}", val));
+                    } else {
+                        parts.push(format!("phone: {} [{}]", val, t));
+                    }
+                }
+        }
+    }
+
+    if let Some(group_names) = group_names {
+        let contact_labels = person_labels(person, group_names);
+        if !contact_labels.is_empty() {
+            parts.push(format!("labels: [{}]", contact_labels.join(", ")));
+        }
+    }
+
+    if parts.is_empty() {
+        "<no fields>".to_string()
+    } else {
+        parts.join(" | ")
+    }
+}
+
 pub fn person_has_given_name(person: &google_people1::api::Person) -> bool {
     person.names.as_ref()
         .and_then(|n| n.first())
@@ -314,32 +397,6 @@ pub fn person_has_given_name(person: &google_people1::api::Person) -> bool {
 pub fn person_display_name(person: &google_people1::api::Person) -> String {
     let name = person_name(person);
     if name.is_empty() { "<no name>".to_string() } else { name }
-}
-
-/// Like person_display_name but appends company/suffix detail when present.
-pub fn person_display_name_detailed(person: &google_people1::api::Person) -> String {
-    format!("{}{}", person_display_name(person), person_detail(person))
-}
-
-/// Returns a detail string with company and suffix if present, e.g. " [company: Acme, suffix: 2]"
-/// Returns empty string if neither is set.
-pub fn person_detail(person: &google_people1::api::Person) -> String {
-    let suffix = person.names.as_ref()
-        .and_then(|n| n.first())
-        .and_then(|n| n.honorific_suffix.as_deref())
-        .unwrap_or("");
-    let company = person.organizations.as_ref()
-        .and_then(|orgs| orgs.first())
-        .and_then(|o| o.name.as_deref())
-        .unwrap_or("");
-    let mut parts = Vec::new();
-    if !company.is_empty() { parts.push(format!("company: {}", company)); }
-    if !suffix.is_empty() { parts.push(format!("suffix: {}", suffix)); }
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" [{}]", parts.join(", "))
-    }
 }
 
 pub fn build_group_name_map(groups: &[google_people1::api::ContactGroup]) -> std::collections::HashMap<String, String> {
@@ -365,15 +422,6 @@ pub fn person_labels(person: &google_people1::api::Person, group_names: &std::co
         .unwrap_or_default()
 }
 
-pub fn person_email(person: &google_people1::api::Person) -> &str {
-    person
-        .email_addresses
-        .as_ref()
-        .and_then(|emails| emails.first())
-        .and_then(|e| e.value.as_deref())
-        .unwrap_or("")
-}
-
 pub async fn update_phone_numbers<F>(hub: &HubType, person: &google_people1::api::Person, transform: F) -> Result<(), Box<dyn std::error::Error>>
 where
     F: Fn(&str) -> Option<String>,
@@ -386,11 +434,10 @@ where
     let mut updated = person.clone();
     if let Some(ref mut nums) = updated.phone_numbers {
         for pn in nums.iter_mut() {
-            if let Some(ref val) = pn.value {
-                if let Some(new_val) = transform(val) {
+            if let Some(ref val) = pn.value
+                && let Some(new_val) = transform(val) {
                     pn.value = Some(new_val);
                 }
-            }
         }
     }
     hub.people()
@@ -618,22 +665,6 @@ pub fn prompt_rename_label(name: &str) -> Result<Option<String>, Box<dyn std::er
 }
 
 // --- Display helpers ---
-
-pub fn print_name_with_email(name: &str, email: &str, prefix: &str) {
-    if !email.is_empty() {
-        println!("{}{} | {}", prefix, name, email);
-    } else {
-        println!("{}{}", prefix, name);
-    }
-}
-
-pub fn print_phone_fix(name: &str, phone: &str, fixed: &str, fix: bool, dry_run: bool, prefix: &str) {
-    if fix || dry_run {
-        println!("{}{} | {} -> {}", prefix, name, phone, fixed);
-    } else {
-        println!("{}{} | {}", prefix, name, phone);
-    }
-}
 
 /// Split a string into its alpha prefix and numeric suffix.
 /// E.g. "Mike2" -> Some(("Mike", "2")), "Mike" -> None, "123" -> None

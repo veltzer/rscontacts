@@ -47,14 +47,14 @@ fn main() {
     };
 
     let build_timestamp = {
-        let output = Command::new("date")
+        
+        Command::new("date")
             .arg("+%Y-%m-%d %H:%M:%S")
             .output()
             .ok()
             .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
-            .unwrap_or_else(|| "unknown".to_owned());
-        output
+            .unwrap_or_else(|| "unknown".to_owned())
     };
 
     println!("cargo:rustc-env=RUST_EDITION={edition}");
