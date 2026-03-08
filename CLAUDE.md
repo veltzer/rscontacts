@@ -26,7 +26,7 @@ Single-binary Rust CLI for auditing and fixing Google Contacts. Three source fil
 ## Key Conventions
 
 - Every new check command must be added to `check-all` (`cmd_check_all`).
-- Check helper functions take `prefix: &str` and `header: Option<&str>` params so they can be reused by both standalone commands and `check-all`.
+- Check helper functions take a `CheckContext` struct (containing `fix`, `dry_run`, `prefix`, `header`, `quiet`, `user_groups`, `label_names`, `group_names`) so they can be reused by both standalone commands and `check-all`.
 - "Labels" in Google Contacts = contact group memberships on Person (checked by `check-contact-no-label`). Phone "labels" (mobile/home/work) = `type_`/`formatted_type` on PhoneNumber (checked by `check-phone-no-label`). These are distinct concepts.
 - Phone format checks use `is_fixable_phone()` to skip non-numeric entries (star codes, short codes, alphanumeric strings).
 - OAuth credentials stored at `~/.config/rscontacts/credentials.json`; token cached at `~/.config/rscontacts/token_cache.json`.
