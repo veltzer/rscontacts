@@ -962,7 +962,7 @@ pub async fn cmd_check_contact_company_known(fix: bool, dry_run: bool) -> Result
 }
 
 async fn check_company_known(
-    _hub: &HubType,
+    hub: &HubType,
     contacts: &[google_people1::api::Person],
     companies: &[String],
     fix: bool,
@@ -970,16 +970,14 @@ async fn check_company_known(
     prefix: &str,
     header: Option<&str>,
     quiet: bool,
-    _user_groups: &[(&str, &str)],
-    _label_names: &[String],
-    _group_names: &std::collections::HashMap<String, String>,
+    user_groups: &[(&str, &str)],
+    label_names: &[String],
+    group_names: &std::collections::HashMap<String, String>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    let company_set: std::collections::HashSet<String> = companies.iter()
+    let mut company_set: std::collections::HashSet<String> = companies.iter()
         .map(|c| c.to_lowercase())
         .collect();
 
-    // Collect unknown companies and their contact count
-    let mut unknown_companies: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut count = 0;
     for person in contacts {
         let org_name = person.organizations.as_ref()
@@ -999,46 +997,54 @@ async fn check_company_known(
             }
             let display = person_display_name_detailed(person);
             println!("{}  {} (company: \"{}\")", prefix, display, org_name);
+
+            if fix && !dry_run {
+                use std::io::Write;
+                loop {
+                    eprint!("  [a]dd company to config / [e]dit contact / [s]kip? ");
+                    std::io::stderr().flush()?;
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input)?;
+                    match input.trim().chars().next() {
+                        Some('a') => {
+                            add_company_to_config(org_name)?;
+                            company_set.insert(org_name.to_lowercase());
+                            eprintln!("  Added \"{}\" to config.", org_name);
+                            break;
+                        }
+                        Some('e') => {
+                            interactive_edit_contact(hub, person, user_groups, label_names, group_names).await?;
+                            break;
+                        }
+                        Some('s') => {
+                            eprintln!("  Skipped.");
+                            break;
+                        }
+                        _ => eprintln!("  Invalid choice. Enter a, e, or s."),
+                    }
+                }
+            }
         }
-        *unknown_companies.entry(org_name.to_string()).or_default() += 1;
         count += 1;
     }
 
-    if !quiet && count > 0 {
-        if header.is_some() {
-            println!();
-        }
-    }
-
-    if fix && !dry_run && !unknown_companies.is_empty() {
-        use std::io::Write;
-        let mut to_add: Vec<String> = Vec::new();
-        for (company, contact_count) in &unknown_companies {
-            eprint!("  Add \"{}\" ({} contacts) to config? [y/n] ", company, contact_count);
-            std::io::stderr().flush()?;
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
-            if input.trim().eq_ignore_ascii_case("y") {
-                to_add.push(company.clone());
-            }
-        }
-
-        if !to_add.is_empty() {
-            let mut config = load_config();
-            for name in &to_add {
-                if !config.check_contact_name_is_company.companies.iter()
-                    .any(|c| c.eq_ignore_ascii_case(name))
-                {
-                    config.check_contact_name_is_company.companies.push(name.clone());
-                }
-            }
-            config.check_contact_name_is_company.companies.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
-            save_company_list(&config.check_contact_name_is_company.companies)?;
-            eprintln!("  Added {} company name(s) to config.", to_add.len());
-        }
+    if !quiet && count > 0 && header.is_some() {
+        println!();
     }
 
     Ok(count)
+}
+
+fn add_company_to_config(company: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = load_config();
+    if !config.check_contact_name_is_company.companies.iter()
+        .any(|c| c.eq_ignore_ascii_case(company))
+    {
+        config.check_contact_name_is_company.companies.push(company.to_string());
+    }
+    config.check_contact_name_is_company.companies.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    save_company_list(&config.check_contact_name_is_company.companies)?;
+    Ok(())
 }
 
 fn save_company_list(companies: &[String]) -> Result<(), Box<dyn std::error::Error>> {
