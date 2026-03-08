@@ -211,6 +211,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Check that every contact has exactly one of TypePerson or TypeCompany labels
+    CheckContactType {
+        /// Interactively fix each flagged contact
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Check that no contact has a middle name set
     CheckContactNoMiddleName {
         /// Interactively fix each flagged contact
@@ -330,6 +339,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactEmail { fix, dry_run } => commands::cmd_check_contact_email(fix, dry_run).await?,
         Commands::CheckContactEmailDuplicate { fix, dry_run } => commands::cmd_check_contact_email_duplicate(fix, dry_run).await?,
         Commands::CheckPhoneDuplicate { fix, dry_run } => commands::cmd_check_phone_duplicate(fix, dry_run).await?,
+        Commands::CheckContactType { fix, dry_run } => commands::cmd_check_contact_type(fix, dry_run).await?,
         Commands::CheckContactNoMiddleName { fix, dry_run } => commands::cmd_check_contact_no_middle_name(fix, dry_run).await?,
         Commands::CheckContactNoNickname { fix, dry_run } => commands::cmd_check_contact_no_nickname(fix, dry_run).await?,
         Commands::CheckContactLabelNophone { fix, dry_run } => commands::cmd_check_contact_label_nophone(fix, dry_run).await?,

@@ -28,6 +28,7 @@ skip = [
     # "check-contact-name-is-company",
     # "check-contact-company-known",
     # "check-contact-displayname-duplicate",
+    # "check-contact-type",
     # "check-contact-no-middle-name",
     # "check-contact-no-nickname",
     # "check-contact-no-label",
@@ -2427,6 +2428,212 @@ async fn interactive_edit_contact(
     Ok(())
 }
 
+pub async fn cmd_check_contact_type(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = if fix {
+        let ug: Vec<(String, String)> = all_groups.iter()
+            .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
+            .filter_map(|g| {
+                let name = g.name.as_deref()?;
+                let rn = g.resource_name.as_deref()?;
+                Some((name.to_string(), rn.to_string()))
+            })
+            .collect();
+        let ln: Vec<String> = ug.iter().map(|(name, _)| name.clone()).collect();
+        (ug, ln)
+    } else {
+        (vec![], vec![])
+    };
+    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    check_contact_type(&hub, &contacts, &ctx).await?;
+    Ok(())
+}
+
+const TYPE_PERSON_LABEL: &str = "TypePerson";
+const TYPE_COMPANY_LABEL: &str = "TypeCompany";
+
+fn person_type_labels(person: &google_people1::api::Person, group_names: &std::collections::HashMap<String, String>) -> (bool, bool) {
+    let labels = person_labels(person, group_names);
+    let has_person = labels.iter().any(|l| l == TYPE_PERSON_LABEL);
+    let has_company = labels.iter().any(|l| l == TYPE_COMPANY_LABEL);
+    (has_person, has_company)
+}
+
+async fn ensure_type_labels_exist(
+    hub: &HubType,
+    user_groups: &[(&str, &str)],
+) -> Result<(String, String), Box<dyn std::error::Error>> {
+    let person_rn = if let Some((_, rn)) = user_groups.iter().find(|(name, _)| *name == TYPE_PERSON_LABEL) {
+        rn.to_string()
+    } else {
+        let new_group = google_people1::api::ContactGroup {
+            name: Some(TYPE_PERSON_LABEL.to_string()),
+            ..Default::default()
+        };
+        let req = google_people1::api::CreateContactGroupRequest {
+            contact_group: Some(new_group),
+            read_group_fields: None,
+        };
+        let (_, created) = hub.contact_groups().create(req).doit().await?;
+        eprintln!("Created label \"{}\"", TYPE_PERSON_LABEL);
+        created.resource_name.ok_or("Created group missing resource name")?
+    };
+
+    let company_rn = if let Some((_, rn)) = user_groups.iter().find(|(name, _)| *name == TYPE_COMPANY_LABEL) {
+        rn.to_string()
+    } else {
+        let new_group = google_people1::api::ContactGroup {
+            name: Some(TYPE_COMPANY_LABEL.to_string()),
+            ..Default::default()
+        };
+        let req = google_people1::api::CreateContactGroupRequest {
+            contact_group: Some(new_group),
+            read_group_fields: None,
+        };
+        let (_, created) = hub.contact_groups().create(req).doit().await?;
+        eprintln!("Created label \"{}\"", TYPE_COMPANY_LABEL);
+        created.resource_name.ok_or("Created group missing resource name")?
+    };
+
+    Ok((person_rn, company_rn))
+}
+
+async fn check_contact_type(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+    let mut type_rns: Option<(String, String)> = None;
+
+    for person in contacts {
+        let (has_person, has_company) = person_type_labels(person, ctx.group_names);
+
+        let issue = if has_person && has_company {
+            Some("has both TypePerson and TypeCompany")
+        } else if !has_person && !has_company {
+            Some("missing TypePerson or TypeCompany")
+        } else {
+            None
+        };
+
+        let Some(issue) = issue else { continue; };
+
+        if !ctx.quiet {
+            if count == 0
+                && let Some(header) = ctx.header {
+                    println!("=== {} ===", header);
+                }
+            println!("{}{} ({})", ctx.prefix, format_person_line(person, Some(ctx.group_names)), issue);
+
+            if ctx.fix && !ctx.dry_run {
+                let resource_name = match person.resource_name.as_deref() {
+                    Some(rn) => rn,
+                    None => { count += 1; continue; }
+                };
+
+                // Lazily ensure labels exist
+                if type_rns.is_none() {
+                    type_rns = Some(ensure_type_labels_exist(hub, ctx.user_groups).await?);
+                }
+                let (ref person_rn, ref company_rn) = *type_rns.as_ref().unwrap();
+
+                use std::io::Write;
+                if has_person && has_company {
+                    // Both — need to remove one
+                    loop {
+                        eprint!("  Remove [p]erson / remove [c]ompany / [e]dit / [s]kip? ");
+                        std::io::stderr().flush()?;
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input)?;
+                        match input.trim().chars().next() {
+                            Some('p') => {
+                                let req = google_people1::api::ModifyContactGroupMembersRequest {
+                                    resource_names_to_add: None,
+                                    resource_names_to_remove: Some(vec![resource_name.to_string()]),
+                                };
+                                hub.contact_groups().members_modify(req, person_rn).doit().await?;
+                                eprintln!("  Removed TypePerson.");
+                                tokio::time::sleep(MUTATE_DELAY).await;
+                                break;
+                            }
+                            Some('c') => {
+                                let req = google_people1::api::ModifyContactGroupMembersRequest {
+                                    resource_names_to_add: None,
+                                    resource_names_to_remove: Some(vec![resource_name.to_string()]),
+                                };
+                                hub.contact_groups().members_modify(req, company_rn).doit().await?;
+                                eprintln!("  Removed TypeCompany.");
+                                tokio::time::sleep(MUTATE_DELAY).await;
+                                break;
+                            }
+                            Some('e') => {
+                                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                                break;
+                            }
+                            Some('s') => {
+                                eprintln!("  Skipped.");
+                                break;
+                            }
+                            _ => eprintln!("  Invalid choice. Enter p, c, e, or s."),
+                        }
+                    }
+                } else {
+                    // Neither — need to assign one
+                    loop {
+                        eprint!("  Assign [p]erson / assign [c]ompany / [e]dit / [s]kip? ");
+                        std::io::stderr().flush()?;
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input)?;
+                        match input.trim().chars().next() {
+                            Some('p') => {
+                                let req = google_people1::api::ModifyContactGroupMembersRequest {
+                                    resource_names_to_add: Some(vec![resource_name.to_string()]),
+                                    resource_names_to_remove: None,
+                                };
+                                hub.contact_groups().members_modify(req, person_rn).doit().await?;
+                                eprintln!("  Assigned TypePerson.");
+                                tokio::time::sleep(MUTATE_DELAY).await;
+                                break;
+                            }
+                            Some('c') => {
+                                let req = google_people1::api::ModifyContactGroupMembersRequest {
+                                    resource_names_to_add: Some(vec![resource_name.to_string()]),
+                                    resource_names_to_remove: None,
+                                };
+                                hub.contact_groups().members_modify(req, company_rn).doit().await?;
+                                eprintln!("  Assigned TypeCompany.");
+                                tokio::time::sleep(MUTATE_DELAY).await;
+                                break;
+                            }
+                            Some('e') => {
+                                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                                break;
+                            }
+                            Some('s') => {
+                                eprintln!("  Skipped.");
+                                break;
+                            }
+                            _ => eprintln!("  Invalid choice. Enter p, c, e, or s."),
+                        }
+                    }
+                }
+            }
+        }
+        count += 1;
+    }
+
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
+
+    Ok(count)
+}
+
 pub async fn cmd_check_contact_no_middle_name(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
@@ -3296,6 +3503,13 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Duplicate contact names (check-contact-displayname-duplicate)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
         let name_dup = check_name_duplicate(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-displayname-duplicate", name_dup));
+    }
+
+    if !skip.contains("check-contact-type") {
+        log("check-contact-type");
+        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts missing or having both TypePerson/TypeCompany (check-contact-type)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let type_count = check_contact_type(&hub, &all_contacts, &ctx).await?;
+        results.push(("check-contact-type", type_count));
     }
 
     if !skip.contains("check-contact-no-middle-name") {
