@@ -227,14 +227,18 @@ where
             }
 
             if fix && !dry_run {
-                let transform = transform.clone();
-                update_phone_numbers(hub, person, |val| {
-                    if predicate(val) {
-                        Some(transform(val))
-                    } else {
-                        None
-                    }
-                }).await?;
+                if prompt_yes_no("  Fix?")? {
+                    let transform = transform.clone();
+                    update_phone_numbers(hub, person, |val| {
+                        if predicate(val) {
+                            Some(transform(val))
+                        } else {
+                            None
+                        }
+                    }).await?;
+                } else {
+                    eprintln!("  Skipped.");
+                }
             }
         }
 
@@ -1552,26 +1556,30 @@ async fn check_email(hub: &HubType, contacts: &[google_people1::api::Person], fi
                     e.value.as_deref().is_some_and(|v| is_valid_email(v) && v != v.to_lowercase().as_str())
                 });
                 if has_caps {
-                    let name = person_display_name(person);
-                    let resource_name = person
-                        .resource_name
-                        .as_deref()
-                        .ok_or("Contact missing resource name")?;
-                    let mut updated = person.clone();
-                    if let Some(ref mut ems) = updated.email_addresses {
-                        for e in ems.iter_mut() {
-                            if let Some(ref val) = e.value {
-                                e.value = Some(val.to_lowercase());
+                    if prompt_yes_no("  Fix?")? {
+                        let name = person_display_name(person);
+                        let resource_name = person
+                            .resource_name
+                            .as_deref()
+                            .ok_or("Contact missing resource name")?;
+                        let mut updated = person.clone();
+                        if let Some(ref mut ems) = updated.email_addresses {
+                            for e in ems.iter_mut() {
+                                if let Some(ref val) = e.value {
+                                    e.value = Some(val.to_lowercase());
+                                }
                             }
                         }
+                        hub.people()
+                            .update_contact(updated, resource_name)
+                            .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
+                            .doit()
+                            .await?;
+                        eprintln!("  Lowercased emails for {}", name);
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                    } else {
+                        eprintln!("  Skipped.");
                     }
-                    hub.people()
-                        .update_contact(updated, resource_name)
-                        .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
-                        .doit()
-                        .await?;
-                    eprintln!("  Lowercased emails for {}", name);
-                    tokio::time::sleep(MUTATE_DELAY).await;
                 }
             }
         }
