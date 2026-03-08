@@ -27,7 +27,6 @@ skip = [
     # "check-contact-no-identity",
     # "check-contact-name-is-company",
     # "check-contact-company-known",
-    # "check-contact-given-name-known",
     # "check-contact-displayname-duplicate",
     # "check-contact-no-label",
     # "check-contact-email",
@@ -1099,10 +1098,6 @@ fn save_company_list(companies: &[String]) -> Result<(), Box<dyn std::error::Err
 
 pub async fn cmd_check_contact_given_name_known(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config();
-    if config.check_contact_given_name_known.names.is_empty() {
-        eprintln!("No given names configured. Set [check-contact-given-name-known] names = [\"John\", ...] in config.toml");
-        std::process::exit(1);
-    }
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]).await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
@@ -3019,15 +3014,11 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         results.push(("check-contact-no-identity", no_identity));
     }
 
-    if !skip.contains("check-contact-given-name-known") {
+    {
         log("check-contact-given-name-known");
-        if !config.check_contact_given_name_known.names.is_empty() {
-            let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Given name not in allowed list (check-contact-given-name-known)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
-            let given_name_known = check_given_name_known(&hub, &all_contacts, &config.check_contact_given_name_known.names, &ctx).await?;
-            results.push(("check-contact-given-name-known", given_name_known));
-        } else {
-            eprintln!("Warning: check-contact-given-name-known has no names configured, skipping.");
-        }
+        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Given name not in allowed list (check-contact-given-name-known)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let given_name_known = check_given_name_known(&hub, &all_contacts, &config.check_contact_given_name_known.names, &ctx).await?;
+        results.push(("check-contact-given-name-known", given_name_known));
     }
 
     if !skip.contains("check-contact-name-is-company") {
