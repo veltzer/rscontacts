@@ -2561,9 +2561,9 @@ async fn check_contact_type(
         let (has_person, has_company) = person_type_labels(person, ctx.group_names);
 
         let issue = if has_person && has_company {
-            Some("has both TypePerson and TypeCompany")
+            Some("has both type:Person and type:Company")
         } else if !has_person && !has_company {
-            Some("missing TypePerson or TypeCompany")
+            Some("missing type:Person or type:Company")
         } else {
             None
         };
@@ -2604,7 +2604,7 @@ async fn check_contact_type(
                                     resource_names_to_remove: Some(vec![resource_name.to_string()]),
                                 };
                                 hub.contact_groups().members_modify(req, person_rn).doit().await?;
-                                eprintln!("  Removed TypePerson.");
+                                eprintln!("  Removed type:Person.");
                                 tokio::time::sleep(MUTATE_DELAY).await;
                                 break;
                             }
@@ -2614,7 +2614,7 @@ async fn check_contact_type(
                                     resource_names_to_remove: Some(vec![resource_name.to_string()]),
                                 };
                                 hub.contact_groups().members_modify(req, company_rn).doit().await?;
-                                eprintln!("  Removed TypeCompany.");
+                                eprintln!("  Removed type:Company.");
                                 tokio::time::sleep(MUTATE_DELAY).await;
                                 break;
                             }
@@ -2643,7 +2643,7 @@ async fn check_contact_type(
                                     resource_names_to_remove: None,
                                 };
                                 hub.contact_groups().members_modify(req, person_rn).doit().await?;
-                                eprintln!("  Assigned TypePerson.");
+                                eprintln!("  Assigned type:Person.");
                                 tokio::time::sleep(MUTATE_DELAY).await;
                                 break;
                             }
@@ -2653,7 +2653,7 @@ async fn check_contact_type(
                                     resource_names_to_remove: None,
                                 };
                                 hub.contact_groups().members_modify(req, company_rn).doit().await?;
-                                eprintln!("  Assigned TypeCompany.");
+                                eprintln!("  Assigned type:Company.");
                                 tokio::time::sleep(MUTATE_DELAY).await;
                                 break;
                             }
@@ -2829,13 +2829,13 @@ pub async fn cmd_company_labels(dry_run: bool) -> Result<(), Box<dyn std::error:
         .filter_map(|g| Some((g.resource_name.as_deref()?, g.group_type.as_deref().unwrap_or(""))))
         .collect();
 
-    // Find all company contacts (those with TypeCompany label)
+    // Find all company contacts (those with type:Company label)
     let companies: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
         is_company(p, &group_names)
     }).collect();
 
     if companies.is_empty() {
-        eprintln!("No contacts with TypeCompany label found.");
+        eprintln!("No contacts with type:Company label found.");
         return Ok(());
     }
 
@@ -2866,7 +2866,7 @@ pub async fn cmd_company_labels(dry_run: bool) -> Result<(), Box<dyn std::error:
                     Some(n) => n.as_str(),
                     None => continue,
                 };
-                // Skip TypePerson/TypeCompany
+                // Skip type:Person/type:Company
                 if label_name == TYPE_PERSON_LABEL || label_name == TYPE_COMPANY_LABEL {
                     continue;
                 }
@@ -3820,7 +3820,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-type") {
         log("check-contact-type");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts missing or having both TypePerson/TypeCompany (check-contact-type)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts missing or having both type:Person/type:Company (check-contact-type)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
         let type_count = check_contact_type(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-type", type_count));
     }

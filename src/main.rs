@@ -203,7 +203,7 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Check that every contact has exactly one of TypePerson or TypeCompany labels
+    /// Check that every contact has exactly one of type:Person or type:Company labels
     CheckContactType {
         /// Interactively fix each flagged contact
         #[arg(long)]
@@ -290,7 +290,7 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Auto-assign TypePerson/TypeCompany to contacts missing a type label
+    /// Auto-assign type:Person/type:Company to contacts missing a type label
     AutoContactType {
         /// Show what would be changed without modifying anything
         #[arg(long)]
