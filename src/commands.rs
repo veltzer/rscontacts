@@ -77,6 +77,10 @@ allow = '^[A-Z][a-zA-Z]*$'
 # by check-contact-given-name-known.
 # [check-contact-given-name-known]
 # names = ["John", "Jane", "Mark"]
+
+# List of known services (e.g. email providers, cloud platforms).
+# [services]
+# names = ["Gmail", "Outlook", "AWS", "GitHub"]
 "#;
 
 pub fn cmd_init_config(force: bool) -> Result<(), Box<dyn std::error::Error>> {
