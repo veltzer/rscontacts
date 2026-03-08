@@ -1966,7 +1966,7 @@ async fn interactive_edit_contact(
 
     loop {
         eprintln!();
-        eprintln!("  Edit: [g]iven name / [f]amily name / su[x]ffix / [c]ompany / [p]hone / [m]ail / [a]dd label / re[v]ove label / [d]elete contact / [s]kip");
+        eprintln!("  Edit: [g]iven name / [f]amily name / su[x]ffix / [c]ompany / [t] department / [p]hone / [m]ail / [a]dd label / re[v]ove label / [d]elete contact / [s]kip");
         eprint!("  > ");
         std::io::stderr().flush()?;
         let mut input = String::new();
@@ -2123,6 +2123,46 @@ async fn interactive_edit_contact(
                     eprintln!("  Cleared company.");
                 } else {
                     eprintln!("  Set company to \"{}\"", val);
+                }
+                tokio::time::sleep(MUTATE_DELAY).await;
+            }
+            Some('t') => {
+                let cur_val = current.organizations.as_ref()
+                    .and_then(|orgs| orgs.first())
+                    .and_then(|o| o.department.as_deref())
+                    .unwrap_or("");
+                eprint!("  Department [{}] (new value / - to clear / Enter to skip): ", cur_val);
+                std::io::stderr().flush()?;
+                let mut val = String::new();
+                std::io::stdin().read_line(&mut val)?;
+                let val = val.trim();
+                if val.is_empty() {
+                    eprintln!("  Unchanged.");
+                    continue;
+                }
+                let mut updated = current.clone();
+                if updated.organizations.is_none() || updated.organizations.as_ref().is_some_and(|o| o.is_empty()) {
+                    updated.organizations = Some(vec![google_people1::api::Organization::default()]);
+                }
+                if let Some(ref mut orgs) = updated.organizations
+                    && let Some(first) = orgs.first_mut() {
+                        if val == "-" {
+                            first.department = None;
+                        } else {
+                            first.department = Some(val.to_string());
+                        }
+                    }
+                let (_, refreshed) = hub.people()
+                    .update_contact(updated, &resource_name)
+                    .update_person_fields(FieldMask::new::<&str>(&["organizations"]))
+                    .person_fields(FieldMask::new::<&str>(&["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"]))
+                    .doit()
+                    .await?;
+                current = refreshed;
+                if val == "-" {
+                    eprintln!("  Cleared department.");
+                } else {
+                    eprintln!("  Set department to \"{}\"", val);
                 }
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
