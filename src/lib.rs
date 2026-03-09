@@ -194,6 +194,33 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Check that contacts tagged type:Company have given name equal to company field
+    CheckContactTypeCompanyGivenName {
+        /// Interactively fix each flagged contact
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Check that contacts tagged type:Company have a matching company:<name> label
+    CheckContactTypeCompanyNoLabel {
+        /// Interactively fix each flagged contact
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Check that contacts tagged type:Company have their company field set
+    CheckContactTypeCompanyNoCompany {
+        /// Interactively fix each flagged contact
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Check that every contact has exactly one of type:Person or type:Company labels
     CheckContactType {
         /// Interactively fix each flagged contact

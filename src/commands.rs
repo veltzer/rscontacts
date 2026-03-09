@@ -2076,6 +2076,177 @@ async fn check_contact_type(
     Ok(count)
 }
 
+pub async fn cmd_check_contact_type_company_given_name(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
+    let user_groups = to_ref_vec(&user_groups_owned);
+    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    check_type_company_given_name(&hub, &contacts, &ctx).await?;
+    Ok(())
+}
+
+async fn check_type_company_given_name(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+    for person in contacts {
+        if !is_company(person, ctx.group_names) {
+            continue;
+        }
+
+        let company_name = person.organizations.as_ref()
+            .and_then(|orgs| orgs.first())
+            .and_then(|o| o.name.as_deref())
+            .unwrap_or("");
+        if company_name.is_empty() {
+            continue;
+        }
+
+        let given_name = person.names.as_ref()
+            .and_then(|n| n.first())
+            .and_then(|n| n.given_name.as_deref())
+            .unwrap_or("");
+
+        if given_name == company_name {
+            continue;
+        }
+
+        if !ctx.quiet {
+            if count == 0
+                && let Some(header) = ctx.header {
+                    println!("=== {} ===", header);
+                }
+            println!("{}{} (given name \"{}\" != company \"{}\")", ctx.prefix, format_person_line(person, Some(ctx.group_names)), given_name, company_name);
+
+            if ctx.fix && !ctx.dry_run {
+                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+            }
+        }
+        count += 1;
+    }
+
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
+
+    Ok(count)
+}
+
+pub async fn cmd_check_contact_type_company_no_label(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
+    let user_groups = to_ref_vec(&user_groups_owned);
+    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    check_type_company_no_label(&hub, &contacts, &ctx).await?;
+    Ok(())
+}
+
+async fn check_type_company_no_label(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+    for person in contacts {
+        if !is_company(person, ctx.group_names) {
+            continue;
+        }
+
+        let company_name = person.organizations.as_ref()
+            .and_then(|orgs| orgs.first())
+            .and_then(|o| o.name.as_deref())
+            .unwrap_or("");
+        if company_name.is_empty() {
+            continue;
+        }
+
+        let expected_label = format!("company:{}", company_name);
+        let labels = person_labels(person, ctx.group_names);
+        if labels.iter().any(|l| l == &expected_label) {
+            continue;
+        }
+
+        if !ctx.quiet {
+            if count == 0
+                && let Some(header) = ctx.header {
+                    println!("=== {} ===", header);
+                }
+            println!("{}{} (missing label \"{}\")", ctx.prefix, format_person_line(person, Some(ctx.group_names)), expected_label);
+
+            if ctx.fix && !ctx.dry_run {
+                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+            }
+        }
+        count += 1;
+    }
+
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
+
+    Ok(count)
+}
+
+pub async fn cmd_check_contact_type_company_no_company(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
+    let user_groups = to_ref_vec(&user_groups_owned);
+    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    check_type_company_no_company(&hub, &contacts, &ctx).await?;
+    Ok(())
+}
+
+async fn check_type_company_no_company(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+    for person in contacts {
+        if !is_company(person, ctx.group_names) {
+            continue;
+        }
+
+        let has_company_field = person.organizations.as_ref()
+            .and_then(|orgs| orgs.first())
+            .and_then(|o| o.name.as_deref())
+            .is_some_and(|v| !v.is_empty());
+        if has_company_field {
+            continue;
+        }
+
+        if !ctx.quiet {
+            if count == 0
+                && let Some(header) = ctx.header {
+                    println!("=== {} ===", header);
+                }
+            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+
+            if ctx.fix && !ctx.dry_run {
+                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+            }
+        }
+        count += 1;
+    }
+
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
+
+    Ok(count)
+}
+
 pub async fn cmd_check_contact_no_middle_name(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
@@ -2897,6 +3068,27 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts missing or having both type:Person/type:Company (check-contact-type)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
         let type_count = check_contact_type(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-type", type_count));
+    }
+
+    if !skip.contains("check-contact-type-company-no-company") {
+        log("check-contact-type-company-no-company");
+        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Company-tagged contacts without company field (check-contact-type-company-no-company)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let type_company_no_company = check_type_company_no_company(&hub, &all_contacts, &ctx).await?;
+        results.push(("check-contact-type-company-no-company", type_company_no_company));
+    }
+
+    if !skip.contains("check-contact-type-company-given-name") {
+        log("check-contact-type-company-given-name");
+        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Company-tagged contacts with given name != company field (check-contact-type-company-given-name)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let type_company_given_name = check_type_company_given_name(&hub, &all_contacts, &ctx).await?;
+        results.push(("check-contact-type-company-given-name", type_company_given_name));
+    }
+
+    if !skip.contains("check-contact-type-company-no-label") {
+        log("check-contact-type-company-no-label");
+        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Company-tagged contacts missing company:<name> label (check-contact-type-company-no-label)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let type_company_no_label = check_type_company_no_label(&hub, &all_contacts, &ctx).await?;
+        results.push(("check-contact-type-company-no-label", type_company_no_label));
     }
 
     if !skip.contains("check-contact-no-middle-name") {
