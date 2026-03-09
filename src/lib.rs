@@ -304,6 +304,8 @@ pub enum Commands {
         /// Name (or part of name) to search for
         name: String,
     },
+    /// Export contacts as JSON (only contacts with a display name)
+    ExportJson,
     /// Generate a default config file at ~/.config/rscontacts/config.toml
     InitConfig {
         /// Overwrite existing config file

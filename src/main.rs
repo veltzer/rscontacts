@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CompactSuffixesForContacts { dry_run } => commands::cmd_compact_suffixes_for_contacts(dry_run).await?,
         Commands::Complete { shell } => rscontacts::generate_completions(shell),
         Commands::EditContact { ref name } => commands::cmd_edit_contact(name).await?,
+        Commands::ExportJson => commands::cmd_export_json().await?,
         Commands::InitConfig { force } => commands::cmd_init_config(force)?,
         Commands::List { emails, labels, starred } => commands::cmd_list(emails, labels, starred).await?,
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,

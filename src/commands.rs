@@ -2076,6 +2076,24 @@ async fn check_contact_type(
     Ok(count)
 }
 
+pub async fn cmd_export_json() -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let all_fields = &[
+        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
+        "organizations", "memberships", "biographies", "urls", "events",
+        "relations", "nicknames", "occupations", "interests", "skills",
+        "userDefined", "imClients", "sipAddresses", "locations",
+        "externalIds", "clientData", "metadata",
+    ];
+    let contacts = fetch_all_contacts(&hub, all_fields).await?;
+    let with_name: Vec<_> = contacts.into_iter().filter(|p| {
+        !person_name(p).is_empty()
+    }).collect();
+    let json = serde_json::to_string_pretty(&with_name)?;
+    println!("{}", json);
+    Ok(())
+}
+
 pub async fn cmd_check_contact_type_company_given_name(fix: bool, auto_fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
