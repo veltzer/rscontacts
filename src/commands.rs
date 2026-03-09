@@ -2076,7 +2076,7 @@ async fn check_contact_type(
     Ok(count)
 }
 
-pub async fn cmd_check_contact_type_company_given_name(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_type_company_given_name(fix: bool, auto_fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
@@ -2084,7 +2084,7 @@ pub async fn cmd_check_contact_type_company_given_name(fix: bool, dry_run: bool)
     let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
     let user_groups = to_ref_vec(&user_groups_owned);
     let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
-    check_type_company_given_name(&hub, &contacts, &ctx).await?;
+    check_type_company_given_name(&hub, &contacts, &ctx, auto_fix).await?;
     Ok(())
 }
 
@@ -2092,6 +2092,7 @@ async fn check_type_company_given_name(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
+    auto_fix: bool,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
@@ -2123,7 +2124,29 @@ async fn check_type_company_given_name(
                 }
             println!("{}{} (given name \"{}\" != company \"{}\")", ctx.prefix, format_person_line(person, Some(ctx.group_names)), given_name, company_name);
 
-            if ctx.fix && !ctx.dry_run {
+            if auto_fix && !ctx.dry_run {
+                let resource_name = person.resource_name.as_deref()
+                    .ok_or("Contact missing resource name")?;
+                let mut updated = person.clone();
+                if updated.names.is_none() || updated.names.as_ref().is_some_and(|n| n.is_empty()) {
+                    updated.names = Some(vec![google_people1::api::Name::default()]);
+                }
+                if let Some(ref mut names) = updated.names
+                    && let Some(first) = names.first_mut() {
+                        first.given_name = Some(company_name.to_string());
+                        let f = first.family_name.as_deref().unwrap_or("");
+                        let combined = [company_name, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
+                        first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
+                    }
+                hub.people()
+                    .update_contact(updated, resource_name)
+                    .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                    .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
+                    .doit()
+                    .await?;
+                eprintln!("  Set given name to \"{}\"", company_name);
+                tokio::time::sleep(MUTATE_DELAY).await;
+            } else if ctx.fix && !ctx.dry_run {
                 interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
             }
         }
@@ -2137,15 +2160,15 @@ async fn check_type_company_given_name(
     Ok(count)
 }
 
-pub async fn cmd_check_contact_type_company_no_label(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_type_company_no_label(fix: bool, auto_fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
     let group_names = build_group_name_map(&all_groups);
-    let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
+    let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix || auto_fix);
     let user_groups = to_ref_vec(&user_groups_owned);
     let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
-    check_type_company_no_label(&hub, &contacts, &ctx).await?;
+    check_type_company_no_label(&hub, &contacts, &ctx, auto_fix).await?;
     Ok(())
 }
 
@@ -2153,6 +2176,7 @@ async fn check_type_company_no_label(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
+    auto_fix: bool,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
@@ -2181,7 +2205,37 @@ async fn check_type_company_no_label(
                 }
             println!("{}{} (missing label \"{}\")", ctx.prefix, format_person_line(person, Some(ctx.group_names)), expected_label);
 
-            if ctx.fix && !ctx.dry_run {
+            if auto_fix && !ctx.dry_run {
+                let resource_name = person.resource_name.as_deref()
+                    .ok_or("Contact missing resource name")?;
+                // Find or create the contact group for the expected label
+                let group_rn = if let Some((_, rn)) = ctx.user_groups.iter().find(|(name, _)| *name == expected_label) {
+                    rn.to_string()
+                } else {
+                    let new_group = google_people1::api::ContactGroup {
+                        name: Some(expected_label.clone()),
+                        ..Default::default()
+                    };
+                    let req = google_people1::api::CreateContactGroupRequest {
+                        contact_group: Some(new_group),
+                        read_group_fields: None,
+                    };
+                    let (_, created) = hub.contact_groups().create(req).doit().await?;
+                    let rn = created.resource_name
+                        .ok_or("Created group missing resource name")?;
+                    eprintln!("  Created label \"{}\"", expected_label);
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                    rn
+                };
+                // Add contact to the group
+                let req = google_people1::api::ModifyContactGroupMembersRequest {
+                    resource_names_to_add: Some(vec![resource_name.to_string()]),
+                    resource_names_to_remove: None,
+                };
+                hub.contact_groups().members_modify(req, &group_rn).doit().await?;
+                eprintln!("  Assigned label \"{}\"", expected_label);
+                tokio::time::sleep(MUTATE_DELAY).await;
+            } else if ctx.fix && !ctx.dry_run {
                 interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
             }
         }
@@ -3080,14 +3134,14 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     if !skip.contains("check-contact-type-company-given-name") {
         log("check-contact-type-company-given-name");
         let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Company-tagged contacts with given name != company field (check-contact-type-company-given-name)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
-        let type_company_given_name = check_type_company_given_name(&hub, &all_contacts, &ctx).await?;
+        let type_company_given_name = check_type_company_given_name(&hub, &all_contacts, &ctx, false).await?;
         results.push(("check-contact-type-company-given-name", type_company_given_name));
     }
 
     if !skip.contains("check-contact-type-company-no-label") {
         log("check-contact-type-company-no-label");
         let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Company-tagged contacts missing company:<name> label (check-contact-type-company-no-label)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
-        let type_company_no_label = check_type_company_no_label(&hub, &all_contacts, &ctx).await?;
+        let type_company_no_label = check_type_company_no_label(&hub, &all_contacts, &ctx, false).await?;
         results.push(("check-contact-type-company-no-label", type_company_no_label));
     }
 

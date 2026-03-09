@@ -199,6 +199,9 @@ pub enum Commands {
         /// Interactively fix each flagged contact
         #[arg(long)]
         fix: bool,
+        /// Automatically set given name to company field value
+        #[arg(long)]
+        auto_fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
@@ -208,6 +211,9 @@ pub enum Commands {
         /// Interactively fix each flagged contact
         #[arg(long)]
         fix: bool,
+        /// Automatically create and assign the company:<name> label
+        #[arg(long)]
+        auto_fix: bool,
         /// Show what would be changed without modifying anything
         #[arg(long)]
         dry_run: bool,
