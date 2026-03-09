@@ -2076,21 +2076,36 @@ async fn check_contact_type(
     Ok(count)
 }
 
-pub async fn cmd_export_json() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_export_json(short: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
-    let all_fields = &[
-        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
-        "organizations", "memberships", "biographies", "urls", "events",
-        "relations", "nicknames", "occupations", "interests", "skills",
-        "userDefined", "imClients", "sipAddresses", "locations",
-        "externalIds", "clientData", "metadata",
-    ];
-    let contacts = fetch_all_contacts(&hub, all_fields).await?;
+    let fields: &[&str] = if short {
+        &["names", "organizations"]
+    } else {
+        &[
+            "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
+            "organizations", "memberships", "biographies", "urls", "events",
+            "relations", "nicknames", "occupations", "interests", "skills",
+            "userDefined", "imClients", "sipAddresses", "locations",
+            "externalIds", "clientData", "metadata",
+        ]
+    };
+    let contacts = fetch_all_contacts(&hub, fields).await?;
     let with_name: Vec<_> = contacts.into_iter().filter(|p| {
         !person_name(p).is_empty()
     }).collect();
-    let json = serde_json::to_string_pretty(&with_name)?;
-    println!("{}", json);
+    if short {
+        let short_entries: Vec<_> = with_name.iter().map(|p| {
+            serde_json::json!({
+                "resourceName": p.resource_name,
+                "displayName": person_display_name(p),
+            })
+        }).collect();
+        let json = serde_json::to_string_pretty(&short_entries)?;
+        println!("{}", json);
+    } else {
+        let json = serde_json::to_string_pretty(&with_name)?;
+        println!("{}", json);
+    }
     Ok(())
 }
 
