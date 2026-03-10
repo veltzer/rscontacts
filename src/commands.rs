@@ -2162,94 +2162,7 @@ pub async fn cmd_sync_gnome_contacts(dry_run: bool) -> Result<(), Box<dyn std::e
             .and_then(|n| n.value.as_deref())
             .unwrap_or("");
 
-        // Build VCard
-        let mut vcard = String::new();
-        vcard.push_str("BEGIN:VCARD\r\n");
-        vcard.push_str("VERSION:3.0\r\n");
-        vcard.push_str(&format!("UID:{}\r\n", uid));
-        vcard.push_str(&format!("REV:{}\r\n", now));
-        vcard.push_str(&format!("FN:{}\r\n", full));
-        if !given.is_empty() || !family.is_empty() {
-            vcard.push_str(&format!("N:{};{};;;\r\n", family, given));
-        }
-        if !nickname.is_empty() {
-            vcard.push_str(&format!("NICKNAME:{}\r\n", nickname));
-        }
-
-        // Organization
-        if let Some(org) = person.organizations.as_ref().and_then(|o| o.first()) {
-            if let Some(ref name) = org.name {
-                vcard.push_str(&format!("ORG:{}\r\n", name));
-            }
-            if let Some(ref title) = org.title {
-                vcard.push_str(&format!("TITLE:{}\r\n", title));
-            }
-        }
-
-        // Phone numbers
-        if let Some(ref phones) = person.phone_numbers {
-            for phone in phones {
-                if let Some(ref value) = phone.value {
-                    let ptype = phone.type_.as_deref().or(phone.formatted_type.as_deref()).unwrap_or("voice");
-                    let vcard_type = match ptype.to_lowercase().as_str() {
-                        "mobile" => "CELL",
-                        "home" => "HOME",
-                        "work" => "WORK",
-                        "main" => "VOICE",
-                        "homefax" | "home fax" => "HOME,FAX",
-                        "workfax" | "work fax" => "WORK,FAX",
-                        _ => "VOICE",
-                    };
-                    vcard.push_str(&format!("TEL;TYPE={}:{}\r\n", vcard_type, value));
-                }
-            }
-        }
-
-        // Email addresses
-        if let Some(ref emails) = person.email_addresses {
-            for email in emails {
-                if let Some(ref value) = email.value {
-                    let etype = email.type_.as_deref().or(email.formatted_type.as_deref()).unwrap_or("other");
-                    let vcard_type = match etype.to_lowercase().as_str() {
-                        "home" => "HOME",
-                        "work" => "WORK",
-                        _ => "OTHER",
-                    };
-                    vcard.push_str(&format!("EMAIL;TYPE={}:{}\r\n", vcard_type, value));
-                }
-            }
-        }
-
-        // Addresses
-        if let Some(ref addresses) = person.addresses {
-            for addr in addresses {
-                let street = addr.street_address.as_deref().unwrap_or("");
-                let city = addr.city.as_deref().unwrap_or("");
-                let region = addr.region.as_deref().unwrap_or("");
-                let postal = addr.postal_code.as_deref().unwrap_or("");
-                let country = addr.country.as_deref().unwrap_or("");
-                let atype = addr.type_.as_deref().unwrap_or("other");
-                let vcard_type = match atype.to_lowercase().as_str() {
-                    "home" => "HOME",
-                    "work" => "WORK",
-                    _ => "OTHER",
-                };
-                vcard.push_str(&format!("ADR;TYPE={}:;;{};{};{};{};{}\r\n", vcard_type, street, city, region, postal, country));
-            }
-        }
-
-        // Birthday
-        if let Some(ref birthdays) = person.birthdays {
-            if let Some(bday) = birthdays.first() {
-                if let Some(ref date) = bday.date {
-                    if let (Some(y), Some(m), Some(d)) = (date.year, date.month, date.day) {
-                        vcard.push_str(&format!("BDAY:{:04}-{:02}-{:02}\r\n", y, m, d));
-                    }
-                }
-            }
-        }
-
-        vcard.push_str("END:VCARD\r\n");
+        let vcard = person_to_vcard(person, &uid, &now);
 
         // file_as: family, given or just full name
         let file_as = if !family.is_empty() && !given.is_empty() {
@@ -3248,11 +3161,14 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     let prefix = if stats { "" } else { "  " };
     let hdr = |s: &'static str| -> Option<&'static str> { if stats { None } else { Some(s) } };
     let log = |name: &str| { if verbose { eprintln!("Running {}...", name); } };
+    let make_ctx = |header: Option<&'static str>| -> CheckContext<'_> {
+        CheckContext { fix, dry_run, prefix, header, quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp }
+    };
 
     if !skip.contains("check-phone-countrycode") {
         log("check-phone-countrycode");
         let country_owned = country.to_string();
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Phones missing country code (check-phone-countrycode)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Phones missing country code (check-phone-countrycode)"));
         let no_country = check_phone_issues(
             &hub, &all_contacts,
             |v| is_fixable_phone(v) && !has_country_code(v),
@@ -3265,7 +3181,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     if !skip.contains("check-phone-format") {
         log("check-phone-format");
         let country_owned2 = country.to_string();
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Phones not in +CC-NUMBER format (check-phone-format)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Phones not in +CC-NUMBER format (check-phone-format)"));
         let bad_format = check_phone_issues(
             &hub, &all_contacts,
             |v| is_fixable_phone(v) && !is_correct_phone_format(v),
@@ -3278,7 +3194,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     if !skip.contains("check-contact-given-name-regexp") {
         log("check-contact-given-name-regexp");
         if config.check_contact_given_name_regexp.allow.is_some() {
-            let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Given name doesn't match allow regex (check-contact-given-name-regexp)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+            let ctx = make_ctx(hdr("Given name doesn't match allow regex (check-contact-given-name-regexp)"));
             let given_name_regexp = check_given_name_regexp(&hub, &all_contacts, &config.check_contact_given_name_regexp, &ctx).await?;
             results.push(("check-contact-given-name-regexp", given_name_regexp));
         } else {
@@ -3289,7 +3205,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     if !skip.contains("check-contact-family-name-regexp") {
         log("check-contact-family-name-regexp");
         if config.check_contact_family_name_regexp.allow.is_some() {
-            let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Family name doesn't match allow regex (check-contact-family-name-regexp)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+            let ctx = make_ctx(hdr("Family name doesn't match allow regex (check-contact-family-name-regexp)"));
             let family_name_regexp = check_family_name_regexp(&hub, &all_contacts, &config.check_contact_family_name_regexp, &ctx).await?;
             results.push(("check-contact-family-name-regexp", family_name_regexp));
         } else {
@@ -3299,28 +3215,28 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-suffix-regexp") {
         log("check-contact-suffix-regexp");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Suffix doesn't match allow regex (check-contact-suffix-regexp)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Suffix doesn't match allow regex (check-contact-suffix-regexp)"));
         let suffix_regexp = check_suffix_regexp(&hub, &all_contacts, &config.check_contact_suffix_regexp, &ctx).await?;
         results.push(("check-contact-suffix-regexp", suffix_regexp));
     }
 
     if !skip.contains("check-contact-no-given-name") {
         log("check-contact-no-given-name");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts with family name but no given name (check-contact-no-given-name)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Contacts with family name but no given name (check-contact-no-given-name)"));
         let no_given = check_no_given_name(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-no-given-name", no_given));
     }
 
     if !skip.contains("check-contact-no-identity") {
         log("check-contact-no-identity");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts with no type tag (check-contact-no-identity)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Contacts with no type tag (check-contact-no-identity)"));
         let no_identity = check_no_identity(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-no-identity", no_identity));
     }
 
     {
         log("check-contact-given-name-known");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Given name not in allowed list (check-contact-given-name-known)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Given name not in allowed list (check-contact-given-name-known)"));
         let given_name_known = check_given_name_known(&hub, &all_contacts, &config.check_contact_given_name_known.names, &ctx).await?;
         results.push(("check-contact-given-name-known", given_name_known));
     }
@@ -3328,7 +3244,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     if !skip.contains("check-contact-given-name-exists") {
         log("check-contact-given-name-exists");
         if !config.check_contact_given_name_known.names.is_empty() {
-            let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Configured given names with no contacts (check-contact-given-name-exists)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+            let ctx = make_ctx(hdr("Configured given names with no contacts (check-contact-given-name-exists)"));
             let given_name_exists = check_given_name_exists(&all_contacts, &config.check_contact_given_name_known.names, &ctx)?;
             results.push(("check-contact-given-name-exists", given_name_exists));
         }
@@ -3337,7 +3253,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     if !skip.contains("check-contact-company-known") {
         log("check-contact-company-known");
         if !config.check_contact_name_is_company.companies.is_empty() {
-            let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Company not in configured list (check-contact-company-known)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+            let ctx = make_ctx(hdr("Company not in configured list (check-contact-company-known)"));
             let company_known = check_company_known(&hub, &all_contacts, &config.check_contact_name_is_company.companies, &ctx).await?;
             results.push(("check-contact-company-known", company_known));
         } else {
@@ -3348,7 +3264,7 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     if !skip.contains("check-contact-company-exists") {
         log("check-contact-company-exists");
         if !config.check_contact_name_is_company.companies.is_empty() {
-            let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Configured companies with no contacts (check-contact-company-exists)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+            let ctx = make_ctx(hdr("Configured companies with no contacts (check-contact-company-exists)"));
             let company_exists = check_company_exists(&all_contacts, &config.check_contact_name_is_company.companies, &ctx)?;
             results.push(("check-contact-company-exists", company_exists));
         }
@@ -3356,49 +3272,49 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-displayname-duplicate") {
         log("check-contact-displayname-duplicate");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Duplicate contact names (check-contact-displayname-duplicate)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Duplicate contact names (check-contact-displayname-duplicate)"));
         let name_dup = check_name_duplicate(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-displayname-duplicate", name_dup));
     }
 
     if !skip.contains("check-contact-type") {
         log("check-contact-type");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts missing or having both type:Person/type:Company (check-contact-type)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Contacts missing or having both type:Person/type:Company (check-contact-type)"));
         let type_count = check_contact_type(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-type", type_count));
     }
 
     if !skip.contains("check-contact-type-company-no-company") {
         log("check-contact-type-company-no-company");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Company-tagged contacts without company field (check-contact-type-company-no-company)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Company-tagged contacts without company field (check-contact-type-company-no-company)"));
         let type_company_no_company = check_type_company_no_company(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-type-company-no-company", type_company_no_company));
     }
 
     if !skip.contains("check-contact-type-company-given-name") {
         log("check-contact-type-company-given-name");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Company-tagged contacts with given name != company field (check-contact-type-company-given-name)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Company-tagged contacts with given name != company field (check-contact-type-company-given-name)"));
         let type_company_given_name = check_type_company_given_name(&hub, &all_contacts, &ctx, false).await?;
         results.push(("check-contact-type-company-given-name", type_company_given_name));
     }
 
     if !skip.contains("check-contact-type-company-no-label") {
         log("check-contact-type-company-no-label");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Company-tagged contacts missing company:<name> label (check-contact-type-company-no-label)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Company-tagged contacts missing company:<name> label (check-contact-type-company-no-label)"));
         let type_company_no_label = check_type_company_no_label(&hub, &all_contacts, &ctx, false).await?;
         results.push(("check-contact-type-company-no-label", type_company_no_label));
     }
 
     if !skip.contains("check-contact-no-middle-name") {
         log("check-contact-no-middle-name");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts with middle name (check-contact-no-middle-name)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Contacts with middle name (check-contact-no-middle-name)"));
         let middle_name_count = check_no_middle_name(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-no-middle-name", middle_name_count));
     }
 
     if !skip.contains("check-contact-no-nickname") {
         log("check-contact-no-nickname");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts with nickname (check-contact-no-nickname)"), quiet: stats, user_groups: &user_groups_regexp, label_names: &label_names_regexp, group_names: &group_names_for_regexp };
+        let ctx = make_ctx(hdr("Contacts with nickname (check-contact-no-nickname)"));
         let nickname_count = check_no_nickname(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-no-nickname", nickname_count));
     }
@@ -3420,45 +3336,48 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         (vec![], vec![])
     };
     let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    let make_ctx_with_labels = |header: Option<&'static str>| -> CheckContext<'_> {
+        CheckContext { fix, dry_run, prefix, header, quiet: stats, user_groups: &user_groups, label_names: &label_names, group_names: &group_names_for_regexp }
+    };
 
     if !skip.contains("check-contact-no-label") {
         log("check-contact-no-label");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Contacts without label (check-contact-no-label)"), quiet: stats, user_groups: &user_groups, label_names: &label_names, group_names: &group_names_for_regexp };
+        let ctx = make_ctx_with_labels(hdr("Contacts without label (check-contact-no-label)"));
         let no_label = check_no_label(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-no-label", no_label));
     }
 
     if !skip.contains("check-phone-label-missing") {
         log("check-phone-label-missing");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Phones without label (check-phone-label-missing)"), quiet: stats, user_groups: &user_groups, label_names: &label_names, group_names: &group_names_for_regexp };
+        let ctx = make_ctx_with_labels(hdr("Phones without label (check-phone-label-missing)"));
         let phone_no_label = check_phone_label_missing(&hub, &all_contacts, &ctx).await?;
         results.push(("check-phone-label-missing", phone_no_label));
     }
 
     if !skip.contains("check-phone-label-english") {
         log("check-phone-label-english");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Non-English phone labels (check-phone-label-english)"), quiet: stats, user_groups: &user_groups, label_names: &label_names, group_names: &group_names_for_regexp };
+        let ctx = make_ctx_with_labels(hdr("Non-English phone labels (check-phone-label-english)"));
         let phone_label_eng = check_phone_label_english(&hub, &all_contacts, &ctx).await?;
         results.push(("check-phone-label-english", phone_label_eng));
     }
 
     if !skip.contains("check-contact-email") {
         log("check-contact-email");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Invalid or uppercase emails (check-contact-email)"), quiet: stats, user_groups: &user_groups, label_names: &label_names, group_names: &group_names_for_regexp };
+        let ctx = make_ctx_with_labels(hdr("Invalid or uppercase emails (check-contact-email)"));
         let email_issues = check_email(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-email", email_issues));
     }
 
     if !skip.contains("check-phone-duplicate") {
         log("check-phone-duplicate");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Duplicate phone numbers (check-phone-duplicate)"), quiet: stats, user_groups: &user_groups, label_names: &label_names, group_names: &group_names_for_regexp };
+        let ctx = make_ctx_with_labels(hdr("Duplicate phone numbers (check-phone-duplicate)"));
         let dup_phones = check_duplicate_phones(&hub, &all_contacts, &ctx).await?;
         results.push(("check-phone-duplicate", dup_phones));
     }
 
     if !skip.contains("check-contact-email-duplicate") {
         log("check-contact-email-duplicate");
-        let ctx = CheckContext { fix, dry_run, prefix, header: hdr("Duplicate email addresses (check-contact-email-duplicate)"), quiet: stats, user_groups: &user_groups, label_names: &label_names, group_names: &group_names_for_regexp };
+        let ctx = make_ctx_with_labels(hdr("Duplicate email addresses (check-contact-email-duplicate)"));
         let dup_emails = check_duplicate_emails(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-email-duplicate", dup_emails));
     }

@@ -1,4 +1,5 @@
 use rscontacts::helpers::*;
+use google_people1::api::*;
 
 #[test]
 fn test_add_country_code_with_leading_zero() {
@@ -142,4 +143,146 @@ fn test_token_cache_path_is_in_config_dir() {
     let path = token_cache_path();
     assert!(path.ends_with("token_cache.json"));
     assert!(path.to_str().unwrap().contains(".config/rscontacts"));
+}
+
+#[test]
+fn test_person_to_vcard_basic() {
+    let person = Person {
+        names: Some(vec![Name {
+            given_name: Some("John".to_string()),
+            family_name: Some("Doe".to_string()),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    let vcard = person_to_vcard(&person, "test-uid", "20260310T120000Z");
+    assert!(vcard.contains("BEGIN:VCARD\r\n"));
+    assert!(vcard.contains("VERSION:3.0\r\n"));
+    assert!(vcard.contains("UID:test-uid\r\n"));
+    assert!(vcard.contains("FN:John Doe\r\n"));
+    assert!(vcard.contains("N:Doe;John;;;\r\n"));
+    assert!(vcard.contains("END:VCARD\r\n"));
+}
+
+#[test]
+fn test_person_to_vcard_with_phone() {
+    let person = Person {
+        names: Some(vec![Name {
+            given_name: Some("Jane".to_string()),
+            ..Default::default()
+        }]),
+        phone_numbers: Some(vec![PhoneNumber {
+            value: Some("+972-501234567".to_string()),
+            type_: Some("mobile".to_string()),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    let vcard = person_to_vcard(&person, "uid-2", "20260310T120000Z");
+    assert!(vcard.contains("TEL;TYPE=CELL:+972-501234567\r\n"));
+}
+
+#[test]
+fn test_person_to_vcard_with_email() {
+    let person = Person {
+        names: Some(vec![Name {
+            given_name: Some("Bob".to_string()),
+            ..Default::default()
+        }]),
+        email_addresses: Some(vec![EmailAddress {
+            value: Some("bob@example.com".to_string()),
+            type_: Some("work".to_string()),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    let vcard = person_to_vcard(&person, "uid-3", "20260310T120000Z");
+    assert!(vcard.contains("EMAIL;TYPE=WORK:bob@example.com\r\n"));
+}
+
+#[test]
+fn test_person_to_vcard_with_org() {
+    let person = Person {
+        names: Some(vec![Name {
+            given_name: Some("Alice".to_string()),
+            ..Default::default()
+        }]),
+        organizations: Some(vec![Organization {
+            name: Some("Acme Corp".to_string()),
+            title: Some("Engineer".to_string()),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    let vcard = person_to_vcard(&person, "uid-4", "20260310T120000Z");
+    assert!(vcard.contains("ORG:Acme Corp\r\n"));
+    assert!(vcard.contains("TITLE:Engineer\r\n"));
+}
+
+#[test]
+fn test_person_to_vcard_with_birthday() {
+    let person = Person {
+        names: Some(vec![Name {
+            given_name: Some("Eve".to_string()),
+            ..Default::default()
+        }]),
+        birthdays: Some(vec![Birthday {
+            date: Some(Date {
+                year: Some(1990),
+                month: Some(5),
+                day: Some(15),
+            }),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    let vcard = person_to_vcard(&person, "uid-5", "20260310T120000Z");
+    assert!(vcard.contains("BDAY:1990-05-15\r\n"));
+}
+
+#[test]
+fn test_person_to_vcard_with_address() {
+    let person = Person {
+        names: Some(vec![Name {
+            given_name: Some("Charlie".to_string()),
+            ..Default::default()
+        }]),
+        addresses: Some(vec![Address {
+            street_address: Some("123 Main St".to_string()),
+            city: Some("Springfield".to_string()),
+            region: Some("IL".to_string()),
+            postal_code: Some("62701".to_string()),
+            country: Some("US".to_string()),
+            type_: Some("home".to_string()),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    let vcard = person_to_vcard(&person, "uid-6", "20260310T120000Z");
+    assert!(vcard.contains("ADR;TYPE=HOME:;;123 Main St;Springfield;IL;62701;US\r\n"));
+}
+
+#[test]
+fn test_person_to_vcard_no_name_uses_fallback() {
+    let person = Person::default();
+    let vcard = person_to_vcard(&person, "uid-7", "20260310T120000Z");
+    assert!(vcard.contains("FN:<no name>\r\n"));
+    assert!(!vcard.contains("\r\nN:"));
+}
+
+#[test]
+fn test_person_to_vcard_with_nickname() {
+    let person = Person {
+        names: Some(vec![Name {
+            given_name: Some("Robert".to_string()),
+            ..Default::default()
+        }]),
+        nicknames: Some(vec![Nickname {
+            value: Some("Bob".to_string()),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    };
+    let vcard = person_to_vcard(&person, "uid-8", "20260310T120000Z");
+    assert!(vcard.contains("NICKNAME:Bob\r\n"));
 }

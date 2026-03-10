@@ -90,3 +90,69 @@ fn test_cli_check_phone_custom_country() {
         panic!("wrong command");
     }
 }
+
+#[test]
+fn test_cli_check_type_company_given_name() {
+    let cli = Cli::parse_from(["rscontacts", "check-contact-type-company-given-name"]);
+    assert!(matches!(cli.command, Commands::CheckContactTypeCompanyGivenName { fix: false, auto_fix: false, dry_run: false }));
+}
+
+#[test]
+fn test_cli_check_type_company_given_name_auto_fix() {
+    let cli = Cli::parse_from(["rscontacts", "check-contact-type-company-given-name", "--auto-fix"]);
+    assert!(matches!(cli.command, Commands::CheckContactTypeCompanyGivenName { fix: false, auto_fix: true, dry_run: false }));
+}
+
+#[test]
+fn test_cli_check_type_company_no_label() {
+    let cli = Cli::parse_from(["rscontacts", "check-contact-type-company-no-label"]);
+    assert!(matches!(cli.command, Commands::CheckContactTypeCompanyNoLabel { fix: false, auto_fix: false, dry_run: false }));
+}
+
+#[test]
+fn test_cli_check_type_company_no_label_auto_fix_dry_run() {
+    let cli = Cli::parse_from(["rscontacts", "check-contact-type-company-no-label", "--auto-fix", "--dry-run"]);
+    assert!(matches!(cli.command, Commands::CheckContactTypeCompanyNoLabel { fix: false, auto_fix: true, dry_run: true }));
+}
+
+#[test]
+fn test_cli_check_type_company_no_company() {
+    let cli = Cli::parse_from(["rscontacts", "check-contact-type-company-no-company"]);
+    assert!(matches!(cli.command, Commands::CheckContactTypeCompanyNoCompany { fix: false, dry_run: false }));
+}
+
+#[test]
+fn test_cli_export_json() {
+    let cli = Cli::parse_from(["rscontacts", "export-json"]);
+    assert!(matches!(cli.command, Commands::ExportJson { short: false }));
+}
+
+#[test]
+fn test_cli_export_json_short() {
+    let cli = Cli::parse_from(["rscontacts", "export-json", "--short"]);
+    assert!(matches!(cli.command, Commands::ExportJson { short: true }));
+}
+
+#[test]
+fn test_cli_sync_gnome_contacts() {
+    let cli = Cli::parse_from(["rscontacts", "sync-gnome-contacts"]);
+    assert!(matches!(cli.command, Commands::SyncGnomeContacts { dry_run: false }));
+}
+
+#[test]
+fn test_cli_sync_gnome_contacts_dry_run() {
+    let cli = Cli::parse_from(["rscontacts", "sync-gnome-contacts", "--dry-run"]);
+    assert!(matches!(cli.command, Commands::SyncGnomeContacts { dry_run: true }));
+}
+
+#[test]
+fn test_cli_move_suffix_to_family() {
+    let cli = Cli::parse_from(["rscontacts", "move-suffix-to-family"]);
+    assert!(matches!(cli.command, Commands::MoveSuffixToFamily { dry_run: false }));
+}
+
+#[test]
+fn test_cli_move_suffix_to_family_dry_run() {
+    let cli = Cli::parse_from(["rscontacts", "move-suffix-to-family", "--dry-run"]);
+    assert!(matches!(cli.command, Commands::MoveSuffixToFamily { dry_run: true }));
+}

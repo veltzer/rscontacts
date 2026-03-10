@@ -661,3 +661,112 @@ pub fn has_user_label(person: &google_people1::api::Person) -> bool {
         })
     })
 }
+
+fn google_phone_type_to_vcard(ptype: &str) -> &'static str {
+    match ptype.to_lowercase().as_str() {
+        "mobile" => "CELL",
+        "home" => "HOME",
+        "work" => "WORK",
+        "main" => "VOICE",
+        "homefax" | "home fax" => "HOME,FAX",
+        "workfax" | "work fax" => "WORK,FAX",
+        _ => "VOICE",
+    }
+}
+
+fn google_email_type_to_vcard(etype: &str) -> &'static str {
+    match etype.to_lowercase().as_str() {
+        "home" => "HOME",
+        "work" => "WORK",
+        _ => "OTHER",
+    }
+}
+
+fn google_address_type_to_vcard(atype: &str) -> &'static str {
+    match atype.to_lowercase().as_str() {
+        "home" => "HOME",
+        "work" => "WORK",
+        _ => "OTHER",
+    }
+}
+
+pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &str) -> String {
+    let names = person.names.as_ref().and_then(|n| n.first());
+    let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+    let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+    let full = person_display_name(person);
+    let nickname = person.nicknames.as_ref()
+        .and_then(|n| n.first())
+        .and_then(|n| n.value.as_deref())
+        .unwrap_or("");
+
+    let mut vcard = String::new();
+    vcard.push_str("BEGIN:VCARD\r\n");
+    vcard.push_str("VERSION:3.0\r\n");
+    vcard.push_str(&format!("UID:{}\r\n", uid));
+    vcard.push_str(&format!("REV:{}\r\n", rev));
+    vcard.push_str(&format!("FN:{}\r\n", full));
+    if !given.is_empty() || !family.is_empty() {
+        vcard.push_str(&format!("N:{};{};;;\r\n", family, given));
+    }
+    if !nickname.is_empty() {
+        vcard.push_str(&format!("NICKNAME:{}\r\n", nickname));
+    }
+
+    // Organization
+    if let Some(org) = person.organizations.as_ref().and_then(|o| o.first()) {
+        if let Some(ref name) = org.name {
+            vcard.push_str(&format!("ORG:{}\r\n", name));
+        }
+        if let Some(ref title) = org.title {
+            vcard.push_str(&format!("TITLE:{}\r\n", title));
+        }
+    }
+
+    // Phone numbers
+    if let Some(ref phones) = person.phone_numbers {
+        for phone in phones {
+            if let Some(ref value) = phone.value {
+                let ptype = phone.type_.as_deref().or(phone.formatted_type.as_deref()).unwrap_or("voice");
+                let vcard_type = google_phone_type_to_vcard(ptype);
+                vcard.push_str(&format!("TEL;TYPE={}:{}\r\n", vcard_type, value));
+            }
+        }
+    }
+
+    // Email addresses
+    if let Some(ref emails) = person.email_addresses {
+        for email in emails {
+            if let Some(ref value) = email.value {
+                let etype = email.type_.as_deref().or(email.formatted_type.as_deref()).unwrap_or("other");
+                let vcard_type = google_email_type_to_vcard(etype);
+                vcard.push_str(&format!("EMAIL;TYPE={}:{}\r\n", vcard_type, value));
+            }
+        }
+    }
+
+    // Addresses
+    if let Some(ref addresses) = person.addresses {
+        for addr in addresses {
+            let street = addr.street_address.as_deref().unwrap_or("");
+            let city = addr.city.as_deref().unwrap_or("");
+            let region = addr.region.as_deref().unwrap_or("");
+            let postal = addr.postal_code.as_deref().unwrap_or("");
+            let country = addr.country.as_deref().unwrap_or("");
+            let atype = addr.type_.as_deref().unwrap_or("other");
+            let vcard_type = google_address_type_to_vcard(atype);
+            vcard.push_str(&format!("ADR;TYPE={}:;;{};{};{};{};{}\r\n", vcard_type, street, city, region, postal, country));
+        }
+    }
+
+    // Birthday
+    if let Some(ref birthdays) = person.birthdays
+        && let Some(bday) = birthdays.first()
+        && let Some(ref date) = bday.date
+        && let (Some(y), Some(m), Some(d)) = (date.year, date.month, date.day) {
+            vcard.push_str(&format!("BDAY:{:04}-{:02}-{:02}\r\n", y, m, d));
+        }
+
+    vcard.push_str("END:VCARD\r\n");
+    vcard
+}
