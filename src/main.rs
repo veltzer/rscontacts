@@ -45,6 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::ExportJson { short } => commands::cmd_export_json(short).await?,
         Commands::InitConfig { force } => commands::cmd_init_config(force)?,
         Commands::List { emails, labels, starred } => commands::cmd_list(emails, labels, starred).await?,
+        Commands::SyncGnomeContacts { dry_run } => commands::cmd_sync_gnome_contacts(dry_run).await?,
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => commands::cmd_remove_label_from_all_contacts(label, dry_run).await?,
         Commands::ReviewEmailLabel { ref label, fix, dry_run } => commands::cmd_review_email_label(label, fix, dry_run).await?,
         Commands::ReviewPhoneLabel { ref label, fix, dry_run } => commands::cmd_review_phone_label(label, fix, dry_run).await?,

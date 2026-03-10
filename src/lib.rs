@@ -334,6 +334,12 @@ pub enum Commands {
         #[arg(long)]
         starred: bool,
     },
+    /// Sync Google Contacts to GNOME Contacts (Evolution Data Server)
+    SyncGnomeContacts {
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Remove a contact label (group) from all contacts that have it
     RemoveLabelFromAllContacts {
         /// The label name to remove (case-insensitive)

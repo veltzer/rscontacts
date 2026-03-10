@@ -3,6 +3,7 @@ use google_people1::FieldMask;
 use crate::helpers::*;
 
 const STANDARD_CONTACT_FIELDS: &[&str] = &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"];
+const EDS_CONTACTS_DB_RELATIVE_PATH: &str = "evolution/addressbook/system/contacts.db";
 
 struct CheckContext<'a> {
     fix: bool,
@@ -1757,7 +1758,7 @@ async fn edit_phones(
         if let Ok(idx) = rest.trim().parse::<usize>() {
             let nums_len = current.phone_numbers.as_ref().map_or(0, |n| n.len());
             if idx >= 1 && idx <= nums_len {
-                let cur_phone = current.phone_numbers.as_ref().unwrap()[idx - 1].value.as_deref().unwrap_or("");
+                let cur_phone = current.phone_numbers.as_ref().and_then(|p| p.get(idx - 1)).and_then(|p| p.value.as_deref()).unwrap_or("");
                 eprint!("  Phone [{}]: ", cur_phone);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
@@ -1859,7 +1860,7 @@ async fn edit_emails(
         if let Ok(idx) = rest.trim().parse::<usize>() {
             let ems_len = current.email_addresses.as_ref().map_or(0, |e| e.len());
             if idx >= 1 && idx <= ems_len {
-                let cur_email = current.email_addresses.as_ref().unwrap()[idx - 1].value.as_deref().unwrap_or("");
+                let cur_email = current.email_addresses.as_ref().and_then(|e| e.get(idx - 1)).and_then(|e| e.value.as_deref()).unwrap_or("");
                 eprint!("  Email [{}]: ", cur_email);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
@@ -2105,6 +2106,216 @@ pub async fn cmd_export_json(short: bool) -> Result<(), Box<dyn std::error::Erro
     } else {
         let json = serde_json::to_string_pretty(&with_name)?;
         println!("{}", json);
+    }
+    Ok(())
+}
+
+pub async fn cmd_sync_gnome_contacts(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let all_fields = &[
+        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
+        "organizations", "memberships", "nicknames",
+    ];
+    let contacts = fetch_all_contacts(&hub, all_fields).await?;
+    let with_name: Vec<_> = contacts.into_iter().filter(|p| {
+        !person_name(p).is_empty()
+    }).collect();
+
+    let db_path = dirs::data_dir()
+        .ok_or("Could not determine XDG data directory")?
+        .join(EDS_CONTACTS_DB_RELATIVE_PATH);
+    if !db_path.exists() {
+        return Err(format!("EDS contacts database not found at {}", db_path.display()).into());
+    }
+
+    let conn = rusqlite::Connection::open(&db_path)?;
+
+    // Get existing UIDs to know what to insert vs update
+    let mut existing: std::collections::HashSet<String> = std::collections::HashSet::new();
+    {
+        let mut stmt = conn.prepare("SELECT uid FROM folder_id")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        for uid in rows {
+            existing.insert(uid?);
+        }
+    }
+
+    let now = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+    let mut inserted = 0usize;
+    let mut updated = 0usize;
+    let mut skipped = 0usize;
+
+    for person in &with_name {
+        let resource_name = match person.resource_name.as_deref() {
+            Some(rn) => rn,
+            None => { skipped += 1; continue; }
+        };
+        // Use Google resource name as UID (e.g. "people/c12345" -> "google-people-c12345")
+        let uid = resource_name.replace('/', "-");
+
+        let names = person.names.as_ref().and_then(|n| n.first());
+        let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
+        let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+        let full = person_display_name(person);
+        let nickname = person.nicknames.as_ref()
+            .and_then(|n| n.first())
+            .and_then(|n| n.value.as_deref())
+            .unwrap_or("");
+
+        // Build VCard
+        let mut vcard = String::new();
+        vcard.push_str("BEGIN:VCARD\r\n");
+        vcard.push_str("VERSION:3.0\r\n");
+        vcard.push_str(&format!("UID:{}\r\n", uid));
+        vcard.push_str(&format!("REV:{}\r\n", now));
+        vcard.push_str(&format!("FN:{}\r\n", full));
+        if !given.is_empty() || !family.is_empty() {
+            vcard.push_str(&format!("N:{};{};;;\r\n", family, given));
+        }
+        if !nickname.is_empty() {
+            vcard.push_str(&format!("NICKNAME:{}\r\n", nickname));
+        }
+
+        // Organization
+        if let Some(org) = person.organizations.as_ref().and_then(|o| o.first()) {
+            if let Some(ref name) = org.name {
+                vcard.push_str(&format!("ORG:{}\r\n", name));
+            }
+            if let Some(ref title) = org.title {
+                vcard.push_str(&format!("TITLE:{}\r\n", title));
+            }
+        }
+
+        // Phone numbers
+        if let Some(ref phones) = person.phone_numbers {
+            for phone in phones {
+                if let Some(ref value) = phone.value {
+                    let ptype = phone.type_.as_deref().or(phone.formatted_type.as_deref()).unwrap_or("voice");
+                    let vcard_type = match ptype.to_lowercase().as_str() {
+                        "mobile" => "CELL",
+                        "home" => "HOME",
+                        "work" => "WORK",
+                        "main" => "VOICE",
+                        "homefax" | "home fax" => "HOME,FAX",
+                        "workfax" | "work fax" => "WORK,FAX",
+                        _ => "VOICE",
+                    };
+                    vcard.push_str(&format!("TEL;TYPE={}:{}\r\n", vcard_type, value));
+                }
+            }
+        }
+
+        // Email addresses
+        if let Some(ref emails) = person.email_addresses {
+            for email in emails {
+                if let Some(ref value) = email.value {
+                    let etype = email.type_.as_deref().or(email.formatted_type.as_deref()).unwrap_or("other");
+                    let vcard_type = match etype.to_lowercase().as_str() {
+                        "home" => "HOME",
+                        "work" => "WORK",
+                        _ => "OTHER",
+                    };
+                    vcard.push_str(&format!("EMAIL;TYPE={}:{}\r\n", vcard_type, value));
+                }
+            }
+        }
+
+        // Addresses
+        if let Some(ref addresses) = person.addresses {
+            for addr in addresses {
+                let street = addr.street_address.as_deref().unwrap_or("");
+                let city = addr.city.as_deref().unwrap_or("");
+                let region = addr.region.as_deref().unwrap_or("");
+                let postal = addr.postal_code.as_deref().unwrap_or("");
+                let country = addr.country.as_deref().unwrap_or("");
+                let atype = addr.type_.as_deref().unwrap_or("other");
+                let vcard_type = match atype.to_lowercase().as_str() {
+                    "home" => "HOME",
+                    "work" => "WORK",
+                    _ => "OTHER",
+                };
+                vcard.push_str(&format!("ADR;TYPE={}:;;{};{};{};{};{}\r\n", vcard_type, street, city, region, postal, country));
+            }
+        }
+
+        // Birthday
+        if let Some(ref birthdays) = person.birthdays {
+            if let Some(bday) = birthdays.first() {
+                if let Some(ref date) = bday.date {
+                    if let (Some(y), Some(m), Some(d)) = (date.year, date.month, date.day) {
+                        vcard.push_str(&format!("BDAY:{:04}-{:02}-{:02}\r\n", y, m, d));
+                    }
+                }
+            }
+        }
+
+        vcard.push_str("END:VCARD\r\n");
+
+        // file_as: family, given or just full name
+        let file_as = if !family.is_empty() && !given.is_empty() {
+            format!("{}, {}", family, given)
+        } else {
+            full.clone()
+        };
+
+        let is_update = existing.contains(&uid);
+
+        if !dry_run {
+            if is_update {
+                conn.execute(
+                    "UPDATE folder_id SET Rev=?, file_as=?, full_name=?, given_name=?, family_name=?, nickname=?, vcard=? WHERE uid=?",
+                    rusqlite::params![now, file_as, full, given, family, nickname, vcard, uid],
+                )?;
+            } else {
+                conn.execute(
+                    "INSERT INTO folder_id (uid, Rev, file_as, full_name, given_name, family_name, nickname, is_list, list_show_addresses, wants_html, x509Cert, pgpCert, vcard) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, ?)",
+                    rusqlite::params![uid, now, file_as, full, given, family, nickname, vcard],
+                )?;
+
+                // Also populate email and phone list tables
+                if let Some(ref emails) = person.email_addresses {
+                    for email in emails {
+                        if let Some(ref value) = email.value {
+                            conn.execute(
+                                "INSERT INTO folder_id_email_list (uid, value) VALUES (?, ?)",
+                                rusqlite::params![uid, value.to_lowercase()],
+                            )?;
+                        }
+                    }
+                }
+                if let Some(ref phones) = person.phone_numbers {
+                    for phone in phones {
+                        if let Some(ref value) = phone.value {
+                            conn.execute(
+                                "INSERT INTO folder_id_phone_list (uid, value) VALUES (?, ?)",
+                                rusqlite::params![uid, value],
+                            )?;
+                        }
+                    }
+                }
+            }
+        }
+
+        if is_update {
+            updated += 1;
+        } else {
+            inserted += 1;
+        }
+    }
+
+    // Update revision key
+    if !dry_run {
+        let rev = format!("{}({})", now, inserted + updated);
+        conn.execute(
+            "UPDATE keys SET value=? WHERE key='revision' AND folder_id='folder_id'",
+            rusqlite::params![rev],
+        )?;
+    }
+
+    if dry_run {
+        println!("Dry run: would insert {} and update {} contacts ({} skipped).", inserted, updated, skipped);
+    } else {
+        println!("Synced {} contacts to GNOME Contacts ({} inserted, {} updated, {} skipped).", inserted + updated, inserted, updated, skipped);
     }
     Ok(())
 }
