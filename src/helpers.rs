@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 pub const MUTATE_DELAY: Duration = Duration::from_millis(500);
+pub const PHONE_LABEL_OPTIONS: &[&str] = &["mobile", "home", "work", "main", "other"];
 
 #[derive(serde::Deserialize, Default, Debug)]
 pub struct Config {
@@ -24,16 +25,6 @@ pub struct Config {
     pub check_contact_name_is_company: CompanyNamesConfig,
     #[serde(default, rename = "check-contact-given-name-known")]
     pub check_contact_given_name_known: GivenNamesConfig,
-    #[allow(dead_code)]
-    #[serde(default)]
-    pub services: ServicesConfig,
-}
-
-#[derive(serde::Deserialize, Default, Debug)]
-#[allow(dead_code)]
-pub struct ServicesConfig {
-    #[serde(default)]
-    pub names: Vec<String>,
 }
 
 #[derive(serde::Deserialize, Default, Debug)]
@@ -417,6 +408,11 @@ pub fn person_display_name(person: &google_people1::api::Person) -> String {
     if name.is_empty() { "<no name>".to_string() } else { name }
 }
 
+pub fn get_resource_name(person: &google_people1::api::Person) -> Result<&str, String> {
+    person.resource_name.as_deref()
+        .ok_or_else(|| format!("Contact missing resource name for \"{}\"", person_display_name(person)))
+}
+
 pub fn build_group_name_map(groups: &[google_people1::api::ContactGroup]) -> std::collections::HashMap<String, String> {
     groups.iter()
         .filter_map(|g| {
@@ -444,10 +440,7 @@ pub async fn update_phone_numbers<F>(hub: &HubType, person: &google_people1::api
 where
     F: Fn(&str) -> Option<String>,
 {
-    let resource_name = person
-        .resource_name
-        .as_deref()
-        .ok_or("Contact missing resource name")?;
+    let resource_name = get_resource_name(person)?;
 
     let mut updated = person.clone();
     if let Some(ref mut nums) = updated.phone_numbers {
@@ -574,7 +567,7 @@ pub fn prompt_yes_no(message: &str) -> Result<bool, Box<dyn std::error::Error>> 
 
 pub fn prompt_phone_label_fix(name: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
     use std::io::Write;
-    let options = ["mobile", "home", "work", "main", "other"];
+    let options = PHONE_LABEL_OPTIONS;
     loop {
         eprint!("  Label for {}'s phone? [m]obile/[h]ome/[w]ork/m[a]in/[o]ther/[s]kip: ", name);
         std::io::stderr().flush()?;

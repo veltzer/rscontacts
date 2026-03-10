@@ -1,4 +1,5 @@
 use rscontacts::helpers::*;
+use rscontacts::helpers::Config;
 use google_people1::api::*;
 
 #[test]
@@ -285,4 +286,111 @@ fn test_person_to_vcard_with_nickname() {
     };
     let vcard = person_to_vcard(&person, "uid-8", "20260310T120000Z");
     assert!(vcard.contains("NICKNAME:Bob\r\n"));
+}
+
+#[test]
+fn test_config_parse_empty() {
+    let config: Config = toml::from_str("").unwrap();
+    assert!(config.check_all.skip.is_empty());
+    assert!(config.check_contact_given_name_regexp.allow.is_none());
+}
+
+#[test]
+fn test_config_parse_skip_list() {
+    let config: Config = toml::from_str(r#"
+[check-all]
+skip = ["check-phone-format", "check-contact-email"]
+"#).unwrap();
+    assert_eq!(config.check_all.skip.len(), 2);
+    assert_eq!(config.check_all.skip[0], "check-phone-format");
+}
+
+#[test]
+fn test_config_parse_name_regexp() {
+    let config: Config = toml::from_str(r#"
+[check-contact-given-name-regexp]
+allow = '^[A-Z][a-z]*$'
+"#).unwrap();
+    assert_eq!(config.check_contact_given_name_regexp.allow.as_deref(), Some("^[A-Z][a-z]*$"));
+}
+
+#[test]
+fn test_config_parse_companies() {
+    let config: Config = toml::from_str(r#"
+[check-contact-name-is-company]
+companies = ["Acme", "Globex"]
+"#).unwrap();
+    assert_eq!(config.check_contact_name_is_company.companies, vec!["Acme", "Globex"]);
+}
+
+#[test]
+fn test_config_parse_given_names() {
+    let config: Config = toml::from_str(r#"
+[check-contact-given-name-known]
+names = ["John", "Jane"]
+"#).unwrap();
+    assert_eq!(config.check_contact_given_name_known.names, vec!["John", "Jane"]);
+}
+
+#[test]
+fn test_config_parse_unknown_sections_ignored() {
+    let config: Config = toml::from_str(r#"
+[unknown-section]
+key = "value"
+
+[check-all]
+skip = ["a"]
+"#).unwrap();
+    assert_eq!(config.check_all.skip, vec!["a"]);
+}
+
+#[test]
+fn test_config_skip_set_behavior() {
+    let config: Config = toml::from_str(r#"
+[check-all]
+skip = ["check-phone-format", "check-contact-email"]
+"#).unwrap();
+    let skip: std::collections::HashSet<&str> = config.check_all.skip.iter().map(|s| s.as_str()).collect();
+    assert!(skip.contains("check-phone-format"));
+    assert!(skip.contains("check-contact-email"));
+    assert!(!skip.contains("check-phone-countrycode"));
+    assert!(!skip.contains("check-contact-given-name-known"));
+}
+
+#[test]
+fn test_config_skip_empty_means_all_run() {
+    let config: Config = toml::from_str(r#"
+[check-all]
+skip = []
+"#).unwrap();
+    let skip: std::collections::HashSet<&str> = config.check_all.skip.iter().map(|s| s.as_str()).collect();
+    assert!(!skip.contains("check-phone-format"));
+    assert!(!skip.contains("check-contact-given-name-known"));
+}
+
+#[test]
+fn test_config_default_skip_is_empty() {
+    let config: Config = toml::from_str("").unwrap();
+    assert!(config.check_all.skip.is_empty());
+}
+
+#[test]
+fn test_config_multiple_regexp_sections() {
+    let config: Config = toml::from_str(r#"
+[check-contact-given-name-regexp]
+allow = '^[A-Z]'
+
+[check-contact-family-name-regexp]
+allow = '^[A-Z][a-z]+'
+
+[check-contact-suffix-regexp]
+allow = '^[1-9]\d*$'
+
+[check-contact-label-regexp]
+allow = '^(type|company):.*$'
+"#).unwrap();
+    assert_eq!(config.check_contact_given_name_regexp.allow.as_deref(), Some("^[A-Z]"));
+    assert_eq!(config.check_contact_family_name_regexp.allow.as_deref(), Some("^[A-Z][a-z]+"));
+    assert_eq!(config.check_contact_suffix_regexp.allow.as_deref(), Some("^[1-9]\\d*$"));
+    assert_eq!(config.check_contact_label_regexp.allow.as_deref(), Some("^(type|company):.*$"));
 }
