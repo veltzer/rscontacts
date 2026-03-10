@@ -3345,6 +3345,55 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     Ok(())
 }
 
+pub async fn cmd_move_suffix_to_family(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations"]).await?;
+
+    let mut total = 0;
+    for person in &contacts {
+        let names = person.names.as_ref().and_then(|n| n.first());
+        let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
+        let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+
+        // Only act on numeric suffixes with no family name
+        if suffix.is_empty() || !family.is_empty() || suffix.parse::<u32>().is_err() {
+            continue;
+        }
+
+        println!("{} -> moving suffix \"{}\" to family name", format_person_line(person, None), suffix);
+
+        if !dry_run {
+            let resource_name = person.resource_name.as_deref()
+                .ok_or("Contact missing resource name")?;
+            let mut updated = person.clone();
+            if let Some(ref mut names) = updated.names
+                && let Some(first) = names.first_mut() {
+                    first.family_name = first.honorific_suffix.take();
+                    let g = first.given_name.as_deref().unwrap_or("");
+                    let f = first.family_name.as_deref().unwrap_or("");
+                    let combined = [g, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
+                    first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
+                }
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                .doit()
+                .await?;
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        total += 1;
+    }
+
+    if total == 0 {
+        println!("No contacts with numeric suffix and no family name.");
+    } else if dry_run {
+        println!("{} change(s) would be made.", total);
+    } else {
+        println!("{} contact(s) updated.", total);
+    }
+    Ok(())
+}
+
 pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations"]).await?;

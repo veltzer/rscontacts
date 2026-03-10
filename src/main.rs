@@ -38,6 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckPhoneLabelEnglish { fix, dry_run } => commands::cmd_check_phone_label_english(fix, dry_run).await?,
         Commands::CheckPhoneLabelMissing { fix, dry_run } => commands::cmd_check_phone_label_missing(fix, dry_run).await?,
+        Commands::MoveSuffixToFamily { dry_run } => commands::cmd_move_suffix_to_family(dry_run).await?,
         Commands::CompactSuffixesForContacts { dry_run } => commands::cmd_compact_suffixes_for_contacts(dry_run).await?,
         Commands::Complete { shell } => rscontacts::generate_completions(shell),
         Commands::EditContact { ref name } => commands::cmd_edit_contact(name).await?,
