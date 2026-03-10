@@ -98,9 +98,9 @@ allow = '^[A-Z][a-z]*$'
 
 # Allow regex for family names. Contacts whose family name does NOT match
 # this pattern will be flagged by check-contact-family-name-regexp.
-# First letter uppercase, rest lowercase. Hyphenated names allowed.
+# First letter uppercase, rest lowercase. Hyphenated names allowed. Pure numeric also allowed.
 [check-contact-family-name-regexp]
-allow = '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
+allow = '^([A-Z][a-z]+(-[A-Z][a-z]+)*|[1-9]\d*)$'
 
 # Allow regex for suffixes. Contacts whose suffix does NOT match
 # this pattern will be flagged by check-contact-suffix-regexp.
