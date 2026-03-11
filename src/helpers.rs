@@ -4,9 +4,64 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 pub const MUTATE_DELAY: Duration = Duration::from_millis(500);
+
+static TRANSPORT_ERRORS: AtomicBool = AtomicBool::new(false);
+const MAX_RETRIES: u32 = 3;
+const RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+];
+
+pub fn set_transport_errors(enabled: bool) {
+    TRANSPORT_ERRORS.store(enabled, Ordering::Relaxed);
+}
+
+fn is_transient_status(status: u16) -> bool {
+    matches!(status, 429 | 502 | 503 | 504)
+}
+
+/// Retry an API call on transient HTTP errors (429, 502, 503, 504).
+/// The closure must rebuild the request each time since `.doit()` consumes the builder.
+pub async fn retry_api<F, Fut, T>(mut make_request: F) -> Result<T, google_people1::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, google_people1::Error>>,
+{
+    let verbose = TRANSPORT_ERRORS.load(Ordering::Relaxed);
+    for attempt in 0..=MAX_RETRIES {
+        match make_request().await {
+            Ok(val) => return Ok(val),
+            Err(google_people1::Error::Failure(ref resp)) if attempt < MAX_RETRIES && is_transient_status(resp.status().as_u16()) => {
+                let status = resp.status();
+                let delay = RETRY_DELAYS[attempt as usize];
+                if verbose {
+                    eprintln!("  [transport] HTTP {} - retrying in {}s (attempt {}/{})", status, delay.as_secs(), attempt + 1, MAX_RETRIES);
+                }
+                tokio::time::sleep(delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
+}
+
+/// Convenience macro to wrap a `.doit().await` call with retry logic.
+/// The expression must be a builder chain ending before `.doit()`.
+/// It is re-evaluated on each retry, so it must not consume owned values
+/// that aren't recreated (use `.clone()` for owned parameters).
+///
+/// Usage: `doit_retry!(hub.people().connections_list("people/me").person_fields(mask))`
+#[macro_export]
+macro_rules! doit_retry {
+    ($expr:expr) => {
+        $crate::helpers::retry_api(|| async { $expr.doit().await }).await
+    };
+}
 pub const PHONE_LABEL_OPTIONS: &[&str] = &["mobile", "home", "work", "main", "other"];
 
 #[derive(serde::Deserialize, Default, Debug)]
@@ -261,16 +316,16 @@ pub async fn fetch_all_contacts(hub: &HubType, fields: &[&str]) -> Result<Vec<go
     let mut page_token: Option<String> = None;
 
     loop {
-        let mut request = hub
-            .people()
-            .connections_list("people/me")
-            .person_fields(FieldMask::new::<&str>(fields));
-
-        if let Some(ref token) = page_token {
-            request = request.page_token(token);
-        }
-
-        let (_response, result): (_, ListConnectionsResponse) = request.doit().await?;
+        let (_response, result): (_, ListConnectionsResponse) = retry_api(|| {
+            let mut req = hub
+                .people()
+                .connections_list("people/me")
+                .person_fields(FieldMask::new::<&str>(fields));
+            if let Some(ref token) = page_token {
+                req = req.page_token(token);
+            }
+            async { req.doit().await }
+        }).await?;
 
         if let Some(connections) = result.connections {
             all.extend(connections);
@@ -451,11 +506,12 @@ where
                 }
         }
     }
-    hub.people()
-        .update_contact(updated, resource_name)
-        .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
-        .doit()
-        .await?;
+    retry_api(|| {
+        let req = hub.people()
+            .update_contact(updated.clone(), resource_name)
+            .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]));
+        async { req.doit().await }
+    }).await?;
     eprintln!("  Fixed: {}", person_display_name(person));
     tokio::time::sleep(MUTATE_DELAY).await;
     Ok(())
@@ -466,11 +522,13 @@ pub async fn fetch_all_contact_groups(hub: &HubType) -> Result<Vec<google_people
     let mut page_token: Option<String> = None;
 
     loop {
-        let mut request = hub.contact_groups().list();
-        if let Some(ref token) = page_token {
-            request = request.page_token(token);
-        }
-        let (_response, result) = request.doit().await?;
+        let (_response, result) = retry_api(|| {
+            let mut req = hub.contact_groups().list();
+            if let Some(ref token) = page_token {
+                req = req.page_token(token);
+            }
+            async { req.doit().await }
+        }).await?;
         if let Some(groups) = result.contact_groups {
             all_groups.extend(groups);
         }

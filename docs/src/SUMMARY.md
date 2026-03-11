@@ -30,5 +30,6 @@
     - [complete](commands/complete.md)
 - [Configuration](configuration.md)
 - [Same Name Issue](same-name-issue.md)
+- [Transport Errors](transport-errors.md)
 - [Design Decisions](design-decisions.md)
 - [Future Ideas](future-ideas.md)

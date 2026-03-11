@@ -95,7 +95,10 @@ async fn rename_contact_group(
         read_group_fields: None,
         update_group_fields: None,
     };
-    hub.contact_groups().update(req, resource_name).doit().await?;
+    retry_api(|| {
+        let r = hub.contact_groups().update(req.clone(), resource_name);
+        async { r.doit().await }
+    }).await?;
     eprintln!("  Renamed \"{}\" -> \"{}\"", old_name, new_name);
     tokio::time::sleep(MUTATE_DELAY).await;
     Ok(())
@@ -117,6 +120,7 @@ skip = [
     # "check-contact-company-exists",
     # "check-contact-given-name-exists",
     # "check-contact-displayname-duplicate",
+    # "check-contact-no-displayname",
     # "check-contact-type",
     # "check-contact-no-middle-name",
     # "check-contact-no-nickname",
@@ -546,6 +550,55 @@ async fn check_no_given_name(
         count += 1;
     }
     if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    Ok(count)
+}
+
+pub async fn cmd_check_contact_no_displayname(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = if fix {
+        fetch_all_contacts(&hub, ALL_CONTACT_FIELDS).await?
+    } else {
+        fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?
+    };
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+    let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
+    let user_groups = to_ref_vec(&user_groups_owned);
+    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    check_no_displayname(&hub, &contacts, &ctx).await?;
+    Ok(())
+}
+
+async fn check_no_displayname(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+
+    for person in contacts {
+        if !person_name(person).is_empty() {
+            continue;
+        }
+
+        if count == 0
+            && let Some(header) = ctx.header {
+                println!("=== {} ===", header);
+            }
+        count += 1;
+
+        if !ctx.quiet {
+            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+        }
+
+        if ctx.fix && !ctx.quiet {
+            interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+        }
+    }
+
+    if count > 0 && !ctx.quiet {
+        println!();
+    }
     Ok(count)
 }
 
@@ -1427,7 +1480,10 @@ async fn prompt_label_autocomplete(
                         contact_group: Some(new_group),
                         read_group_fields: None,
                     };
-                    let (_, created) = hub.contact_groups().create(req).doit().await?;
+                    let (_, created) = retry_api(|| {
+                        let r = hub.contact_groups().create(req.clone());
+                        async { r.doit().await }
+                    }).await?;
                     let rn = created.resource_name
                         .ok_or("Created group missing resource name")?;
                     eprintln!("  Created label \"{}\"", trimmed);
@@ -1551,12 +1607,13 @@ async fn edit_simple_name_field(
             let combined = [g, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
             first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
         }
-    let (_, refreshed) = hub.people()
-        .update_contact(updated, resource_name)
-        .update_person_fields(FieldMask::new::<&str>(&["names"]))
-        .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-        .doit()
-        .await?;
+    let (_, refreshed) = retry_api(|| {
+        let r = hub.people()
+            .update_contact(updated.clone(), resource_name)
+            .update_person_fields(FieldMask::new::<&str>(&["names"]))
+            .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
+        async { r.doit().await }
+    }).await?;
     *current = refreshed;
     match new_val {
         Some(v) => eprintln!("  Set {} to \"{}\"", label.to_lowercase(), v),
@@ -1608,12 +1665,13 @@ async fn edit_org_field(
                 }
             }
     }
-    let (_, refreshed) = hub.people()
-        .update_contact(updated, resource_name)
-        .update_person_fields(FieldMask::new::<&str>(&["organizations"]))
-        .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-        .doit()
-        .await?;
+    let (_, refreshed) = retry_api(|| {
+        let r = hub.people()
+            .update_contact(updated.clone(), resource_name)
+            .update_person_fields(FieldMask::new::<&str>(&["organizations"]))
+            .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
+        async { r.doit().await }
+    }).await?;
     *current = refreshed;
     if val == "-" {
         eprintln!("  Cleared {}.", label.to_lowercase());
@@ -1652,12 +1710,13 @@ async fn edit_nickname(
             ..Default::default()
         }]);
     }
-    let (_, refreshed) = hub.people()
-        .update_contact(updated, resource_name)
-        .update_person_fields(FieldMask::new::<&str>(&["nicknames"]))
-        .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-        .doit()
-        .await?;
+    let (_, refreshed) = retry_api(|| {
+        let r = hub.people()
+            .update_contact(updated.clone(), resource_name)
+            .update_person_fields(FieldMask::new::<&str>(&["nicknames"]))
+            .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
+        async { r.doit().await }
+    }).await?;
     *current = refreshed;
     if val == "-" {
         eprintln!("  Cleared nickname.");
@@ -1709,12 +1768,13 @@ async fn edit_phones(
             pn.type_ = Some(l);
         }
         updated.phone_numbers.get_or_insert_with(Vec::new).push(pn);
-        let (_, refreshed) = hub.people()
-            .update_contact(updated, resource_name)
-            .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
-            .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-            .doit()
-            .await?;
+        let (_, refreshed) = retry_api(|| {
+            let r = hub.people()
+                .update_contact(updated.clone(), resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
+            async { r.doit().await }
+        }).await?;
         *current = refreshed;
         eprintln!("  Added phone \"{}\"", num);
         tokio::time::sleep(MUTATE_DELAY).await;
@@ -1724,12 +1784,13 @@ async fn edit_phones(
             if let Some(ref mut nums) = updated.phone_numbers {
                 if idx >= 1 && idx <= nums.len() {
                     nums.remove(idx - 1);
-                    let (_, refreshed) = hub.people()
-                        .update_contact(updated, resource_name)
-                        .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
-                        .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-                        .doit()
-                        .await?;
+                    let (_, refreshed) = retry_api(|| {
+                        let r = hub.people()
+                            .update_contact(updated.clone(), resource_name)
+                            .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                            .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
+                        async { r.doit().await }
+                    }).await?;
                     *current = refreshed;
                     eprintln!("  Removed phone #{}", idx);
                     tokio::time::sleep(MUTATE_DELAY).await;
@@ -1755,12 +1816,13 @@ async fn edit_phones(
                 if let Some(ref mut nums) = updated.phone_numbers {
                     nums[idx - 1].value = Some(val.to_string());
                 }
-                let (_, refreshed) = hub.people()
-                    .update_contact(updated, resource_name)
-                    .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
-                    .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-                    .doit()
-                    .await?;
+                let (_, refreshed) = retry_api(|| {
+                    let r = hub.people()
+                        .update_contact(updated.clone(), resource_name)
+                        .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
+                        .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
+                    async { r.doit().await }
+                }).await?;
                 *current = refreshed;
                 eprintln!("  Updated phone #{} to \"{}\"", idx, val);
                 tokio::time::sleep(MUTATE_DELAY).await;
@@ -1811,12 +1873,13 @@ async fn edit_emails(
             ..Default::default()
         };
         updated.email_addresses.get_or_insert_with(Vec::new).push(em);
-        let (_, refreshed) = hub.people()
-            .update_contact(updated, resource_name)
-            .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
-            .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-            .doit()
-            .await?;
+        let (_, refreshed) = retry_api(|| {
+            let r = hub.people()
+                .update_contact(updated.clone(), resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
+                .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
+            async { r.doit().await }
+        }).await?;
         *current = refreshed;
         eprintln!("  Added email \"{}\"", val);
         tokio::time::sleep(MUTATE_DELAY).await;
@@ -1826,12 +1889,13 @@ async fn edit_emails(
             if let Some(ref mut ems) = updated.email_addresses {
                 if idx >= 1 && idx <= ems.len() {
                     ems.remove(idx - 1);
-                    let (_, refreshed) = hub.people()
-                        .update_contact(updated, resource_name)
-                        .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
-                        .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-                        .doit()
-                        .await?;
+                    let (_, refreshed) = retry_api(|| {
+                        let r = hub.people()
+                            .update_contact(updated.clone(), resource_name)
+                            .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
+                            .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
+                        async { r.doit().await }
+                    }).await?;
                     *current = refreshed;
                     eprintln!("  Removed email #{}", idx);
                     tokio::time::sleep(MUTATE_DELAY).await;
@@ -1857,12 +1921,13 @@ async fn edit_emails(
                 if let Some(ref mut ems) = updated.email_addresses {
                     ems[idx - 1].value = Some(val.to_string());
                 }
-                let (_, refreshed) = hub.people()
-                    .update_contact(updated, resource_name)
-                    .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
-                    .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-                    .doit()
-                    .await?;
+                let (_, refreshed) = retry_api(|| {
+                    let r = hub.people()
+                        .update_contact(updated.clone(), resource_name)
+                        .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
+                        .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
+                    async { r.doit().await }
+                }).await?;
                 *current = refreshed;
                 eprintln!("  Updated email #{} to \"{}\"", idx, val);
                 tokio::time::sleep(MUTATE_DELAY).await;
@@ -1914,7 +1979,10 @@ async fn interactive_edit_contact(
                         resource_names_to_add: Some(vec![resource_name.to_string()]),
                         resource_names_to_remove: None,
                     };
-                    hub.contact_groups().members_modify(req, &group_rn).doit().await?;
+                    retry_api(|| {
+                        let r = hub.contact_groups().members_modify(req.clone(), &group_rn);
+                        async { r.doit().await }
+                    }).await?;
                     // Update local memberships
                     let new_membership = google_people1::api::Membership {
                         contact_group_membership: Some(google_people1::api::ContactGroupMembership {
@@ -1951,7 +2019,10 @@ async fn interactive_edit_contact(
                                 resource_names_to_add: None,
                                 resource_names_to_remove: Some(vec![resource_name.to_string()]),
                             };
-                            hub.contact_groups().members_modify(req, rn).doit().await?;
+                            retry_api(|| {
+                                let r = hub.contact_groups().members_modify(req.clone(), rn);
+                                async { r.doit().await }
+                            }).await?;
                             // Update local memberships
                             if let Some(ref mut memberships) = current.memberships {
                                 memberships.retain(|m| {
@@ -1972,7 +2043,10 @@ async fn interactive_edit_contact(
             }
             "d" => {
                 if prompt_yes_no(&format!("Delete {}?", person_display_name(&current)))? {
-                    hub.people().delete_contact(&resource_name).doit().await?;
+                    retry_api(|| {
+                        let r = hub.people().delete_contact(&resource_name);
+                        async { r.doit().await }
+                    }).await?;
                     eprintln!("  Deleted.");
                     tokio::time::sleep(MUTATE_DELAY).await;
                 }
@@ -2069,11 +2143,8 @@ pub async fn cmd_export_json(short: bool) -> Result<(), Box<dyn std::error::Erro
         ]
     };
     let contacts = fetch_all_contacts(&hub, fields).await?;
-    let with_name: Vec<_> = contacts.into_iter().filter(|p| {
-        !person_name(p).is_empty()
-    }).collect();
     if short {
-        let short_entries: Vec<_> = with_name.iter().map(|p| {
+        let short_entries: Vec<_> = contacts.iter().map(|p| {
             serde_json::json!({
                 "resourceName": p.resource_name,
                 "displayName": person_display_name(p),
@@ -2082,7 +2153,7 @@ pub async fn cmd_export_json(short: bool) -> Result<(), Box<dyn std::error::Erro
         let json = serde_json::to_string_pretty(&short_entries)?;
         println!("{}", json);
     } else {
-        let json = serde_json::to_string_pretty(&with_name)?;
+        let json = serde_json::to_string_pretty(&contacts)?;
         println!("{}", json);
     }
     Ok(())
@@ -2271,12 +2342,13 @@ async fn check_type_company_given_name(
                         let combined = [company_name, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
                         first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
                     }
-                hub.people()
-                    .update_contact(updated, resource_name)
-                    .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                    .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS))
-                    .doit()
-                    .await?;
+                retry_api(|| {
+                    let r = hub.people()
+                        .update_contact(updated.clone(), resource_name)
+                        .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                        .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
+                    async { r.doit().await }
+                }).await?;
                 eprintln!("  Set given name to \"{}\"", company_name);
                 tokio::time::sleep(MUTATE_DELAY).await;
             } else if ctx.fix && !ctx.dry_run {
@@ -2348,7 +2420,10 @@ async fn check_type_company_no_label(
                         contact_group: Some(new_group),
                         read_group_fields: None,
                     };
-                    let (_, created) = hub.contact_groups().create(req).doit().await?;
+                    let (_, created) = retry_api(|| {
+                        let r = hub.contact_groups().create(req.clone());
+                        async { r.doit().await }
+                    }).await?;
                     let rn = created.resource_name
                         .ok_or("Created group missing resource name")?;
                     eprintln!("  Created label \"{}\"", expected_label);
@@ -2360,7 +2435,10 @@ async fn check_type_company_no_label(
                     resource_names_to_add: Some(vec![resource_name.to_string()]),
                     resource_names_to_remove: None,
                 };
-                hub.contact_groups().members_modify(req, &group_rn).doit().await?;
+                retry_api(|| {
+                    let r = hub.contact_groups().members_modify(req.clone(), &group_rn);
+                    async { r.doit().await }
+                }).await?;
                 eprintln!("  Assigned label \"{}\"", expected_label);
                 tokio::time::sleep(MUTATE_DELAY).await;
             } else if ctx.fix && !ctx.dry_run {
@@ -2538,7 +2616,10 @@ pub async fn cmd_check_contact_label_nophone(fix: bool, dry_run: bool) -> Result
             std::io::stdout().flush()?;
             if let Some(resource_name) = group.resource_name.as_deref() {
                 if prompt_yes_no(&format!("Delete label \"{}\"?", name))? {
-                    hub.contact_groups().delete(resource_name).doit().await?;
+                    retry_api(|| {
+                        let r = hub.contact_groups().delete(resource_name);
+                        async { r.doit().await }
+                    }).await?;
                     eprintln!("  Deleted.");
                     tokio::time::sleep(MUTATE_DELAY).await;
                 } else {
@@ -2920,7 +3001,10 @@ pub async fn cmd_remove_label_from_all_contacts(label: &str, dry_run: bool) -> R
                 resource_names_to_add: None,
                 resource_names_to_remove: Some(chunk.to_vec()),
             };
-            hub.contact_groups().members_modify(req, group_rn).doit().await?;
+            retry_api(|| {
+                let r = hub.contact_groups().members_modify(req.clone(), group_rn);
+                async { r.doit().await }
+            }).await?;
             tokio::time::sleep(MUTATE_DELAY).await;
         }
         eprintln!("Done. Removed label \"{}\" from {} contacts.", group_name, members.len());
@@ -3199,6 +3283,13 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         results.push(("check-contact-displayname-duplicate", name_dup));
     }
 
+    if !skip.contains("check-contact-no-displayname") {
+        log("check-contact-no-displayname");
+        let ctx = make_ctx(hdr("Contacts with empty display name (check-contact-no-displayname)"));
+        let no_displayname = check_no_displayname(&hub, &all_contacts, &ctx).await?;
+        results.push(("check-contact-no-displayname", no_displayname));
+    }
+
     if !skip.contains("check-contact-type") {
         log("check-contact-type");
         let ctx = make_ctx(hdr("Contacts missing or having both type:Person/type:Company (check-contact-type)"));
@@ -3300,7 +3391,10 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
                     std::io::stdout().flush()?;
                     if let Some(resource_name) = group.resource_name.as_deref() {
                         if prompt_yes_no(&format!("Delete label \"{}\"?", name))? {
-                            hub.contact_groups().delete(resource_name).doit().await?;
+                            retry_api(|| {
+                                let r = hub.contact_groups().delete(resource_name);
+                                async { r.doit().await }
+                            }).await?;
                             eprintln!("  Deleted.");
                             tokio::time::sleep(MUTATE_DELAY).await;
                         } else {
@@ -3401,11 +3495,12 @@ pub async fn cmd_move_family_to_suffix(dry_run: bool) -> Result<(), Box<dyn std:
                     let combined = [g, s].iter().filter(|p| !p.is_empty()).copied().collect::<Vec<_>>().join(" ");
                     first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
                 }
-            hub.people()
-                .update_contact(updated, resource_name)
-                .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                .doit()
-                .await?;
+            retry_api(|| {
+                let r = hub.people()
+                    .update_contact(updated.clone(), resource_name)
+                    .update_person_fields(FieldMask::new::<&str>(&["names"]));
+                async { r.doit().await }
+            }).await?;
             tokio::time::sleep(MUTATE_DELAY).await;
         }
         total += 1;
@@ -3449,11 +3544,12 @@ pub async fn cmd_move_suffix_to_family(dry_run: bool) -> Result<(), Box<dyn std:
                     let combined = [g, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
                     first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
                 }
-            hub.people()
-                .update_contact(updated, resource_name)
-                .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                .doit()
-                .await?;
+            retry_api(|| {
+                let r = hub.people()
+                    .update_contact(updated.clone(), resource_name)
+                    .update_person_fields(FieldMask::new::<&str>(&["names"]));
+                async { r.doit().await }
+            }).await?;
             tokio::time::sleep(MUTATE_DELAY).await;
         }
         total += 1;
@@ -3584,11 +3680,12 @@ pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<
                         }]);
                     }
                 }
-                hub.people()
-                    .update_contact(updated, resource_name)
-                    .update_person_fields(FieldMask::new::<&str>(&["names"]))
-                    .doit()
-                    .await?;
+                retry_api(|| {
+                    let r = hub.people()
+                        .update_contact(updated.clone(), resource_name)
+                        .update_person_fields(FieldMask::new::<&str>(&["names"]));
+                    async { r.doit().await }
+                }).await?;
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
             total_changes += 1;

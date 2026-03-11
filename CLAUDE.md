@@ -31,3 +31,4 @@ Single-binary Rust CLI for auditing and fixing Google Contacts. Three source fil
 - Phone format checks use `is_fixable_phone()` to skip non-numeric entries (star codes, short codes, alphanumeric strings).
 - OAuth credentials stored at `~/.config/rscontacts/credentials.json`; token cached at `~/.config/rscontacts/token_cache.json`.
 - Most check commands support `--fix` and `--dry-run` flags. A 500ms delay (`MUTATE_DELAY`) is applied between mutations to avoid rate limiting.
+- All Google API calls use `retry_api()` to handle transient HTTP errors (429, 502, 503, 504) with exponential backoff. See the [Transport Errors](docs/src/transport-errors.md) book chapter for details.

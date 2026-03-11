@@ -8,6 +8,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Failed to install default CryptoProvider");
 
     let cli = Cli::parse();
+    rscontacts::helpers::set_transport_errors(cli.transport_errors);
 
     match cli.command {
         Commands::AllChecks { fix, dry_run, stats, verbose, ref country } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
@@ -15,6 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckContactCompanyExists { fix, dry_run } => commands::cmd_check_contact_company_exists(fix, dry_run).await?,
         Commands::CheckContactCompanyKnown { fix, dry_run } => commands::cmd_check_contact_company_known(fix, dry_run).await?,
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?,
+        Commands::CheckContactNoDisplayname { fix, dry_run } => commands::cmd_check_contact_no_displayname(fix, dry_run).await?,
         Commands::CheckContactEmail { fix, dry_run } => commands::cmd_check_contact_email(fix, dry_run).await?,
         Commands::CheckContactEmailDuplicate { fix, dry_run } => commands::cmd_check_contact_email_duplicate(fix, dry_run).await?,
         Commands::CheckContactFamilyNameRegexp { fix, dry_run } => commands::cmd_check_contact_family_name_regexp(fix, dry_run).await?,

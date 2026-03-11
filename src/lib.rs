@@ -7,6 +7,10 @@ use clap::{CommandFactory, Parser, Subcommand};
 #[command(name = "rscontacts")]
 #[command(about = "Google Contacts CLI tool")]
 pub struct Cli {
+    /// Print a message when a transient API error triggers a retry
+    #[arg(long, global = true)]
+    pub transport_errors: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -62,6 +66,15 @@ pub enum Commands {
     /// Print contacts that share the same display name
     CheckContactDisplaynameDuplicate {
         /// Interactively fix each duplicate (rename/delete/skip)
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Print contacts with an empty display name
+    CheckContactNoDisplayname {
+        /// Interactively fix each flagged contact
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
@@ -316,7 +329,7 @@ pub enum Commands {
         /// Name (or part of name) to search for
         name: String,
     },
-    /// Export contacts as JSON (only contacts with a display name)
+    /// Export all contacts as JSON
     ExportJson {
         /// Only output displayName and resourceName
         #[arg(long)]
