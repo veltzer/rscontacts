@@ -133,6 +133,7 @@ skip = [
     # "check-phone-format",
     # "check-phone-label-missing",
     # "check-phone-label-english",
+    # "check-phone-country-label",
     # "check-phone-duplicate",
     # "check-contact-type-company-given-name",
     # "check-contact-type-company-no-company",
@@ -1117,6 +1118,146 @@ async fn check_name_duplicate(
         if ctx.header.is_some() {
             println!();
         }
+    }
+
+    Ok(count)
+}
+
+pub async fn cmd_check_phone_country_label(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let s = setup_standard_check(fix).await?;
+    let ug = s.to_ref_vec();
+    let ctx = s.make_ctx(fix, dry_run, &ug);
+    check_phone_country_label(&s.hub, &s.contacts, &ctx).await?;
+    Ok(())
+}
+
+async fn check_phone_country_label(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+
+    // Collect expected country names per contact (by index)
+    let mut expected_countries: Vec<std::collections::HashSet<&'static str>> = Vec::with_capacity(contacts.len());
+    for person in contacts {
+        let mut countries = std::collections::HashSet::new();
+        if let Some(phones) = &person.phone_numbers {
+            for pn in phones {
+                if let Some(val) = pn.value.as_deref()
+                    && let Some(country_name) = phone_country_name(val) {
+                        countries.insert(country_name);
+                    }
+            }
+        }
+        expected_countries.push(countries);
+    }
+
+    // Build set of all recognized country label names for filtering
+    let all_country_labels: std::collections::HashSet<String> = expected_countries.iter()
+        .flat_map(|cs| cs.iter().map(|c| format!("country:{}", c)))
+        .collect();
+
+    for (i, person) in contacts.iter().enumerate() {
+        let expected = &expected_countries[i];
+        let current_labels = person_labels(person, ctx.group_names);
+
+        // Check 1: contact should have country:<Name> for each phone country code
+        for country_name in expected {
+            let expected_label = format!("country:{}", country_name);
+            if !current_labels.iter().any(|l| l == &expected_label) {
+                if !ctx.quiet {
+                    if count == 0
+                        && let Some(header) = ctx.header {
+                            println!("=== {} ===", header);
+                        }
+                    println!("{}{} (missing label \"{}\")", ctx.prefix, format_person_line(person, Some(ctx.group_names)), expected_label);
+                }
+                count += 1;
+
+                if ctx.fix && !ctx.dry_run {
+                    let resource_name = get_resource_name(person)?;
+                    // Find or create the contact group
+                    let group_rn = if let Some((_, rn)) = ctx.user_groups.iter().find(|(name, _)| *name == expected_label) {
+                        rn.to_string()
+                    } else {
+                        let new_group = google_people1::api::ContactGroup {
+                            name: Some(expected_label.clone()),
+                            ..Default::default()
+                        };
+                        let req = google_people1::api::CreateContactGroupRequest {
+                            contact_group: Some(new_group),
+                            read_group_fields: None,
+                        };
+                        let (_, created) = retry_api(|| {
+                            let r = hub.contact_groups().create(req.clone());
+                            async { r.doit().await }
+                        }).await?;
+                        let rn = created.resource_name
+                            .ok_or("Created group missing resource name")?;
+                        eprintln!("  Created label \"{}\"", expected_label);
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                        rn
+                    };
+                    let req = google_people1::api::ModifyContactGroupMembersRequest {
+                        resource_names_to_add: Some(vec![resource_name.to_string()]),
+                        resource_names_to_remove: None,
+                    };
+                    retry_api(|| {
+                        let r = hub.contact_groups().members_modify(req.clone(), &group_rn);
+                        async { r.doit().await }
+                    }).await?;
+                    eprintln!("  Assigned label \"{}\" to {}", expected_label, person_display_name(person));
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                }
+            }
+        }
+
+        // Check 2: contact should NOT have country:<Name> if no phone has that country code
+        for label in &current_labels {
+            if !label.starts_with("country:") {
+                continue;
+            }
+            let country_name = &label["country:".len()..];
+            // Only flag labels whose country name is one we recognize (exists in all_country_labels)
+            let recognized = all_country_labels.contains(label);
+            if !recognized {
+                continue;
+            }
+            if expected.iter().any(|c| *c == country_name) {
+                continue;
+            }
+
+            if !ctx.quiet {
+                if count == 0
+                    && let Some(header) = ctx.header {
+                        println!("=== {} ===", header);
+                    }
+                println!("{}{} (has label \"{}\" but no {} phone number)", ctx.prefix, format_person_line(person, Some(ctx.group_names)), label, country_name);
+            }
+            count += 1;
+
+            if ctx.fix && !ctx.dry_run {
+                let resource_name = get_resource_name(person)?;
+                // Find the group resource name for this label
+                if let Some((_, rn)) = ctx.user_groups.iter().find(|(name, _)| *name == label.as_str()) {
+                    let req = google_people1::api::ModifyContactGroupMembersRequest {
+                        resource_names_to_add: None,
+                        resource_names_to_remove: Some(vec![resource_name.to_string()]),
+                    };
+                    retry_api(|| {
+                        let r = hub.contact_groups().members_modify(req.clone(), rn);
+                        async { r.doit().await }
+                    }).await?;
+                    eprintln!("  Removed label \"{}\" from {}", label, person_display_name(person));
+                    tokio::time::sleep(MUTATE_DELAY).await;
+                }
+            }
+        }
+    }
+
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
     }
 
     Ok(count)
@@ -3353,6 +3494,13 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         results.push(("check-phone-label-english", phone_label_eng));
     }
 
+    if !skip.contains("check-phone-country-label") {
+        log("check-phone-country-label");
+        let ctx = make_ctx(hdr("Missing/wrong country labels for phone numbers (check-phone-country-label)"));
+        let country_label = check_phone_country_label(&hub, &all_contacts, &ctx).await?;
+        results.push(("check-phone-country-label", country_label));
+    }
+
     if !skip.contains("check-contact-email") {
         log("check-contact-email");
         let ctx = make_ctx(hdr("Invalid or uppercase emails (check-contact-email)"));
@@ -3461,6 +3609,318 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         let found_any = results.iter().any(|(_, c)| *c > 0);
         if !found_any {
             println!("All checks passed!");
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn cmd_merge_by_phone(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, ALL_CONTACT_FIELDS).await?;
+    let all_groups = fetch_all_contact_groups(&hub).await?;
+    let group_names = build_group_name_map(&all_groups);
+
+    // Normalize phone numbers to digits-only for comparison
+    fn normalize_phone(phone: &str) -> String {
+        let trimmed = phone.trim();
+        let digits: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
+        // Strip leading 00 (international prefix) and treat as same as +
+        if trimmed.starts_with("00") && digits.len() > 2 {
+            digits[2..].to_string()
+        } else {
+            digits
+        }
+    }
+
+    // Build map: normalized phone -> list of contact indices
+    let mut phone_to_contacts: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
+    for (i, person) in contacts.iter().enumerate() {
+        if let Some(phones) = &person.phone_numbers {
+            for pn in phones {
+                if let Some(val) = pn.value.as_deref() {
+                    if !is_fixable_phone(val) {
+                        continue;
+                    }
+                    let normalized = normalize_phone(val);
+                    if !normalized.is_empty() {
+                        phone_to_contacts.entry(normalized).or_default().push(i);
+                    }
+                }
+            }
+        }
+    }
+
+    // Find groups of contacts that share phones (connected components)
+    // Two contacts are in the same group if they share ANY phone number
+    let mut parent: Vec<usize> = (0..contacts.len()).collect();
+    fn find(parent: &mut [usize], x: usize) -> usize {
+        if parent[x] != x {
+            parent[x] = find(parent, parent[x]);
+        }
+        parent[x]
+    }
+    fn union(parent: &mut [usize], a: usize, b: usize) {
+        let ra = find(parent, a);
+        let rb = find(parent, b);
+        if ra != rb {
+            parent[ra] = rb;
+        }
+    }
+
+    for indices in phone_to_contacts.values() {
+        if indices.len() > 1 {
+            for w in indices.windows(2) {
+                union(&mut parent, w[0], w[1]);
+            }
+        }
+    }
+
+    // Collect groups of size > 1
+    let mut groups: std::collections::HashMap<usize, Vec<usize>> = std::collections::HashMap::new();
+    for i in 0..contacts.len() {
+        let root = find(&mut parent, i);
+        groups.entry(root).or_default().push(i);
+    }
+    let mut merge_groups: Vec<Vec<usize>> = groups.into_values()
+        .filter(|g| g.len() > 1)
+        .collect();
+    merge_groups.sort_by_key(|g| g[0]);
+
+    if merge_groups.is_empty() {
+        println!("No contacts share phone numbers.");
+        return Ok(());
+    }
+
+    println!("Found {} groups of contacts sharing phone numbers:\n", merge_groups.len());
+
+    for (group_idx, group) in merge_groups.iter().enumerate() {
+        // Find shared phones for display
+        let mut group_phones: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
+        for &idx in group {
+            if let Some(phones) = &contacts[idx].phone_numbers {
+                for pn in phones {
+                    if let Some(val) = pn.value.as_deref()
+                        && is_fixable_phone(val) {
+                            group_phones.entry(normalize_phone(val)).or_default().push(val);
+                        }
+                }
+            }
+        }
+        let shared: Vec<String> = group_phones.iter()
+            .filter(|(_, vals)| vals.len() > 1)
+            .map(|(_, vals)| vals[0].to_string())
+            .collect();
+
+        println!("--- Group {} ({} contacts, {} shared phones) ---", group_idx + 1, group.len(), shared.len());
+        for &idx in group {
+            println!("  [{}] {}", idx + 1, format_person_line(&contacts[idx], Some(&group_names)));
+        }
+        println!("  Shared: {}", shared.join(", "));
+        println!();
+
+        if fix {
+            if dry_run {
+                eprintln!("(dry-run) would prompt for merge\n");
+                continue;
+            }
+
+            use std::io::Write;
+            loop {
+                eprint!("  [m]erge / [s]kip: ");
+                std::io::stderr().flush()?;
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                match input.trim() {
+                    "s" | "" => break,
+                    "m" => {
+                        // Ask which contact to keep
+                        eprint!("  Keep which contact? [1-{}]: ", group.len());
+                        std::io::stderr().flush()?;
+                        let mut idx_input = String::new();
+                        std::io::stdin().read_line(&mut idx_input)?;
+                        let pick: usize = idx_input.trim().parse().unwrap_or(0);
+                        if pick < 1 || pick > group.len() {
+                            eprintln!("  Invalid selection.");
+                            continue;
+                        }
+                        let keep_idx = group[pick - 1];
+
+                        // Re-fetch the target contact to get fresh etag
+                        let keep_rn = get_resource_name(&contacts[keep_idx])?;
+                        let (_, fresh_keep) = retry_api(|| {
+                            let r = hub.people().get(keep_rn)
+                                .person_fields(FieldMask::new::<&str>(ALL_CONTACT_FIELDS));
+                            async { r.doit().await }
+                        }).await?;
+
+                        let mut target = fresh_keep;
+
+                        // Merge fields from all other contacts into target
+                        for (j, &src_idx) in group.iter().enumerate() {
+                            if j == pick - 1 {
+                                continue;
+                            }
+                            let source = &contacts[src_idx];
+
+                            // Merge phone numbers (add ones not already present)
+                            if let Some(src_phones) = &source.phone_numbers {
+                                let target_phones = target.phone_numbers.get_or_insert_with(Vec::new);
+                                let existing: std::collections::HashSet<String> = target_phones.iter()
+                                    .filter_map(|p| p.value.as_deref())
+                                    .map(normalize_phone)
+                                    .collect();
+                                for pn in src_phones {
+                                    if let Some(val) = pn.value.as_deref()
+                                        && !existing.contains(&normalize_phone(val)) {
+                                            target_phones.push(google_people1::api::PhoneNumber {
+                                                value: Some(val.to_string()),
+                                                type_: pn.type_.clone(),
+                                                formatted_type: pn.formatted_type.clone(),
+                                                metadata: None,
+                                                ..Default::default()
+                                            });
+                                        }
+                                }
+                            }
+
+                            // Merge email addresses
+                            if let Some(src_emails) = &source.email_addresses {
+                                let target_emails = target.email_addresses.get_or_insert_with(Vec::new);
+                                let existing: std::collections::HashSet<String> = target_emails.iter()
+                                    .filter_map(|e| e.value.as_deref())
+                                    .map(|v| v.to_lowercase())
+                                    .collect();
+                                for email in src_emails {
+                                    if let Some(val) = email.value.as_deref()
+                                        && !existing.contains(&val.to_lowercase()) {
+                                            target_emails.push(google_people1::api::EmailAddress {
+                                                value: Some(val.to_string()),
+                                                type_: email.type_.clone(),
+                                                formatted_type: email.formatted_type.clone(),
+                                                metadata: None,
+                                                ..Default::default()
+                                            });
+                                        }
+                                }
+                            }
+
+                            // Merge addresses
+                            if let Some(src_addrs) = &source.addresses {
+                                let target_addrs = target.addresses.get_or_insert_with(Vec::new);
+                                for addr in src_addrs {
+                                    let formatted = addr.formatted_value.as_deref().unwrap_or("");
+                                    let already = target_addrs.iter().any(|a| {
+                                        a.formatted_value.as_deref().unwrap_or("") == formatted && !formatted.is_empty()
+                                    });
+                                    if !already {
+                                        let mut new_addr = addr.clone();
+                                        new_addr.metadata = None;
+                                        target_addrs.push(new_addr);
+                                    }
+                                }
+                            }
+
+                            // Merge organization (only if target has none)
+                            if target.organizations.as_ref().is_none_or(|o| o.is_empty())
+                                && let Some(src_orgs) = &source.organizations
+                                && !src_orgs.is_empty() {
+                                    target.organizations = Some(src_orgs.iter().map(|o| {
+                                        let mut new_org = o.clone();
+                                        new_org.metadata = None;
+                                        new_org
+                                    }).collect());
+                                }
+
+                            // Merge birthdays (only if target has none)
+                            if target.birthdays.as_ref().is_none_or(|b| b.is_empty())
+                                && let Some(src_bdays) = &source.birthdays
+                                && !src_bdays.is_empty() {
+                                    target.birthdays = Some(src_bdays.iter().map(|b| {
+                                        let mut new_b = b.clone();
+                                        new_b.metadata = None;
+                                        new_b
+                                    }).collect());
+                                }
+
+                            // Merge biographies (only if target has none)
+                            if target.biographies.as_ref().is_none_or(|b| b.is_empty())
+                                && let Some(src_bios) = &source.biographies
+                                && !src_bios.is_empty() {
+                                    target.biographies = Some(src_bios.iter().map(|b| {
+                                        let mut new_b = b.clone();
+                                        new_b.metadata = None;
+                                        new_b
+                                    }).collect());
+                                }
+
+                            // Copy labels from source to target
+                            if let Some(src_memberships) = &source.memberships {
+                                for m in src_memberships {
+                                    if let Some(cgm) = &m.contact_group_membership {
+                                        let rn = cgm.contact_group_resource_name.as_deref().unwrap_or("");
+                                        if rn.is_empty() || rn == "contactGroups/myContacts" {
+                                            continue;
+                                        }
+                                        // Check if target already has this membership
+                                        let already = target.memberships.as_ref().is_some_and(|ms| {
+                                            ms.iter().any(|tm| {
+                                                tm.contact_group_membership.as_ref()
+                                                    .and_then(|c| c.contact_group_resource_name.as_deref())
+                                                    == Some(rn)
+                                            })
+                                        });
+                                        if !already {
+                                            let target_rn = get_resource_name(&target)?;
+                                            let req = google_people1::api::ModifyContactGroupMembersRequest {
+                                                resource_names_to_add: Some(vec![target_rn.to_string()]),
+                                                resource_names_to_remove: None,
+                                            };
+                                            retry_api(|| {
+                                                let r = hub.contact_groups().members_modify(req.clone(), rn);
+                                                async { r.doit().await }
+                                            }).await?;
+                                            eprintln!("  Copied label \"{}\"", group_names.get(rn).map(|s| s.as_str()).unwrap_or(rn));
+                                            tokio::time::sleep(MUTATE_DELAY).await;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Update the target contact with merged fields
+                        let target_rn = get_resource_name(&target)?;
+                        retry_api(|| {
+                            let r = hub.people()
+                                .update_contact(target.clone(), target_rn)
+                                .update_person_fields(FieldMask::new::<&str>(&[
+                                    "phoneNumbers", "emailAddresses", "addresses",
+                                    "organizations", "birthdays", "biographies",
+                                ]));
+                            async { r.doit().await }
+                        }).await?;
+                        eprintln!("  Updated {}", person_display_name(&target));
+                        tokio::time::sleep(MUTATE_DELAY).await;
+
+                        // Delete the source contacts
+                        for (j, &src_idx) in group.iter().enumerate() {
+                            if j == pick - 1 {
+                                continue;
+                            }
+                            let src_rn = get_resource_name(&contacts[src_idx])?;
+                            retry_api(|| {
+                                let r = hub.people().delete_contact(src_rn);
+                                async { r.doit().await }
+                            }).await?;
+                            eprintln!("  Deleted {}", person_display_name(&contacts[src_idx]));
+                            tokio::time::sleep(MUTATE_DELAY).await;
+                        }
+                        eprintln!("  Merged successfully.\n");
+                        break;
+                    }
+                    _ => eprintln!("  Invalid choice. Enter m or s."),
+                }
+            }
         }
     }
 

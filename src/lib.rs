@@ -249,6 +249,15 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Check that contacts have correct country:<Name> labels matching their phone country codes
+    CheckPhoneCountryLabel {
+        /// Automatically add/remove country labels
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print contacts with phone numbers missing a country code
     CheckPhoneCountrycode {
         /// Fix by prepending country code
@@ -294,6 +303,15 @@ pub enum Commands {
     /// Print contacts with phone numbers missing a label (mobile/home/work/etc)
     CheckPhoneLabelMissing {
         /// Interactively fix phones without labels
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Find and merge contacts that share the same phone number
+    MergeByPhone {
+        /// Interactively merge each duplicate group
         #[arg(long)]
         fix: bool,
         /// Show what would be changed without modifying anything
