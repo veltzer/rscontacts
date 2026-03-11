@@ -3373,6 +3373,54 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     Ok(())
 }
 
+pub async fn cmd_move_family_to_suffix(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = build_hub().await?;
+    let contacts = fetch_all_contacts(&hub, &["names", "organizations"]).await?;
+
+    let mut total = 0;
+    for person in &contacts {
+        let names = person.names.as_ref().and_then(|n| n.first());
+        let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
+        let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
+
+        // Only act on numeric family names with no existing suffix
+        if family.is_empty() || !suffix.is_empty() || family.parse::<u32>().is_err() {
+            continue;
+        }
+
+        println!("{} -> moving family name \"{}\" to suffix", format_person_line(person, None), family);
+
+        if !dry_run {
+            let resource_name = get_resource_name(person)?;
+            let mut updated = person.clone();
+            if let Some(ref mut names) = updated.names
+                && let Some(first) = names.first_mut() {
+                    first.honorific_suffix = first.family_name.take();
+                    let g = first.given_name.as_deref().unwrap_or("");
+                    let s = first.honorific_suffix.as_deref().unwrap_or("");
+                    let combined = [g, s].iter().filter(|p| !p.is_empty()).copied().collect::<Vec<_>>().join(" ");
+                    first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
+                }
+            hub.people()
+                .update_contact(updated, resource_name)
+                .update_person_fields(FieldMask::new::<&str>(&["names"]))
+                .doit()
+                .await?;
+            tokio::time::sleep(MUTATE_DELAY).await;
+        }
+        total += 1;
+    }
+
+    if total == 0 {
+        println!("No contacts with numeric family name and no suffix.");
+    } else if dry_run {
+        println!("{} change(s) would be made.", total);
+    } else {
+        println!("{} contact(s) updated.", total);
+    }
+    Ok(())
+}
+
 pub async fn cmd_move_suffix_to_family(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations"]).await?;

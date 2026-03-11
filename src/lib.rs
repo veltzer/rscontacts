@@ -287,6 +287,12 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Move numeric family names to suffix for contacts that have no suffix
+    MoveFamilyToSuffix {
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Move numeric suffixes to family name for contacts that have no family name
     MoveSuffixToFamily {
         /// Show what would be changed without modifying anything
