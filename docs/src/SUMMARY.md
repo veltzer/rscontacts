@@ -26,6 +26,7 @@
     - [check-duplicate-phones](commands/check-duplicate-phones.md)
     - [check-duplicate-emails](commands/check-duplicate-emails.md)
     - [check-labels-nophone](commands/check-labels-nophone.md)
+    - [merge-by-email](commands/merge-by-email.md)
     - [merge-by-phone](commands/merge-by-phone.md)
     - [auth](commands/auth.md)
     - [version](commands/version.md)

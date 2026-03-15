@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CheckPhoneFormat { fix, dry_run, ref country } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckPhoneLabelEnglish { fix, dry_run } => commands::cmd_check_phone_label_english(fix, dry_run).await?,
         Commands::CheckPhoneLabelMissing { fix, dry_run } => commands::cmd_check_phone_label_missing(fix, dry_run).await?,
+        Commands::MergeByEmail { fix, dry_run } => commands::cmd_merge_by_email(fix, dry_run).await?,
         Commands::MergeByPhone { fix, dry_run } => commands::cmd_merge_by_phone(fix, dry_run).await?,
         Commands::MoveFamilyToSuffix { dry_run } => commands::cmd_move_family_to_suffix(dry_run).await?,
         Commands::MoveSuffixToFamily { dry_run } => commands::cmd_move_suffix_to_family(dry_run).await?,

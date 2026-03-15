@@ -309,6 +309,15 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Find and merge contacts that share the same email address
+    MergeByEmail {
+        /// Interactively merge each duplicate group
+        #[arg(long)]
+        fix: bool,
+        /// Show what would be changed without modifying anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Find and merge contacts that share the same phone number
     MergeByPhone {
         /// Interactively merge each duplicate group

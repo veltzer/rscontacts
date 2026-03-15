@@ -1,31 +1,31 @@
-# merge-by-phone
+# merge-by-email
 
-Find and merge contacts that share the same phone number across different contacts.
+Find and merge contacts that share the same email address across different contacts.
 
 ## Usage
 
 ```bash
-rscontacts merge-by-phone
-rscontacts merge-by-phone --fix
-rscontacts merge-by-phone --fix --dry-run
+rscontacts merge-by-email
+rscontacts merge-by-email --fix
+rscontacts merge-by-email --fix --dry-run
 ```
 
 ## What It Does
 
-Scans all contacts and identifies groups of contacts that share one or more phone numbers. Phone numbers are normalized (digits only, stripping international prefix `00`) before comparison, so `+972-501234567` and `00972501234567` are treated as the same number.
+Scans all contacts and identifies groups of contacts that share one or more email addresses. Emails are compared case-insensitively, so `John@Example.com` and `john@example.com` are treated as the same address.
 
-Contacts are grouped using connected components: if contact A shares a phone with contact B, and contact B shares a different phone with contact C, all three are in the same merge group.
+Contacts are grouped using connected components: if contact A shares an email with contact B, and contact B shares a different email with contact C, all three are in the same merge group.
 
 Without `--fix`, displays each group showing:
 - All contacts in the group with full details
-- Which phone numbers are shared
+- Which email addresses are shared
 
 ## Fix Behavior
 
 With `--fix`, for each group of N contacts you are prompted with:
 
 ```
-[d1]elete [e1]dit [d2]elete [e2]dit ... [m]erge / [s]kip
+[d1]elete [e1]dit [d2]elete [e2]dit ... [m]erge / [n]ext
 ```
 
 - **d1, d2, ...** — Delete contact 1, 2, etc. (asks for confirmation). The contact is removed from the group and the prompt re-displays with remaining contacts.
@@ -52,7 +52,6 @@ With `--fix --dry-run`, shows what would happen without making changes.
 
 ## Notes
 
-- Only "fixable" phone numbers are considered (see `is_fixable_phone` — star codes, short codes, and alphanumeric entries are skipped).
 - The merge is additive for multi-value fields (phones, emails, addresses, labels) and first-wins for single-value fields (organization, birthday, biography).
 - The target contact is re-fetched before updating to ensure a fresh etag, avoiding conflicts.
 - This is NOT included in `check-all` since it is a destructive operation requiring careful interactive review.
