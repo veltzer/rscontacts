@@ -3,6 +3,9 @@ name = "rscontacts"
 version = "0.1.4"
 edition = "2024"
 authors = ["Mark Veltzer <mark.veltzer@gmail.com>"]
+description = "Managed your google contacts"
+license = "MIT"
+repository = "https://github.com/veltzer/rscontacts"
 
 [dependencies]
 google-people1 = "6"
