@@ -6,6 +6,14 @@
 - Google Cloud project with People API enabled
 - OAuth2 credentials (Desktop application type)
 
+## Install from crates.io
+
+```bash
+cargo install rscontacts
+```
+
+This downloads, compiles, and installs the latest published version into `~/.cargo/bin/`.
+
 ## Building from Source
 
 ```bash
