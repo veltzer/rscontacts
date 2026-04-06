@@ -16,6 +16,7 @@ const RETRY_DELAYS: [Duration; 3] = [
     Duration::from_secs(2),
     Duration::from_secs(4),
 ];
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub fn set_transport_errors(enabled: bool) {
     TRANSPORT_ERRORS.store(enabled, Ordering::Relaxed);
@@ -34,9 +35,24 @@ where
 {
     let verbose = TRANSPORT_ERRORS.load(Ordering::Relaxed);
     for attempt in 0..=MAX_RETRIES {
-        match make_request().await {
-            Ok(val) => return Ok(val),
-            Err(google_people1::Error::Failure(ref resp)) if attempt < MAX_RETRIES && is_transient_status(resp.status().as_u16()) => {
+        let result = tokio::time::timeout(REQUEST_TIMEOUT, make_request()).await;
+        match result {
+            Err(_elapsed) => {
+                if attempt < MAX_RETRIES {
+                    let delay = RETRY_DELAYS[attempt as usize];
+                    if verbose {
+                        eprintln!("  [transport] request timed out after {}s - retrying in {}s (attempt {}/{})", REQUEST_TIMEOUT.as_secs(), delay.as_secs(), attempt + 1, MAX_RETRIES);
+                    }
+                    tokio::time::sleep(delay).await;
+                } else {
+                    return Err(google_people1::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("request timed out after {}s (exhausted all retries)", REQUEST_TIMEOUT.as_secs()),
+                    )));
+                }
+            }
+            Ok(Ok(val)) => return Ok(val),
+            Ok(Err(google_people1::Error::Failure(ref resp))) if attempt < MAX_RETRIES && is_transient_status(resp.status().as_u16()) => {
                 let status = resp.status();
                 let delay = RETRY_DELAYS[attempt as usize];
                 if verbose {
@@ -44,7 +60,7 @@ where
                 }
                 tokio::time::sleep(delay).await;
             }
-            Err(e) => return Err(e),
+            Ok(Err(e)) => return Err(e),
         }
     }
     unreachable!()
@@ -818,11 +834,13 @@ impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for BrowserFlowDe
 }
 
 pub fn build_connector() -> Result<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, Box<dyn std::error::Error>> {
+    let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
+    http.set_connect_timeout(Some(std::time::Duration::from_secs(30)));
     Ok(hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()?
         .https_or_http()
         .enable_http2()
-        .build())
+        .wrap_connector(http))
 }
 
 pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
@@ -844,6 +862,7 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
     .await?;
 
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .pool_idle_timeout(Duration::from_secs(90))
         .build(build_connector()?);
 
     Ok(PeopleService::new(client, auth))
