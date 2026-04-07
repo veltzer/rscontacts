@@ -1,6 +1,6 @@
 # check-contact-type-company-no-label
 
-Check that contacts tagged type:Company have a matching company:<name> label.
+Check that contacts tagged `type:Company` have a matching `company:<name>` label.
 
 ## Usage
 
