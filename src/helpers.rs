@@ -834,14 +834,11 @@ impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for BrowserFlowDe
 }
 
 pub fn build_connector() -> Result<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, Box<dyn std::error::Error>> {
-    let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
-    http.set_connect_timeout(Some(std::time::Duration::from_secs(30)));
     Ok(hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()?
         .https_or_http()
         .enable_http1()
-        .enable_http2()
-        .wrap_connector(http))
+        .build())
 }
 
 pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
@@ -853,14 +850,9 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
 
     let secret = yup_oauth2::read_application_secret(credentials_path()).await?;
 
-    let auth_client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-        .pool_idle_timeout(Duration::from_secs(30))
-        .build::<_, String>(build_connector()?);
-
-    let auth = yup_oauth2::InstalledFlowAuthenticator::with_client(
+    let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
         secret,
         yup_oauth2::InstalledFlowReturnMethod::HTTPRedirect,
-        auth_client,
     )
     .persist_tokens_to_disk(cache_path)
     .flow_delegate(Box::new(NoInteractionDelegate))
