@@ -195,7 +195,7 @@ pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::
             eprintln!("Removed cached token at {}", cache.display());
         }
     }
-    let secret = yup_oauth2::read_application_secret(credentials_path()).await?;
+    let secret = yup_oauth2::read_application_secret(credentials_path()?).await?;
 
     let mut builder = yup_oauth2::InstalledFlowAuthenticator::builder(
         secret,
@@ -311,7 +311,7 @@ pub async fn cmd_check_contact_given_name_regexp(fix: bool, dry_run: bool) -> Re
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
-    let config = load_config();
+    let config = load_config()?;
     check_given_name_regexp(&s.hub, &s.contacts, &config.check_contact_given_name_regexp, &ctx).await?;
     Ok(())
 }
@@ -332,13 +332,8 @@ async fn check_given_name_regexp(
         }
     };
 
-    let re = match regex::Regex::new(pattern) {
-        Ok(re) => re,
-        Err(e) => {
-            eprintln!("Warning: invalid regex \"{}\": {}", pattern, e);
-            return Ok(0);
-        }
-    };
+    let re = regex::Regex::new(pattern)
+        .map_err(|e| format!("invalid regex \"{}\" in config: {}", pattern, e))?;
 
     let mut count = 0;
     for person in contacts {
@@ -377,7 +372,7 @@ pub async fn cmd_check_contact_suffix_regexp(fix: bool, dry_run: bool) -> Result
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
-    let config = load_config();
+    let config = load_config()?;
     check_suffix_regexp(&s.hub, &s.contacts, &config.check_contact_suffix_regexp, &ctx).await?;
     Ok(())
 }
@@ -393,13 +388,8 @@ async fn check_suffix_regexp(
     let default_pattern = DEFAULT_SUFFIX_REGEX.to_string();
     let pattern = config.allow.as_ref().unwrap_or(&default_pattern);
 
-    let re = match regex::Regex::new(pattern) {
-        Ok(re) => re,
-        Err(e) => {
-            eprintln!("Warning: invalid regex \"{}\": {}", pattern, e);
-            return Ok(0);
-        }
-    };
+    let re = regex::Regex::new(pattern)
+        .map_err(|e| format!("invalid regex \"{}\" in config: {}", pattern, e))?;
 
     let mut count = 0;
     for person in contacts {
@@ -438,7 +428,7 @@ pub async fn cmd_check_contact_family_name_regexp(fix: bool, dry_run: bool) -> R
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
-    let config = load_config();
+    let config = load_config()?;
     check_family_name_regexp(&s.hub, &s.contacts, &config.check_contact_family_name_regexp, &ctx).await?;
     Ok(())
 }
@@ -459,13 +449,8 @@ async fn check_family_name_regexp(
         }
     };
 
-    let re = match regex::Regex::new(pattern) {
-        Ok(re) => re,
-        Err(e) => {
-            eprintln!("Warning: invalid regex \"{}\": {}", pattern, e);
-            return Ok(0);
-        }
-    };
+    let re = regex::Regex::new(pattern)
+        .map_err(|e| format!("invalid regex \"{}\" in config: {}", pattern, e))?;
 
     let mut count = 0;
     for person in contacts {
@@ -652,7 +637,7 @@ async fn check_no_identity(
 
 
 pub async fn cmd_check_contact_company_known(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let config = load_config();
+    let config = load_config()?;
     if config.check_contact_name_is_company.companies.is_empty() && !fix {
         eprintln!("No companies configured in config.toml.");
         eprintln!("Add companies to the [check-contact-name-is-company] section:");
@@ -748,7 +733,7 @@ async fn check_company_known(
 }
 
 fn add_company_to_config(company: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut config = load_config();
+    let mut config = load_config()?;
     if !config.check_contact_name_is_company.companies.iter()
         .any(|c| c.eq_ignore_ascii_case(company))
     {
@@ -760,14 +745,14 @@ fn add_company_to_config(company: &str) -> Result<(), Box<dyn std::error::Error>
 }
 
 fn remove_company_from_config(company: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut config = load_config();
+    let mut config = load_config()?;
     config.check_contact_name_is_company.companies.retain(|c| !c.eq_ignore_ascii_case(company));
     save_company_list(&config.check_contact_name_is_company.companies)?;
     Ok(())
 }
 
 pub async fn cmd_check_contact_company_exists(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let config = load_config();
+    let config = load_config()?;
     if config.check_contact_name_is_company.companies.is_empty() {
         eprintln!("No companies configured in config.toml.");
         return Ok(());
@@ -875,7 +860,7 @@ pub async fn cmd_check_contact_given_name_known(fix: bool, dry_run: bool) -> Res
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
-    let config = load_config();
+    let config = load_config()?;
     check_given_name_known(&s.hub, &s.contacts, &config.check_contact_given_name_known.names, &ctx).await?;
     Ok(())
 }
@@ -950,7 +935,7 @@ async fn check_given_name_known(
 }
 
 fn add_given_name_to_config(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut config = load_config();
+    let mut config = load_config()?;
     if !config.check_contact_given_name_known.names.iter()
         .any(|n| n.eq_ignore_ascii_case(name))
     {
@@ -962,14 +947,14 @@ fn add_given_name_to_config(name: &str) -> Result<(), Box<dyn std::error::Error>
 }
 
 fn remove_given_name_from_config(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut config = load_config();
+    let mut config = load_config()?;
     config.check_contact_given_name_known.names.retain(|n| !n.eq_ignore_ascii_case(name));
     save_given_name_list(&config.check_contact_given_name_known.names)?;
     Ok(())
 }
 
 pub async fn cmd_check_contact_given_name_exists(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let config = load_config();
+    let config = load_config()?;
     if config.check_contact_given_name_known.names.is_empty() {
         eprintln!("No given names configured in config.toml.");
         return Ok(());
@@ -1899,6 +1884,9 @@ async fn edit_phones(
         std::io::stdin().read_line(&mut num)?;
         let num = num.trim();
         if num.is_empty() { return Ok(()); }
+        if is_fixable_phone(num) && !is_correct_phone_format(num) {
+            eprintln!("  Warning: phone \"{}\" is not in correct format (+CC-NUMBER).", num);
+        }
         let label = prompt_phone_label_fix(&person_display_name(current))?;
         let mut updated = current.clone();
         let mut pn = google_people1::api::PhoneNumber {
@@ -1953,6 +1941,9 @@ async fn edit_phones(
                 std::io::stdin().read_line(&mut val)?;
                 let val = val.trim();
                 if val.is_empty() { return Ok(()); }
+                if is_fixable_phone(val) && !is_correct_phone_format(val) {
+                    eprintln!("  Warning: phone \"{}\" is not in correct format (+CC-NUMBER).", val);
+                }
                 let mut updated = current.clone();
                 if let Some(ref mut nums) = updated.phone_numbers {
                     nums[idx - 1].value = Some(val.to_string());
@@ -2008,6 +1999,10 @@ async fn edit_emails(
         std::io::stdin().read_line(&mut val)?;
         let val = val.trim();
         if val.is_empty() { return Ok(()); }
+        if !is_valid_email(val) {
+            eprintln!("  Error: \"{}\" is not a valid email address.", val);
+            return Ok(());
+        }
         let mut updated = current.clone();
         let em = google_people1::api::EmailAddress {
             value: Some(val.to_string()),
@@ -2058,6 +2053,10 @@ async fn edit_emails(
                 std::io::stdin().read_line(&mut val)?;
                 let val = val.trim();
                 if val.is_empty() { return Ok(()); }
+                if !is_valid_email(val) {
+                    eprintln!("  Error: \"{}\" is not a valid email address.", val);
+                    return Ok(());
+                }
                 let mut updated = current.clone();
                 if let Some(ref mut ems) = updated.email_addresses {
                     ems[idx - 1].value = Some(val.to_string());
@@ -3048,7 +3047,7 @@ fn print_person_details(person: &google_people1::api::Person, group_names: Optio
 }
 
 pub async fn cmd_check_contact_label_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let config = load_config();
+    let config = load_config()?;
     let allow = match config.check_contact_label_regexp.allow {
         Some(ref pattern) => pattern.clone(),
         None => {
@@ -3292,7 +3291,7 @@ pub async fn cmd_show_contact_labels() -> Result<(), Box<dyn std::error::Error>>
 }
 
 pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let config = load_config();
+    let config = load_config()?;
     let skip: std::collections::HashSet<&str> = config.check_all.skip.iter().map(|s| s.as_str()).collect();
 
     let hub = build_hub().await?;

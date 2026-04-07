@@ -126,24 +126,16 @@ pub fn config_path() -> PathBuf {
     config_dir().join("config.toml")
 }
 
-pub fn load_config() -> Config {
+pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     let path = config_path();
     if !path.exists() {
-        return Config::default();
+        return Ok(Config::default());
     }
-    match std::fs::read_to_string(&path) {
-        Ok(contents) => match toml::from_str(&contents) {
-            Ok(config) => config,
-            Err(e) => {
-                eprintln!("Warning: failed to parse {}: {}", path.display(), e);
-                Config::default()
-            }
-        },
-        Err(e) => {
-            eprintln!("Warning: failed to read {}: {}", path.display(), e);
-            Config::default()
-        }
-    }
+    let contents = std::fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    let config = toml::from_str(&contents)
+        .map_err(|e| format!("failed to parse {}: {}", path.display(), e))?;
+    Ok(config)
 }
 
 pub fn config_dir() -> PathBuf {
@@ -154,14 +146,15 @@ pub fn config_dir() -> PathBuf {
     dir
 }
 
-pub fn credentials_path() -> PathBuf {
+pub fn credentials_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let path = config_dir().join("credentials.json");
     if !path.exists() {
-        eprintln!("Error: credentials.json not found at {}", path.display());
-        eprintln!("Download OAuth2 credentials from Google Cloud Console and place them there.");
-        std::process::exit(1);
+        return Err(format!(
+            "credentials.json not found at {}\nDownload OAuth2 credentials from Google Cloud Console and place them there.",
+            path.display()
+        ).into());
     }
-    path
+    Ok(path)
 }
 
 pub fn token_cache_path() -> PathBuf {
@@ -848,11 +841,10 @@ pub fn build_connector() -> Result<hyper_rustls::HttpsConnector<hyper_util::clie
 pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
     let cache_path = token_cache_path();
     if !cache_path.exists() {
-        eprintln!("Error: not authenticated. Run 'rscontacts auth' first.");
-        std::process::exit(1);
+        return Err("not authenticated. Run 'rscontacts auth' first.".into());
     }
 
-    let secret = yup_oauth2::read_application_secret(credentials_path()).await?;
+    let secret = yup_oauth2::read_application_secret(credentials_path()?).await?;
 
     let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
         secret,

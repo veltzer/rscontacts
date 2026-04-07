@@ -56,3 +56,19 @@ If a single label contains the vast majority of contacts, it is too broad to be 
 ### Add Missing Emails
 
 Many contacts have only a phone number. For contacts with an organization, it may be possible to infer or look up work email addresses.
+
+## Performance Improvements
+
+### Set page_size on API fetches
+
+`fetch_all_contacts` and `fetch_all_contact_groups` don't set `page_size`, using the API default (which may be small). Setting it to the maximum (1000 for contacts, 200 for groups) would reduce the number of round trips to Google's API.
+
+## Robustness Improvements
+
+### Improve label creation error messages
+
+When label creation fails mid-fix (e.g., in `check-contact-no-label --fix` or `check-phone-country-label --fix`), the error message doesn't indicate which contact and label were involved. Including the contact name and target label in the error would make debugging easier.
+
+### Proactive stale token detection
+
+When the OAuth token is expired or corrupted, API calls currently wait for the 30-second request timeout before failing. The tool could proactively check token freshness (e.g., by inspecting the `expiry_date` field in `token_cache.json`) and suggest `rscontacts auth` immediately instead of waiting for timeouts.
