@@ -1,84 +1,83 @@
 # Commands
 
-rscontacts provides commands in several categories:
+rscontacts provides commands in several categories. Most check commands support `--fix` and `--dry-run` flags.
+
+## Setup & Diagnostics
+
+- [auth](commands/auth.md) — Authenticate with Google (opens browser for OAuth2 consent)
+- [init-config](commands/init-config.md) — Generate a default config file at ~/.config/rscontacts/config.toml
+- [test-connect](commands/test-connect.md) — Test connectivity to the Google People API
+- [complete](commands/complete.md) — Generate shell completions
+- [version](commands/version.md) — Print version information
 
 ## Listing & Inspection
 
-| Command | Description |
-|---------|-------------|
-| list | List all contacts |
-| show-contact | Show all details about a specific contact |
-| edit-contact | Interactively edit a contact |
-| show-phone-labels | Show all distinct phone labels in use |
-| show-contact-labels | Show all contact groups with member counts |
+- [list](commands/list.md) — List all contacts
+- [show-contact](commands/show-contact.md) — Show all details about a specific contact
+- [edit-contact](commands/edit-contact.md) — Interactively edit a contact
+- [show-contact-labels](commands/show-contact-labels.md) — Show all contact labels (contact groups) in use
+- [show-email-labels](commands/show-email-labels.md) — Show all distinct email labels in use
+- [show-phone-labels](commands/show-phone-labels.md) — Show all distinct phone labels in use
+- [export-json](commands/export-json.md) — Export all contacts as JSON
 
-## Check Commands
+## Run All Checks
 
-All check commands are also run by check-all.
+- [all-checks](commands/all-checks.md) — Run all checks
 
-### Name Checks
+## Name Checks
 
-| Command | `--fix` | Description |
-|---------|---------|-------------|
-| check-contact-given-name-regexp | Yes | Given names not matching allow regex |
-| check-contact-family-name-regexp | Yes | Family names not matching allow regex |
-| check-contact-suffix-regexp | Yes | Suffixes not matching allow regex |
-| check-contact-displayname-duplicate | Yes | Duplicate contact display names |
-| check-contact-name-is-company | Yes | Given/family name matches a company name |
+- [check-contact-given-name-regexp](commands/check-contact-given-name-regexp.md) — Check given names against allow regex defined in config.toml
+- [check-contact-family-name-regexp](commands/check-contact-family-name-regexp.md) — Check family names against allow regex defined in config.toml
+- [check-contact-suffix-regexp](commands/check-contact-suffix-regexp.md) — Check suffixes against allow regex (default: numeric)
+- [check-contact-displayname-duplicate](commands/check-contact-displayname-duplicate.md) — Print contacts that share the same display name
+- [check-contact-no-displayname](commands/check-contact-no-displayname.md) — Print contacts with an empty display name
+- [check-contact-no-given-name](commands/check-contact-no-given-name.md) — Check contacts that have no given name but have a family name
+- [check-contact-no-middle-name](commands/check-contact-no-middle-name.md) — Check that no contact has a middle name set
+- [check-contact-no-nickname](commands/check-contact-no-nickname.md) — Check that no contact has a nickname set
+- [check-contact-given-name-known](commands/check-contact-given-name-known.md) — Check that all given names are in the allowed list from config
+- [check-contact-given-name-exists](commands/check-contact-given-name-exists.md) — Check that every given name in the config has at least one contact
 
-### Company Checks
+## Company Checks
 
-| Command | `--fix` | Description |
-|---------|---------|-------------|
-| check-contact-company-known | Yes | Company field not in configured companies list |
+- [check-contact-company-exists](commands/check-contact-company-exists.md) — Check that all company fields are in the known companies list from config
+- [check-contact-company-known](commands/check-contact-company-known.md) — Check that every company in the config has at least one contact
+- [check-contact-type](commands/check-contact-type.md) — Check that every contact has exactly one of type:Person or type:Company labels
+- [check-contact-no-identity](commands/check-contact-no-identity.md) — Check contacts that have no type tag (type:Person or type:Company)
+- [check-contact-type-company-given-name](commands/check-contact-type-company-given-name.md) — Check that contacts tagged type:Company have given name equal to company field
+- [check-contact-type-company-no-company](commands/check-contact-type-company-no-company.md) — Check that contacts tagged type:Company have their company field set
+- [check-contact-type-company-no-label](commands/check-contact-type-company-no-label.md) — Check that contacts tagged type:Company have a matching company:\<name\> label
 
-### Phone Checks
+## Phone Checks
 
-| Command | `--fix` | Description |
-|---------|---------|-------------|
-| check-phone-countrycode | Yes | Missing country code |
-| check-phone-format | Yes | Not in `+CC-NUMBER` format |
-| check-phone-label-missing | Yes | Missing phone type label |
-| check-phone-label-english | Yes | Non-English phone labels |
-| check-phone-duplicate | Yes | Same phone attached twice |
+- [check-phone-countrycode](commands/check-phone-countrycode.md) — Print contacts with phone numbers missing a country code
+- [check-phone-format](commands/check-phone-format.md) — Print phone numbers not in +CC-NUMBER format
+- [check-phone-duplicate](commands/check-phone-duplicate.md) — Print contacts that have the same phone number attached twice
+- [check-phone-label-missing](commands/check-phone-label-missing.md) — Print contacts with phone numbers missing a label (mobile/home/work/etc)
+- [check-phone-label-english](commands/check-phone-label-english.md) — Print contacts with non-English phone labels
+- [check-phone-country-label](commands/check-phone-country-label.md) — Check that contacts have correct country:\<Name\> labels matching their phone country codes
 
-### Email Checks
+## Email Checks
 
-| Command | `--fix` | Description |
-|---------|---------|-------------|
-| check-contact-email | Yes | Invalid or uppercase email addresses |
-| check-contact-email-duplicate | Yes | Same email attached twice |
+- [check-contact-email](commands/check-contact-email.md) — Print contacts with invalid or uppercase email addresses
+- [check-contact-email-duplicate](commands/check-contact-email-duplicate.md) — Print contacts that have the same email address attached twice
 
-### Contact Group (Label) Checks
+## Contact Group (Label) Checks
 
-| Command | `--fix` | Description |
-|---------|---------|-------------|
-| check-contact-no-label | Yes | Contacts not in any group |
-| check-contact-label-nophone | Yes | Empty contact groups |
-| check-contact-label-regexp | Yes | Labels not matching allow regex |
+- [check-contact-no-label](commands/check-contact-no-label.md) — Print contacts not assigned to any label (contact group)
+- [check-contact-label-nophone](commands/check-contact-label-nophone.md) — Print labels (contact groups) that have no contacts
+- [check-contact-label-regexp](commands/check-contact-label-regexp.md) — Check contact labels (groups) against allow regex defined in config.toml
+
+## Merge Commands
+
+- [merge-by-phone](commands/merge-by-phone.md) — Find and merge contacts that share the same phone number
+- [merge-by-email](commands/merge-by-email.md) — Find and merge contacts that share the same email address
 
 ## Action Commands
 
-| Command | Description |
-|---------|-------------|
-| compact-suffixes-for-contacts | Compact suffixes for contacts sharing the same base name |
-| review-phone-label | Review all phones with a specific label |
-| remove-label-from-all-contacts | Remove a label from all contacts |
-
-## Other Commands
-
-| Command | Description |
-|---------|-------------|
-| auth | Authenticate with Google |
-| init-config | Generate a default config file |
-| version | Print version information |
-| complete | Generate shell completions |
-
-## Common Flags
-
-Most check commands support:
-
-| Flag | Description |
-|------|-------------|
-| `--fix` | Interactively fix issues found |
-| `--dry-run` | Show what would change without modifying anything |
+- [move-family-to-suffix](commands/move-family-to-suffix.md) — Move numeric family names to suffix for contacts that have no suffix
+- [move-suffix-to-family](commands/move-suffix-to-family.md) — Move numeric suffixes to family name for contacts that have no family name
+- [compact-suffixes-for-contacts](commands/compact-suffixes-for-contacts.md) — Compact suffixes for contacts sharing the same base name (given + family)
+- [remove-label-from-all-contacts](commands/remove-label-from-all-contacts.md) — Remove a contact label (group) from all contacts that have it
+- [review-phone-label](commands/review-phone-label.md) — Review all phones with a specific label (e.g. "Work Fax")
+- [review-email-label](commands/review-email-label.md) — Review all emails with a specific label (e.g. "Work")
+- [sync-gnome-contacts](commands/sync-gnome-contacts.md) — Sync Google Contacts to GNOME Contacts (Evolution Data Server)
