@@ -839,6 +839,7 @@ pub fn build_connector() -> Result<hyper_rustls::HttpsConnector<hyper_util::clie
     Ok(hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()?
         .https_or_http()
+        .enable_http1()
         .enable_http2()
         .wrap_connector(http))
 }

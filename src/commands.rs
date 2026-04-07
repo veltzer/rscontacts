@@ -219,9 +219,12 @@ pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::
 
 pub async fn cmd_list(emails: bool, labels: bool, starred: bool) -> Result<(), Box<dyn std::error::Error>> {
     let _ = emails; // emails are now always shown via format_person_line
+    eprintln!("[debug] building hub...");
     let hub = build_hub().await?;
+    eprintln!("[debug] hub built, fetching contacts...");
     let fields = vec!["names", "organizations", "phoneNumbers", "nicknames", "emailAddresses", "memberships"];
     let contacts = fetch_all_contacts(&hub, &fields).await?;
+    eprintln!("[debug] fetched {} contacts", contacts.len());
 
     let contacts: Vec<_> = if starred {
         contacts.into_iter().filter(is_starred).collect()
