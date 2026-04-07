@@ -862,7 +862,7 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
     .await?;
 
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_idle_timeout(Duration::from_secs(30))
         .build(build_connector()?);
 
     Ok(PeopleService::new(client, auth))
