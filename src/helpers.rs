@@ -852,9 +852,14 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
 
     let secret = yup_oauth2::read_application_secret(credentials_path()).await?;
 
-    let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
+    let auth_client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .pool_idle_timeout(Duration::from_secs(30))
+        .build::<_, String>(build_connector()?);
+
+    let auth = yup_oauth2::InstalledFlowAuthenticator::with_client(
         secret,
         yup_oauth2::InstalledFlowReturnMethod::HTTPRedirect,
+        auth_client,
     )
     .persist_tokens_to_disk(cache_path)
     .flow_delegate(Box::new(NoInteractionDelegate))
