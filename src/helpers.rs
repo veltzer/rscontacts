@@ -579,7 +579,9 @@ pub async fn fetch_all_contacts(hub: &HubType, fields: &[&str]) -> Result<Vec<go
             let mut req = hub
                 .people()
                 .connections_list("people/me")
-                .person_fields(FieldMask::new::<&str>(fields));
+                .person_fields(FieldMask::new::<&str>(fields))
+                .clear_scopes()
+                .add_scope(google_people1::api::Scope::Contact);
             if let Some(ref token) = page_token {
                 req = req.page_token(token);
             }
@@ -782,7 +784,9 @@ pub async fn fetch_all_contact_groups(hub: &HubType) -> Result<Vec<google_people
 
     loop {
         let (_response, result) = retry_api(|| {
-            let mut req = hub.contact_groups().list();
+            let mut req = hub.contact_groups().list()
+                .clear_scopes()
+                .add_scope(google_people1::api::Scope::Contact);
             if let Some(ref token) = page_token {
                 req = req.page_token(token);
             }

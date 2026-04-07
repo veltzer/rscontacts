@@ -209,11 +209,9 @@ pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::
 
     let auth = builder.build().await?;
 
-    // Request tokens for both scopes so they get persisted
+    // Actually request a token so it gets persisted
     let scopes = &["https://www.googleapis.com/auth/contacts"];
     let _token = auth.token(scopes).await?;
-    let readonly_scopes = &["https://www.googleapis.com/auth/contacts.readonly"];
-    let _readonly_token = auth.token(readonly_scopes).await?;
 
     eprintln!("Authentication successful. Token cached to {}", token_cache_path().display());
     Ok(())
@@ -3898,7 +3896,9 @@ async fn interactive_merge_group(
             let keep_rn = get_resource_name(&contacts[keep_idx])?;
             let (_, fresh_keep) = retry_api(|| {
                 let r = hub.people().get(keep_rn)
-                    .person_fields(FieldMask::new::<&str>(ALL_CONTACT_FIELDS));
+                    .person_fields(FieldMask::new::<&str>(ALL_CONTACT_FIELDS))
+                    .clear_scopes()
+                    .add_scope(google_people1::api::Scope::Contact);
                 async { r.doit().await }
             }).await?;
 
