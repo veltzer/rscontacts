@@ -217,6 +217,52 @@ pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::
     Ok(())
 }
 
+pub async fn cmd_test_connect() -> Result<(), Box<dyn std::error::Error>> {
+    eprint!("Checking credentials... ");
+    credentials_path()?;
+    eprintln!("OK");
+
+    eprint!("Checking token cache... ");
+    let cache_path = token_cache_path();
+    if !cache_path.exists() {
+        eprintln!("MISSING");
+        return Err("not authenticated. Run 'rscontacts auth' first.".into());
+    }
+    eprintln!("OK");
+
+    eprint!("Building API client... ");
+    let hub = build_hub().await?;
+    eprintln!("OK");
+
+    eprint!("Fetching contacts (page_size=1)... ");
+    let (_response, result) = hub
+        .people()
+        .connections_list("people/me")
+        .person_fields(google_people1::FieldMask::new::<&str>(&["names"]))
+        .page_size(1)
+        .clear_scopes()
+        .add_scope(google_people1::api::Scope::Contact)
+        .doit()
+        .await?;
+    let total = result.total_items.unwrap_or(0);
+    eprintln!("OK ({} contacts total)", total);
+
+    eprint!("Fetching contact groups (page_size=1)... ");
+    let (_response, result) = hub
+        .contact_groups()
+        .list()
+        .page_size(1)
+        .clear_scopes()
+        .add_scope(google_people1::api::Scope::Contact)
+        .doit()
+        .await?;
+    let total = result.total_items.unwrap_or(0);
+    eprintln!("OK ({} groups total)", total);
+
+    eprintln!("All checks passed. API connection is working.");
+    Ok(())
+}
+
 pub async fn cmd_list(emails: bool, labels: bool, starred: bool) -> Result<(), Box<dyn std::error::Error>> {
     let _ = emails; // emails are now always shown via format_person_line
     let hub = build_hub().await?;

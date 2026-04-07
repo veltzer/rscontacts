@@ -59,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::ShowContactLabels => commands::cmd_show_contact_labels().await?,
         Commands::ShowEmailLabels => commands::cmd_show_email_labels().await?,
         Commands::ShowPhoneLabels => commands::cmd_show_phone_labels().await?,
+        Commands::TestConnect => commands::cmd_test_connect().await?,
         Commands::Version => {
             println!("rscontacts {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
             println!("GIT_DESCRIBE: {}", env!("GIT_DESCRIBE"));

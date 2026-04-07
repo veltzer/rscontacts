@@ -427,6 +427,8 @@ pub enum Commands {
     ShowEmailLabels,
     /// Show all distinct phone labels in use
     ShowPhoneLabels,
+    /// Test connectivity to the Google People API
+    TestConnect,
     /// Print version information
     Version,
 }
