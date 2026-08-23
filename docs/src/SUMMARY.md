@@ -61,3 +61,4 @@
 - [Phone Sync Issues](phone-sync-issues.md)
 - [Design Decisions](design-decisions.md)
 - [Future Ideas](future-ideas.md)
+- [Release Info](release-info.md)
