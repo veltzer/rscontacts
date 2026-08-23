@@ -28,7 +28,9 @@ fn is_transient_status(status: u16) -> bool {
 
 /// Retry an API call on transient HTTP errors (429, 502, 503, 504).
 /// The closure must rebuild the request each time since `.doit()` consumes the builder.
-pub async fn retry_api<F, Fut, T>(mut make_request: F) -> Result<T, google_people1::Error>
+/// The error is boxed because `google_people1::Error` is large (>128 bytes)
+/// and would otherwise bloat every `Result` this returns.
+pub async fn retry_api<F, Fut, T>(mut make_request: F) -> Result<T, Box<google_people1::Error>>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, google_people1::Error>>,
@@ -45,10 +47,10 @@ where
                     }
                     tokio::time::sleep(delay).await;
                 } else {
-                    return Err(google_people1::Error::Io(std::io::Error::new(
+                    return Err(Box::new(google_people1::Error::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         format!("request timed out after {}s (exhausted all retries)", REQUEST_TIMEOUT.as_secs()),
-                    )));
+                    ))));
                 }
             }
             Ok(Ok(val)) => return Ok(val),
@@ -60,7 +62,7 @@ where
                 }
                 tokio::time::sleep(delay).await;
             }
-            Ok(Err(e)) => return Err(e),
+            Ok(Err(e)) => return Err(Box::new(e)),
         }
     }
     unreachable!()
