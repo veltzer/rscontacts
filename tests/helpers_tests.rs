@@ -1,6 +1,6 @@
-use rscontacts::helpers::*;
-use rscontacts::helpers::Config;
 use google_people1::api::*;
+use rscontacts::helpers::Config;
+use rscontacts::helpers::*;
 
 #[test]
 fn test_add_country_code_with_leading_zero() {
@@ -97,7 +97,10 @@ fn test_fix_phone_format() {
     assert_eq!(fix_phone_format("+972-50-5665636", "972"), "+972-505665636");
     assert_eq!(fix_phone_format("0505665636", "972"), "+972-505665636");
     assert_eq!(fix_phone_format("00972505665636", "972"), "+972-505665636");
-    assert_eq!(fix_phone_format("+972 50 566 5636", "972"), "+972-505665636");
+    assert_eq!(
+        fix_phone_format("+972 50 566 5636", "972"),
+        "+972-505665636"
+    );
     // Single-digit country code (Russia)
     assert_eq!(fix_phone_format("+79268335991", "972"), "+7-9268335991");
     // Two-digit country code (UK)
@@ -108,10 +111,10 @@ fn test_fix_phone_format() {
 
 #[test]
 fn test_detect_country_code() {
-    assert_eq!(detect_country_code("79268335991"), Some(1));  // Russia +7
+    assert_eq!(detect_country_code("79268335991"), Some(1)); // Russia +7
     assert_eq!(detect_country_code("442079460958"), Some(2)); // UK +44
     assert_eq!(detect_country_code("972505665636"), Some(3)); // Israel +972
-    assert_eq!(detect_country_code("15551234567"), Some(1));  // US +1
+    assert_eq!(detect_country_code("15551234567"), Some(1)); // US +1
     assert_eq!(detect_country_code(""), None);
 }
 
@@ -297,60 +300,88 @@ fn test_config_parse_empty() {
 
 #[test]
 fn test_config_parse_skip_list() {
-    let config: Config = toml::from_str(r#"
+    let config: Config = toml::from_str(
+        r#"
 [check-all]
 skip = ["check-phone-format", "check-contact-email"]
-"#).unwrap();
+"#,
+    )
+    .unwrap();
     assert_eq!(config.check_all.skip.len(), 2);
     assert_eq!(config.check_all.skip[0], "check-phone-format");
 }
 
 #[test]
 fn test_config_parse_name_regexp() {
-    let config: Config = toml::from_str(r#"
+    let config: Config = toml::from_str(
+        r#"
 [check-contact-given-name-regexp]
 allow = '^[A-Z][a-z]*$'
-"#).unwrap();
-    assert_eq!(config.check_contact_given_name_regexp.allow.as_deref(), Some("^[A-Z][a-z]*$"));
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        config.check_contact_given_name_regexp.allow.as_deref(),
+        Some("^[A-Z][a-z]*$")
+    );
 }
 
 #[test]
 fn test_config_parse_companies() {
-    let config: Config = toml::from_str(r#"
+    let config: Config = toml::from_str(
+        r#"
 [check-contact-name-is-company]
 companies = ["Acme", "Globex"]
-"#).unwrap();
-    assert_eq!(config.check_contact_name_is_company.companies, vec!["Acme", "Globex"]);
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        config.check_contact_name_is_company.companies,
+        vec!["Acme", "Globex"]
+    );
 }
 
 #[test]
 fn test_config_parse_given_names() {
-    let config: Config = toml::from_str(r#"
+    let config: Config = toml::from_str(
+        r#"
 [check-contact-given-name-known]
 names = ["John", "Jane"]
-"#).unwrap();
-    assert_eq!(config.check_contact_given_name_known.names, vec!["John", "Jane"]);
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        config.check_contact_given_name_known.names,
+        vec!["John", "Jane"]
+    );
 }
 
 #[test]
 fn test_config_parse_unknown_sections_ignored() {
-    let config: Config = toml::from_str(r#"
+    let config: Config = toml::from_str(
+        r#"
 [unknown-section]
 key = "value"
 
 [check-all]
 skip = ["a"]
-"#).unwrap();
+"#,
+    )
+    .unwrap();
     assert_eq!(config.check_all.skip, vec!["a"]);
 }
 
 #[test]
 fn test_config_skip_set_behavior() {
-    let config: Config = toml::from_str(r#"
+    let config: Config = toml::from_str(
+        r#"
 [check-all]
 skip = ["check-phone-format", "check-contact-email"]
-"#).unwrap();
-    let skip: std::collections::HashSet<&str> = config.check_all.skip.iter().map(|s| s.as_str()).collect();
+"#,
+    )
+    .unwrap();
+    let skip: std::collections::HashSet<&str> =
+        config.check_all.skip.iter().map(|s| s.as_str()).collect();
     assert!(skip.contains("check-phone-format"));
     assert!(skip.contains("check-contact-email"));
     assert!(!skip.contains("check-phone-countrycode"));
@@ -359,11 +390,15 @@ skip = ["check-phone-format", "check-contact-email"]
 
 #[test]
 fn test_config_skip_empty_means_all_run() {
-    let config: Config = toml::from_str(r#"
+    let config: Config = toml::from_str(
+        r#"
 [check-all]
 skip = []
-"#).unwrap();
-    let skip: std::collections::HashSet<&str> = config.check_all.skip.iter().map(|s| s.as_str()).collect();
+"#,
+    )
+    .unwrap();
+    let skip: std::collections::HashSet<&str> =
+        config.check_all.skip.iter().map(|s| s.as_str()).collect();
     assert!(!skip.contains("check-phone-format"));
     assert!(!skip.contains("check-contact-given-name-known"));
 }
@@ -376,7 +411,8 @@ fn test_config_default_skip_is_empty() {
 
 #[test]
 fn test_config_multiple_regexp_sections() {
-    let config: Config = toml::from_str(r#"
+    let config: Config = toml::from_str(
+        r#"
 [check-contact-given-name-regexp]
 allow = '^[A-Z]'
 
@@ -388,9 +424,23 @@ allow = '^[1-9]\d*$'
 
 [check-contact-label-regexp]
 allow = '^(type|company):.*$'
-"#).unwrap();
-    assert_eq!(config.check_contact_given_name_regexp.allow.as_deref(), Some("^[A-Z]"));
-    assert_eq!(config.check_contact_family_name_regexp.allow.as_deref(), Some("^[A-Z][a-z]+"));
-    assert_eq!(config.check_contact_suffix_regexp.allow.as_deref(), Some("^[1-9]\\d*$"));
-    assert_eq!(config.check_contact_label_regexp.allow.as_deref(), Some("^(type|company):.*$"));
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        config.check_contact_given_name_regexp.allow.as_deref(),
+        Some("^[A-Z]")
+    );
+    assert_eq!(
+        config.check_contact_family_name_regexp.allow.as_deref(),
+        Some("^[A-Z][a-z]+")
+    );
+    assert_eq!(
+        config.check_contact_suffix_regexp.allow.as_deref(),
+        Some("^[1-9]\\d*$")
+    );
+    assert_eq!(
+        config.check_contact_label_regexp.allow.as_deref(),
+        Some("^(type|company):.*$")
+    );
 }

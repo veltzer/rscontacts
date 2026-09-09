@@ -434,5 +434,10 @@ pub enum Commands {
 }
 
 pub fn generate_completions(shell: clap_complete::Shell) {
-    clap_complete::generate(shell, &mut Cli::command(), "rscontacts", &mut std::io::stdout());
+    clap_complete::generate(
+        shell,
+        &mut Cli::command(),
+        "rscontacts",
+        &mut std::io::stdout(),
+    );
 }

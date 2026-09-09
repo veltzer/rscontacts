@@ -43,22 +43,39 @@ where
                 if attempt < MAX_RETRIES {
                     let delay = RETRY_DELAYS[attempt as usize];
                     if verbose {
-                        eprintln!("  [transport] request timed out after {}s - retrying in {}s (attempt {}/{})", REQUEST_TIMEOUT.as_secs(), delay.as_secs(), attempt + 1, MAX_RETRIES);
+                        eprintln!(
+                            "  [transport] request timed out after {}s - retrying in {}s (attempt {}/{})",
+                            REQUEST_TIMEOUT.as_secs(),
+                            delay.as_secs(),
+                            attempt + 1,
+                            MAX_RETRIES
+                        );
                     }
                     tokio::time::sleep(delay).await;
                 } else {
                     return Err(Box::new(google_people1::Error::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
-                        format!("request timed out after {}s (exhausted all retries)", REQUEST_TIMEOUT.as_secs()),
+                        format!(
+                            "request timed out after {}s (exhausted all retries)",
+                            REQUEST_TIMEOUT.as_secs()
+                        ),
                     ))));
                 }
             }
             Ok(Ok(val)) => return Ok(val),
-            Ok(Err(google_people1::Error::Failure(ref resp))) if attempt < MAX_RETRIES && is_transient_status(resp.status().as_u16()) => {
+            Ok(Err(google_people1::Error::Failure(ref resp)))
+                if attempt < MAX_RETRIES && is_transient_status(resp.status().as_u16()) =>
+            {
                 let status = resp.status();
                 let delay = RETRY_DELAYS[attempt as usize];
                 if verbose {
-                    eprintln!("  [transport] HTTP {} - retrying in {}s (attempt {}/{})", status, delay.as_secs(), attempt + 1, MAX_RETRIES);
+                    eprintln!(
+                        "  [transport] HTTP {} - retrying in {}s (attempt {}/{})",
+                        status,
+                        delay.as_secs(),
+                        attempt + 1,
+                        MAX_RETRIES
+                    );
                 }
                 tokio::time::sleep(delay).await;
             }
@@ -185,20 +202,26 @@ pub fn is_valid_email(email: &str) -> bool {
 }
 
 pub fn get_phone_label(pn: &google_people1::api::PhoneNumber) -> &str {
-    pn.formatted_type.as_deref()
+    pn.formatted_type
+        .as_deref()
         .or(pn.type_.as_deref())
         .unwrap_or("")
 }
 
 pub fn get_email_label(e: &google_people1::api::EmailAddress) -> &str {
-    e.formatted_type.as_deref()
+    e.formatted_type
+        .as_deref()
         .or(e.type_.as_deref())
         .unwrap_or("")
 }
 
 pub fn find_duplicates<'a>(values: &[&'a str]) -> Vec<&'a str> {
     let mut seen = std::collections::HashSet::new();
-    values.iter().filter(|v| !seen.insert(**v)).copied().collect()
+    values
+        .iter()
+        .filter(|v| !seen.insert(**v))
+        .copied()
+        .collect()
 }
 
 pub fn phone_has_type(pn: &google_people1::api::PhoneNumber) -> bool {
@@ -245,258 +268,248 @@ pub fn is_correct_phone_format(phone: &str) -> bool {
         && !rest[dash_pos + 1..].contains('-')
 }
 
-static COUNTRY_CODE_SET: LazyLock<std::collections::HashSet<&'static str>> = LazyLock::new(|| {
-    COUNTRY_CODES.iter().copied().collect()
-});
+static COUNTRY_CODE_SET: LazyLock<std::collections::HashSet<&'static str>> =
+    LazyLock::new(|| COUNTRY_CODES.iter().copied().collect());
 
 pub const COUNTRY_CODES: &[&str] = &[
-    "1", "7",
-    "20", "27", "30", "31", "32", "33", "34", "36", "39",
-    "40", "41", "43", "44", "45", "46", "47", "48", "49",
-    "51", "52", "53", "54", "55", "56", "57", "58",
-    "60", "61", "62", "63", "64", "65", "66",
-    "81", "82", "84", "86", "90", "91", "92", "93", "94", "95", "98",
-    "212", "213", "216", "218",
-    "220", "221", "222", "223", "224", "225", "226", "229",
-    "230", "231", "232", "233", "234", "235", "236", "238", "239",
-    "240", "241", "242", "243", "244", "245", "246", "247", "248", "249",
-    "250", "251", "252", "253", "254", "255", "256", "257", "258",
-    "260", "262", "263", "264", "265", "266", "267", "268", "269",
-    "290", "297", "298", "299",
-    "350", "351", "352", "353", "354", "355", "356", "357", "358", "359",
-    "370", "371", "372", "373", "374", "375", "376", "377", "378", "379",
-    "380", "381", "382", "385", "386", "387", "388", "389",
-    "420", "423",
-    "500", "501", "502", "503", "504", "505", "506", "507", "508", "509",
-    "590", "591", "592", "593", "594", "595", "596", "597", "598", "599",
-    "672", "673", "674", "675", "676", "677", "678", "679",
-    "680", "681", "682", "683", "684", "685", "686", "687", "688", "689",
-    "690", "691", "692",
-    "800", "808", "850", "852", "853", "855", "856",
-    "870", "878", "880", "881", "882", "883", "886", "888",
-    "891", "900",
-    "960", "961", "962", "963", "964", "965", "966", "967", "968",
-    "970", "971", "972", "973", "974", "975", "976", "977", "979",
-    "992", "993", "994", "995", "996", "998",
+    "1", "7", "20", "27", "30", "31", "32", "33", "34", "36", "39", "40", "41", "43", "44", "45",
+    "46", "47", "48", "49", "51", "52", "53", "54", "55", "56", "57", "58", "60", "61", "62", "63",
+    "64", "65", "66", "81", "82", "84", "86", "90", "91", "92", "93", "94", "95", "98", "212",
+    "213", "216", "218", "220", "221", "222", "223", "224", "225", "226", "229", "230", "231",
+    "232", "233", "234", "235", "236", "238", "239", "240", "241", "242", "243", "244", "245",
+    "246", "247", "248", "249", "250", "251", "252", "253", "254", "255", "256", "257", "258",
+    "260", "262", "263", "264", "265", "266", "267", "268", "269", "290", "297", "298", "299",
+    "350", "351", "352", "353", "354", "355", "356", "357", "358", "359", "370", "371", "372",
+    "373", "374", "375", "376", "377", "378", "379", "380", "381", "382", "385", "386", "387",
+    "388", "389", "420", "423", "500", "501", "502", "503", "504", "505", "506", "507", "508",
+    "509", "590", "591", "592", "593", "594", "595", "596", "597", "598", "599", "672", "673",
+    "674", "675", "676", "677", "678", "679", "680", "681", "682", "683", "684", "685", "686",
+    "687", "688", "689", "690", "691", "692", "800", "808", "850", "852", "853", "855", "856",
+    "870", "878", "880", "881", "882", "883", "886", "888", "891", "900", "960", "961", "962",
+    "963", "964", "965", "966", "967", "968", "970", "971", "972", "973", "974", "975", "976",
+    "977", "979", "992", "993", "994", "995", "996", "998",
 ];
 
 /// Map from phone country code (digits only, no +) to country name.
 /// Used by `check-phone-country-label` to determine the expected `country:<Name>` label.
-pub static COUNTRY_CODE_TO_NAME: LazyLock<std::collections::HashMap<&'static str, &'static str>> = LazyLock::new(|| {
-    [
-        ("1", "USA"),
-        ("7", "Russia"),
-        ("20", "Egypt"),
-        ("27", "South Africa"),
-        ("30", "Greece"),
-        ("31", "Netherlands"),
-        ("32", "Belgium"),
-        ("33", "France"),
-        ("34", "Spain"),
-        ("36", "Hungary"),
-        ("39", "Italy"),
-        ("40", "Romania"),
-        ("41", "Switzerland"),
-        ("43", "Austria"),
-        ("44", "UK"),
-        ("45", "Denmark"),
-        ("46", "Sweden"),
-        ("47", "Norway"),
-        ("48", "Poland"),
-        ("49", "Germany"),
-        ("51", "Peru"),
-        ("52", "Mexico"),
-        ("53", "Cuba"),
-        ("54", "Argentina"),
-        ("55", "Brazil"),
-        ("56", "Chile"),
-        ("57", "Colombia"),
-        ("58", "Venezuela"),
-        ("60", "Malaysia"),
-        ("61", "Australia"),
-        ("62", "Indonesia"),
-        ("63", "Philippines"),
-        ("64", "New Zealand"),
-        ("65", "Singapore"),
-        ("66", "Thailand"),
-        ("81", "Japan"),
-        ("82", "South Korea"),
-        ("84", "Vietnam"),
-        ("86", "China"),
-        ("90", "Turkey"),
-        ("91", "India"),
-        ("92", "Pakistan"),
-        ("93", "Afghanistan"),
-        ("94", "Sri Lanka"),
-        ("95", "Myanmar"),
-        ("98", "Iran"),
-        ("212", "Morocco"),
-        ("213", "Algeria"),
-        ("216", "Tunisia"),
-        ("218", "Libya"),
-        ("220", "Gambia"),
-        ("221", "Senegal"),
-        ("222", "Mauritania"),
-        ("223", "Mali"),
-        ("224", "Guinea"),
-        ("225", "Ivory Coast"),
-        ("226", "Burkina Faso"),
-        ("229", "Benin"),
-        ("230", "Mauritius"),
-        ("231", "Liberia"),
-        ("232", "Sierra Leone"),
-        ("233", "Ghana"),
-        ("234", "Nigeria"),
-        ("235", "Chad"),
-        ("236", "Central African Republic"),
-        ("238", "Cape Verde"),
-        ("239", "Sao Tome"),
-        ("240", "Equatorial Guinea"),
-        ("241", "Gabon"),
-        ("242", "Congo"),
-        ("243", "DR Congo"),
-        ("244", "Angola"),
-        ("245", "Guinea-Bissau"),
-        ("246", "Diego Garcia"),
-        ("247", "Ascension Island"),
-        ("248", "Seychelles"),
-        ("249", "Sudan"),
-        ("250", "Rwanda"),
-        ("251", "Ethiopia"),
-        ("252", "Somalia"),
-        ("253", "Djibouti"),
-        ("254", "Kenya"),
-        ("255", "Tanzania"),
-        ("256", "Uganda"),
-        ("257", "Burundi"),
-        ("258", "Mozambique"),
-        ("260", "Zambia"),
-        ("262", "Reunion"),
-        ("263", "Zimbabwe"),
-        ("264", "Namibia"),
-        ("265", "Malawi"),
-        ("266", "Lesotho"),
-        ("267", "Botswana"),
-        ("268", "Eswatini"),
-        ("269", "Comoros"),
-        ("290", "Saint Helena"),
-        ("297", "Aruba"),
-        ("298", "Faroe Islands"),
-        ("299", "Greenland"),
-        ("350", "Gibraltar"),
-        ("351", "Portugal"),
-        ("352", "Luxembourg"),
-        ("353", "Ireland"),
-        ("354", "Iceland"),
-        ("355", "Albania"),
-        ("356", "Malta"),
-        ("357", "Cyprus"),
-        ("358", "Finland"),
-        ("359", "Bulgaria"),
-        ("370", "Lithuania"),
-        ("371", "Latvia"),
-        ("372", "Estonia"),
-        ("373", "Moldova"),
-        ("374", "Armenia"),
-        ("375", "Belarus"),
-        ("376", "Andorra"),
-        ("377", "Monaco"),
-        ("378", "San Marino"),
-        ("379", "Vatican"),
-        ("380", "Ukraine"),
-        ("381", "Serbia"),
-        ("382", "Montenegro"),
-        ("385", "Croatia"),
-        ("386", "Slovenia"),
-        ("387", "Bosnia"),
-        ("388", "EU"),
-        ("389", "North Macedonia"),
-        ("420", "Czech Republic"),
-        ("423", "Liechtenstein"),
-        ("500", "Falkland Islands"),
-        ("501", "Belize"),
-        ("502", "Guatemala"),
-        ("503", "El Salvador"),
-        ("504", "Honduras"),
-        ("505", "Nicaragua"),
-        ("506", "Costa Rica"),
-        ("507", "Panama"),
-        ("508", "Saint Pierre"),
-        ("509", "Haiti"),
-        ("590", "Guadeloupe"),
-        ("591", "Bolivia"),
-        ("592", "Guyana"),
-        ("593", "Ecuador"),
-        ("594", "French Guiana"),
-        ("595", "Paraguay"),
-        ("596", "Martinique"),
-        ("597", "Suriname"),
-        ("598", "Uruguay"),
-        ("599", "Curacao"),
-        ("672", "Norfolk Island"),
-        ("673", "Brunei"),
-        ("674", "Nauru"),
-        ("675", "Papua New Guinea"),
-        ("676", "Tonga"),
-        ("677", "Solomon Islands"),
-        ("678", "Vanuatu"),
-        ("679", "Fiji"),
-        ("680", "Palau"),
-        ("681", "Wallis and Futuna"),
-        ("682", "Cook Islands"),
-        ("683", "Niue"),
-        ("684", "American Samoa"),
-        ("685", "Samoa"),
-        ("686", "Kiribati"),
-        ("687", "New Caledonia"),
-        ("688", "Tuvalu"),
-        ("689", "French Polynesia"),
-        ("690", "Tokelau"),
-        ("691", "Micronesia"),
-        ("692", "Marshall Islands"),
-        ("800", "International Freephone"),
-        ("808", "Shared Cost"),
-        ("850", "North Korea"),
-        ("852", "Hong Kong"),
-        ("853", "Macau"),
-        ("855", "Cambodia"),
-        ("856", "Laos"),
-        ("870", "Inmarsat"),
-        ("878", "Universal Personal"),
-        ("880", "Bangladesh"),
-        ("881", "Global Mobile Satellite"),
-        ("882", "International Networks"),
-        ("883", "International Networks"),
-        ("886", "Taiwan"),
-        ("888", "Telecommunications for Disaster Relief"),
-        ("891", "International"),
-        ("900", "International Premium Rate"),
-        ("960", "Maldives"),
-        ("961", "Lebanon"),
-        ("962", "Jordan"),
-        ("963", "Syria"),
-        ("964", "Iraq"),
-        ("965", "Kuwait"),
-        ("966", "Saudi Arabia"),
-        ("967", "Yemen"),
-        ("968", "Oman"),
-        ("970", "Palestine"),
-        ("971", "UAE"),
-        ("972", "Israel"),
-        ("973", "Bahrain"),
-        ("974", "Qatar"),
-        ("975", "Bhutan"),
-        ("976", "Mongolia"),
-        ("977", "Nepal"),
-        ("979", "International Premium Rate"),
-        ("992", "Tajikistan"),
-        ("993", "Turkmenistan"),
-        ("994", "Azerbaijan"),
-        ("995", "Georgia"),
-        ("996", "Kyrgyzstan"),
-        ("998", "Uzbekistan"),
-    ].into_iter().collect()
-});
+pub static COUNTRY_CODE_TO_NAME: LazyLock<std::collections::HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| {
+        [
+            ("1", "USA"),
+            ("7", "Russia"),
+            ("20", "Egypt"),
+            ("27", "South Africa"),
+            ("30", "Greece"),
+            ("31", "Netherlands"),
+            ("32", "Belgium"),
+            ("33", "France"),
+            ("34", "Spain"),
+            ("36", "Hungary"),
+            ("39", "Italy"),
+            ("40", "Romania"),
+            ("41", "Switzerland"),
+            ("43", "Austria"),
+            ("44", "UK"),
+            ("45", "Denmark"),
+            ("46", "Sweden"),
+            ("47", "Norway"),
+            ("48", "Poland"),
+            ("49", "Germany"),
+            ("51", "Peru"),
+            ("52", "Mexico"),
+            ("53", "Cuba"),
+            ("54", "Argentina"),
+            ("55", "Brazil"),
+            ("56", "Chile"),
+            ("57", "Colombia"),
+            ("58", "Venezuela"),
+            ("60", "Malaysia"),
+            ("61", "Australia"),
+            ("62", "Indonesia"),
+            ("63", "Philippines"),
+            ("64", "New Zealand"),
+            ("65", "Singapore"),
+            ("66", "Thailand"),
+            ("81", "Japan"),
+            ("82", "South Korea"),
+            ("84", "Vietnam"),
+            ("86", "China"),
+            ("90", "Turkey"),
+            ("91", "India"),
+            ("92", "Pakistan"),
+            ("93", "Afghanistan"),
+            ("94", "Sri Lanka"),
+            ("95", "Myanmar"),
+            ("98", "Iran"),
+            ("212", "Morocco"),
+            ("213", "Algeria"),
+            ("216", "Tunisia"),
+            ("218", "Libya"),
+            ("220", "Gambia"),
+            ("221", "Senegal"),
+            ("222", "Mauritania"),
+            ("223", "Mali"),
+            ("224", "Guinea"),
+            ("225", "Ivory Coast"),
+            ("226", "Burkina Faso"),
+            ("229", "Benin"),
+            ("230", "Mauritius"),
+            ("231", "Liberia"),
+            ("232", "Sierra Leone"),
+            ("233", "Ghana"),
+            ("234", "Nigeria"),
+            ("235", "Chad"),
+            ("236", "Central African Republic"),
+            ("238", "Cape Verde"),
+            ("239", "Sao Tome"),
+            ("240", "Equatorial Guinea"),
+            ("241", "Gabon"),
+            ("242", "Congo"),
+            ("243", "DR Congo"),
+            ("244", "Angola"),
+            ("245", "Guinea-Bissau"),
+            ("246", "Diego Garcia"),
+            ("247", "Ascension Island"),
+            ("248", "Seychelles"),
+            ("249", "Sudan"),
+            ("250", "Rwanda"),
+            ("251", "Ethiopia"),
+            ("252", "Somalia"),
+            ("253", "Djibouti"),
+            ("254", "Kenya"),
+            ("255", "Tanzania"),
+            ("256", "Uganda"),
+            ("257", "Burundi"),
+            ("258", "Mozambique"),
+            ("260", "Zambia"),
+            ("262", "Reunion"),
+            ("263", "Zimbabwe"),
+            ("264", "Namibia"),
+            ("265", "Malawi"),
+            ("266", "Lesotho"),
+            ("267", "Botswana"),
+            ("268", "Eswatini"),
+            ("269", "Comoros"),
+            ("290", "Saint Helena"),
+            ("297", "Aruba"),
+            ("298", "Faroe Islands"),
+            ("299", "Greenland"),
+            ("350", "Gibraltar"),
+            ("351", "Portugal"),
+            ("352", "Luxembourg"),
+            ("353", "Ireland"),
+            ("354", "Iceland"),
+            ("355", "Albania"),
+            ("356", "Malta"),
+            ("357", "Cyprus"),
+            ("358", "Finland"),
+            ("359", "Bulgaria"),
+            ("370", "Lithuania"),
+            ("371", "Latvia"),
+            ("372", "Estonia"),
+            ("373", "Moldova"),
+            ("374", "Armenia"),
+            ("375", "Belarus"),
+            ("376", "Andorra"),
+            ("377", "Monaco"),
+            ("378", "San Marino"),
+            ("379", "Vatican"),
+            ("380", "Ukraine"),
+            ("381", "Serbia"),
+            ("382", "Montenegro"),
+            ("385", "Croatia"),
+            ("386", "Slovenia"),
+            ("387", "Bosnia"),
+            ("388", "EU"),
+            ("389", "North Macedonia"),
+            ("420", "Czech Republic"),
+            ("423", "Liechtenstein"),
+            ("500", "Falkland Islands"),
+            ("501", "Belize"),
+            ("502", "Guatemala"),
+            ("503", "El Salvador"),
+            ("504", "Honduras"),
+            ("505", "Nicaragua"),
+            ("506", "Costa Rica"),
+            ("507", "Panama"),
+            ("508", "Saint Pierre"),
+            ("509", "Haiti"),
+            ("590", "Guadeloupe"),
+            ("591", "Bolivia"),
+            ("592", "Guyana"),
+            ("593", "Ecuador"),
+            ("594", "French Guiana"),
+            ("595", "Paraguay"),
+            ("596", "Martinique"),
+            ("597", "Suriname"),
+            ("598", "Uruguay"),
+            ("599", "Curacao"),
+            ("672", "Norfolk Island"),
+            ("673", "Brunei"),
+            ("674", "Nauru"),
+            ("675", "Papua New Guinea"),
+            ("676", "Tonga"),
+            ("677", "Solomon Islands"),
+            ("678", "Vanuatu"),
+            ("679", "Fiji"),
+            ("680", "Palau"),
+            ("681", "Wallis and Futuna"),
+            ("682", "Cook Islands"),
+            ("683", "Niue"),
+            ("684", "American Samoa"),
+            ("685", "Samoa"),
+            ("686", "Kiribati"),
+            ("687", "New Caledonia"),
+            ("688", "Tuvalu"),
+            ("689", "French Polynesia"),
+            ("690", "Tokelau"),
+            ("691", "Micronesia"),
+            ("692", "Marshall Islands"),
+            ("800", "International Freephone"),
+            ("808", "Shared Cost"),
+            ("850", "North Korea"),
+            ("852", "Hong Kong"),
+            ("853", "Macau"),
+            ("855", "Cambodia"),
+            ("856", "Laos"),
+            ("870", "Inmarsat"),
+            ("878", "Universal Personal"),
+            ("880", "Bangladesh"),
+            ("881", "Global Mobile Satellite"),
+            ("882", "International Networks"),
+            ("883", "International Networks"),
+            ("886", "Taiwan"),
+            ("888", "Telecommunications for Disaster Relief"),
+            ("891", "International"),
+            ("900", "International Premium Rate"),
+            ("960", "Maldives"),
+            ("961", "Lebanon"),
+            ("962", "Jordan"),
+            ("963", "Syria"),
+            ("964", "Iraq"),
+            ("965", "Kuwait"),
+            ("966", "Saudi Arabia"),
+            ("967", "Yemen"),
+            ("968", "Oman"),
+            ("970", "Palestine"),
+            ("971", "UAE"),
+            ("972", "Israel"),
+            ("973", "Bahrain"),
+            ("974", "Qatar"),
+            ("975", "Bhutan"),
+            ("976", "Mongolia"),
+            ("977", "Nepal"),
+            ("979", "International Premium Rate"),
+            ("992", "Tajikistan"),
+            ("993", "Turkmenistan"),
+            ("994", "Azerbaijan"),
+            ("995", "Georgia"),
+            ("996", "Kyrgyzstan"),
+            ("998", "Uzbekistan"),
+        ]
+        .into_iter()
+        .collect()
+    });
 
 /// Extract the country code digits from a phone number in +CC-NUMBER or +CCNUMBER format.
 /// Returns None if the phone doesn't start with '+' or has no recognizable country code.
@@ -563,9 +576,13 @@ pub fn fix_phone_format(phone: &str, country: &str) -> String {
 
 // --- API helper functions ---
 
-pub type HubType = PeopleService<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>;
+pub type HubType =
+    PeopleService<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>;
 
-pub async fn fetch_all_contacts(hub: &HubType, fields: &[&str]) -> Result<Vec<google_people1::api::Person>, Box<dyn std::error::Error>> {
+pub async fn fetch_all_contacts(
+    hub: &HubType,
+    fields: &[&str],
+) -> Result<Vec<google_people1::api::Person>, Box<dyn std::error::Error>> {
     let mut all: Vec<google_people1::api::Person> = Vec::new();
     let mut page_token: Option<String> = None;
 
@@ -581,7 +598,8 @@ pub async fn fetch_all_contacts(hub: &HubType, fields: &[&str]) -> Result<Vec<go
                 req = req.page_token(token);
             }
             async { req.doit().await }
-        }).await?;
+        })
+        .await?;
 
         if let Some(connections) = result.connections {
             all.extend(connections);
@@ -600,15 +618,25 @@ pub fn person_name(person: &google_people1::api::Person) -> String {
     let names = person.names.as_ref().and_then(|n| n.first());
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
     let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
-    let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
-    let company = person.organizations.as_ref()
+    let suffix = names
+        .and_then(|n| n.honorific_suffix.as_deref())
+        .unwrap_or("");
+    let company = person
+        .organizations
+        .as_ref()
         .and_then(|orgs| orgs.first())
         .and_then(|o| o.name.as_deref())
         .unwrap_or("");
     let mut name_parts = Vec::new();
-    if !given.is_empty() { name_parts.push(given.to_string()); }
-    if !family.is_empty() { name_parts.push(family.to_string()); }
-    if !suffix.is_empty() { name_parts.push(suffix.to_string()); }
+    if !given.is_empty() {
+        name_parts.push(given.to_string());
+    }
+    if !family.is_empty() {
+        name_parts.push(family.to_string());
+    }
+    if !suffix.is_empty() {
+        name_parts.push(suffix.to_string());
+    }
     if !company.is_empty() {
         if name_parts.is_empty() {
             name_parts.push(company.to_string());
@@ -625,43 +653,76 @@ pub fn person_base_name(person: &google_people1::api::Person) -> String {
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
     let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
     let mut parts = Vec::new();
-    if !given.is_empty() { parts.push(given); }
-    if !family.is_empty() { parts.push(family); }
+    if !given.is_empty() {
+        parts.push(given);
+    }
+    if !family.is_empty() {
+        parts.push(family);
+    }
     parts.join(" ")
 }
 
 /// Format a person as a pipe-delimited line showing all non-empty fields.
 /// This is the canonical way to display a contact — used by `list` and all checks.
 /// `group_names` is optional; when provided, labels are included.
-pub fn format_person_line(person: &google_people1::api::Person, group_names: Option<&std::collections::HashMap<String, String>>) -> String {
+pub fn format_person_line(
+    person: &google_people1::api::Person,
+    group_names: Option<&std::collections::HashMap<String, String>>,
+) -> String {
     let names = person.names.as_ref().and_then(|n| n.first());
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
     let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
     let middle = names.and_then(|n| n.middle_name.as_deref()).unwrap_or("");
-    let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
-    let prefix_name = names.and_then(|n| n.honorific_prefix.as_deref()).unwrap_or("");
-    let company = person.organizations.as_ref()
+    let suffix = names
+        .and_then(|n| n.honorific_suffix.as_deref())
+        .unwrap_or("");
+    let prefix_name = names
+        .and_then(|n| n.honorific_prefix.as_deref())
+        .unwrap_or("");
+    let company = person
+        .organizations
+        .as_ref()
         .and_then(|orgs| orgs.first())
         .and_then(|o| o.name.as_deref())
         .unwrap_or("");
-    let title = person.organizations.as_ref()
+    let title = person
+        .organizations
+        .as_ref()
         .and_then(|orgs| orgs.first())
         .and_then(|o| o.title.as_deref())
         .unwrap_or("");
-    let department = person.organizations.as_ref()
+    let department = person
+        .organizations
+        .as_ref()
         .and_then(|orgs| orgs.first())
         .and_then(|o| o.department.as_deref())
         .unwrap_or("");
 
     let mut parts = Vec::new();
-    if !prefix_name.is_empty() { parts.push(format!("prefix: {}", prefix_name)); }
-    if !given.is_empty() { parts.push(format!("given: {}", given)); }
-    if !middle.is_empty() { parts.push(format!("middle: {}", middle)); }
-    if !family.is_empty() { parts.push(format!("family: {}", family)); }
-    if !suffix.is_empty() { parts.push(format!("suffix: {}", suffix)); }
-    if !company.is_empty() { parts.push(format!("company: {}", company)); }
-    if !title.is_empty() { parts.push(format!("title: {}", title)); }
-    if !department.is_empty() { parts.push(format!("dept: {}", department)); }
+    if !prefix_name.is_empty() {
+        parts.push(format!("prefix: {}", prefix_name));
+    }
+    if !given.is_empty() {
+        parts.push(format!("given: {}", given));
+    }
+    if !middle.is_empty() {
+        parts.push(format!("middle: {}", middle));
+    }
+    if !family.is_empty() {
+        parts.push(format!("family: {}", family));
+    }
+    if !suffix.is_empty() {
+        parts.push(format!("suffix: {}", suffix));
+    }
+    if !company.is_empty() {
+        parts.push(format!("company: {}", company));
+    }
+    if !title.is_empty() {
+        parts.push(format!("title: {}", title));
+    }
+    if !department.is_empty() {
+        parts.push(format!("dept: {}", department));
+    }
 
     if let Some(nicknames) = &person.nicknames {
         for n in nicknames {
@@ -674,28 +735,38 @@ pub fn format_person_line(person: &google_people1::api::Person, group_names: Opt
     if let Some(email_addrs) = &person.email_addresses {
         for e in email_addrs {
             if let Some(val) = e.value.as_deref()
-                && !val.is_empty() {
-                    let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
-                    if t.is_empty() {
-                        parts.push(format!("email: {}", val));
-                    } else {
-                        parts.push(format!("email: {} [{}]", val, t));
-                    }
+                && !val.is_empty()
+            {
+                let t = e
+                    .formatted_type
+                    .as_deref()
+                    .or(e.type_.as_deref())
+                    .unwrap_or("");
+                if t.is_empty() {
+                    parts.push(format!("email: {}", val));
+                } else {
+                    parts.push(format!("email: {} [{}]", val, t));
                 }
+            }
         }
     }
 
     if let Some(phones) = &person.phone_numbers {
         for p in phones {
             if let Some(val) = p.value.as_deref()
-                && !val.is_empty() {
-                    let t = p.formatted_type.as_deref().or(p.type_.as_deref()).unwrap_or("");
-                    if t.is_empty() {
-                        parts.push(format!("phone: {}", val));
-                    } else {
-                        parts.push(format!("phone: {} [{}]", val, t));
-                    }
+                && !val.is_empty()
+            {
+                let t = p
+                    .formatted_type
+                    .as_deref()
+                    .or(p.type_.as_deref())
+                    .unwrap_or("");
+                if t.is_empty() {
+                    parts.push(format!("phone: {}", val));
+                } else {
+                    parts.push(format!("phone: {} [{}]", val, t));
                 }
+            }
         }
     }
 
@@ -713,19 +784,29 @@ pub fn format_person_line(person: &google_people1::api::Person, group_names: Opt
     }
 }
 
-
 pub fn person_display_name(person: &google_people1::api::Person) -> String {
     let name = person_name(person);
-    if name.is_empty() { "<no name>".to_string() } else { name }
+    if name.is_empty() {
+        "<no name>".to_string()
+    } else {
+        name
+    }
 }
 
 pub fn get_resource_name(person: &google_people1::api::Person) -> Result<&str, String> {
-    person.resource_name.as_deref()
-        .ok_or_else(|| format!("Contact missing resource name for \"{}\"", person_display_name(person)))
+    person.resource_name.as_deref().ok_or_else(|| {
+        format!(
+            "Contact missing resource name for \"{}\"",
+            person_display_name(person)
+        )
+    })
 }
 
-pub fn build_group_name_map(groups: &[google_people1::api::ContactGroup]) -> std::collections::HashMap<String, String> {
-    groups.iter()
+pub fn build_group_name_map(
+    groups: &[google_people1::api::ContactGroup],
+) -> std::collections::HashMap<String, String> {
+    groups
+        .iter()
         .filter_map(|g| {
             let rn = g.resource_name.as_deref()?;
             let name = g.name.as_deref()?;
@@ -734,20 +815,37 @@ pub fn build_group_name_map(groups: &[google_people1::api::ContactGroup]) -> std
         .collect()
 }
 
-pub fn person_labels(person: &google_people1::api::Person, group_names: &std::collections::HashMap<String, String>) -> Vec<String> {
-    person.memberships.as_ref()
+pub fn person_labels(
+    person: &google_people1::api::Person,
+    group_names: &std::collections::HashMap<String, String>,
+) -> Vec<String> {
+    person
+        .memberships
+        .as_ref()
         .map(|memberships| {
-            memberships.iter().filter_map(|m| {
-                let rn = m.contact_group_membership.as_ref()?
-                    .contact_group_resource_name.as_deref()?;
-                if rn == "contactGroups/myContacts" { return None; }
-                group_names.get(rn).cloned()
-            }).collect()
+            memberships
+                .iter()
+                .filter_map(|m| {
+                    let rn = m
+                        .contact_group_membership
+                        .as_ref()?
+                        .contact_group_resource_name
+                        .as_deref()?;
+                    if rn == "contactGroups/myContacts" {
+                        return None;
+                    }
+                    group_names.get(rn).cloned()
+                })
+                .collect()
         })
         .unwrap_or_default()
 }
 
-pub async fn update_phone_numbers<F>(hub: &HubType, person: &google_people1::api::Person, transform: F) -> Result<(), Box<dyn std::error::Error>>
+pub async fn update_phone_numbers<F>(
+    hub: &HubType,
+    person: &google_people1::api::Person,
+    transform: F,
+) -> Result<(), Box<dyn std::error::Error>>
 where
     F: Fn(&str) -> Option<String>,
 {
@@ -757,36 +855,44 @@ where
     if let Some(ref mut nums) = updated.phone_numbers {
         for pn in nums.iter_mut() {
             if let Some(ref val) = pn.value
-                && let Some(new_val) = transform(val) {
-                    pn.value = Some(new_val);
-                }
+                && let Some(new_val) = transform(val)
+            {
+                pn.value = Some(new_val);
+            }
         }
     }
     retry_api(|| {
-        let req = hub.people()
+        let req = hub
+            .people()
             .update_contact(updated.clone(), resource_name)
             .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]));
         async { req.doit().await }
-    }).await?;
+    })
+    .await?;
     eprintln!("  Fixed: {}", person_display_name(person));
     tokio::time::sleep(MUTATE_DELAY).await;
     Ok(())
 }
 
-pub async fn fetch_all_contact_groups(hub: &HubType) -> Result<Vec<google_people1::api::ContactGroup>, Box<dyn std::error::Error>> {
+pub async fn fetch_all_contact_groups(
+    hub: &HubType,
+) -> Result<Vec<google_people1::api::ContactGroup>, Box<dyn std::error::Error>> {
     let mut all_groups: Vec<google_people1::api::ContactGroup> = Vec::new();
     let mut page_token: Option<String> = None;
 
     loop {
         let (_response, result) = retry_api(|| {
-            let mut req = hub.contact_groups().list()
+            let mut req = hub
+                .contact_groups()
+                .list()
                 .clear_scopes()
                 .add_scope(google_people1::api::Scope::Contact);
             if let Some(ref token) = page_token {
                 req = req.page_token(token);
             }
             async { req.doit().await }
-        }).await?;
+        })
+        .await?;
         if let Some(groups) = result.contact_groups {
             all_groups.extend(groups);
         }
@@ -809,9 +915,7 @@ impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for NoInteraction
         _url: &'a str,
         _need_code: bool,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
-        Box::pin(async move {
-            Err("Not authenticated. Run 'rscontacts auth' first.".to_string())
-        })
+        Box::pin(async move { Err("Not authenticated. Run 'rscontacts auth' first.".to_string()) })
     }
 }
 
@@ -825,14 +929,20 @@ impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for BrowserFlowDe
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
         Box::pin(async move {
             if let Err(e) = open::that(url) {
-                eprintln!("Failed to open browser: {}. Please open this URL manually:\n{}", e, url);
+                eprintln!(
+                    "Failed to open browser: {}. Please open this URL manually:\n{}",
+                    e, url
+                );
             }
             Ok(String::new())
         })
     }
 }
 
-pub fn build_connector() -> Result<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, Box<dyn std::error::Error>> {
+pub fn build_connector() -> Result<
+    hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>,
+    Box<dyn std::error::Error>,
+> {
     Ok(hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()?
         .https_or_http()
@@ -885,7 +995,10 @@ pub fn prompt_phone_label_fix(name: &str) -> Result<Option<String>, Box<dyn std:
     use std::io::Write;
     let options = PHONE_LABEL_OPTIONS;
     loop {
-        eprint!("  Label for {}'s phone? [m]obile/[h]ome/[w]ork/m[a]in/[o]ther/[s]kip: ", name);
+        eprint!(
+            "  Label for {}'s phone? [m]obile/[h]ome/[w]ork/m[a]in/[o]ther/[s]kip: ",
+            name
+        );
         std::io::stderr().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
@@ -1004,7 +1117,9 @@ pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &st
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
     let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
     let full = person_display_name(person);
-    let nickname = person.nicknames.as_ref()
+    let nickname = person
+        .nicknames
+        .as_ref()
         .and_then(|n| n.first())
         .and_then(|n| n.value.as_deref())
         .unwrap_or("");
@@ -1036,7 +1151,11 @@ pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &st
     if let Some(ref phones) = person.phone_numbers {
         for phone in phones {
             if let Some(ref value) = phone.value {
-                let ptype = phone.type_.as_deref().or(phone.formatted_type.as_deref()).unwrap_or("voice");
+                let ptype = phone
+                    .type_
+                    .as_deref()
+                    .or(phone.formatted_type.as_deref())
+                    .unwrap_or("voice");
                 let vcard_type = google_phone_type_to_vcard(ptype);
                 vcard.push_str(&format!("TEL;TYPE={}:{}\r\n", vcard_type, value));
             }
@@ -1047,7 +1166,11 @@ pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &st
     if let Some(ref emails) = person.email_addresses {
         for email in emails {
             if let Some(ref value) = email.value {
-                let etype = email.type_.as_deref().or(email.formatted_type.as_deref()).unwrap_or("other");
+                let etype = email
+                    .type_
+                    .as_deref()
+                    .or(email.formatted_type.as_deref())
+                    .unwrap_or("other");
                 let vcard_type = google_email_type_to_vcard(etype);
                 vcard.push_str(&format!("EMAIL;TYPE={}:{}\r\n", vcard_type, value));
             }
@@ -1064,7 +1187,10 @@ pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &st
             let country = addr.country.as_deref().unwrap_or("");
             let atype = addr.type_.as_deref().unwrap_or("other");
             let vcard_type = google_address_type_to_vcard(atype);
-            vcard.push_str(&format!("ADR;TYPE={}:;;{};{};{};{};{}\r\n", vcard_type, street, city, region, postal, country));
+            vcard.push_str(&format!(
+                "ADR;TYPE={}:;;{};{};{};{};{}\r\n",
+                vcard_type, street, city, region, postal, country
+            ));
         }
     }
 
@@ -1072,9 +1198,10 @@ pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &st
     if let Some(ref birthdays) = person.birthdays
         && let Some(bday) = birthdays.first()
         && let Some(ref date) = bday.date
-        && let (Some(y), Some(m), Some(d)) = (date.year, date.month, date.day) {
-            vcard.push_str(&format!("BDAY:{:04}-{:02}-{:02}\r\n", y, m, d));
-        }
+        && let (Some(y), Some(m), Some(d)) = (date.year, date.month, date.day)
+    {
+        vcard.push_str(&format!("BDAY:{:04}-{:02}-{:02}\r\n", y, m, d));
+    }
 
     vcard.push_str("END:VCARD\r\n");
     vcard

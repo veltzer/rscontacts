@@ -2,20 +2,60 @@ use google_people1::FieldMask;
 
 use crate::helpers::*;
 
-const STANDARD_CONTACT_FIELDS: &[&str] = &["names", "organizations", "emailAddresses", "phoneNumbers", "nicknames", "memberships"];
+const STANDARD_CONTACT_FIELDS: &[&str] = &[
+    "names",
+    "organizations",
+    "emailAddresses",
+    "phoneNumbers",
+    "nicknames",
+    "memberships",
+];
 const ALL_CONTACT_FIELDS: &[&str] = &[
-    "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
-    "organizations", "memberships", "biographies", "urls", "events",
-    "relations", "nicknames", "occupations", "interests", "skills",
-    "userDefined", "imClients", "sipAddresses", "locations",
-    "externalIds", "clientData",
+    "names",
+    "emailAddresses",
+    "phoneNumbers",
+    "addresses",
+    "birthdays",
+    "organizations",
+    "memberships",
+    "biographies",
+    "urls",
+    "events",
+    "relations",
+    "nicknames",
+    "occupations",
+    "interests",
+    "skills",
+    "userDefined",
+    "imClients",
+    "sipAddresses",
+    "locations",
+    "externalIds",
+    "clientData",
 ];
 const ALL_CONTACT_FIELDS_WITH_METADATA: &[&str] = &[
-    "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
-    "organizations", "memberships", "biographies", "urls", "events",
-    "relations", "nicknames", "occupations", "interests", "skills",
-    "userDefined", "imClients", "sipAddresses", "locations",
-    "externalIds", "clientData", "metadata",
+    "names",
+    "emailAddresses",
+    "phoneNumbers",
+    "addresses",
+    "birthdays",
+    "organizations",
+    "memberships",
+    "biographies",
+    "urls",
+    "events",
+    "relations",
+    "nicknames",
+    "occupations",
+    "interests",
+    "skills",
+    "userDefined",
+    "imClients",
+    "sipAddresses",
+    "locations",
+    "externalIds",
+    "clientData",
+    "metadata",
 ];
 const EDS_CONTACTS_DB_RELATIVE_PATH: &str = "evolution/addressbook/system/contacts.db";
 
@@ -29,11 +69,28 @@ struct StandardCheckSetup {
 
 impl StandardCheckSetup {
     fn to_ref_vec(&self) -> Vec<(&str, &str)> {
-        self.user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect()
+        self.user_groups_owned
+            .iter()
+            .map(|(n, r)| (n.as_str(), r.as_str()))
+            .collect()
     }
 
-    fn make_ctx<'a>(&'a self, fix: bool, dry_run: bool, user_groups: &'a [(&'a str, &'a str)]) -> CheckContext<'a> {
-        CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups, label_names: &self.label_names, group_names: &self.group_names }
+    fn make_ctx<'a>(
+        &'a self,
+        fix: bool,
+        dry_run: bool,
+        user_groups: &'a [(&'a str, &'a str)],
+    ) -> CheckContext<'a> {
+        CheckContext {
+            fix,
+            dry_run,
+            prefix: "",
+            header: None,
+            quiet: false,
+            user_groups,
+            label_names: &self.label_names,
+            group_names: &self.group_names,
+        }
     }
 }
 
@@ -43,7 +100,13 @@ async fn setup_standard_check(fix: bool) -> Result<StandardCheckSetup, Box<dyn s
     let all_groups = fetch_all_contact_groups(&hub).await?;
     let group_names = build_group_name_map(&all_groups);
     let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
-    Ok(StandardCheckSetup { hub, contacts, group_names, user_groups_owned, label_names })
+    Ok(StandardCheckSetup {
+        hub,
+        contacts,
+        group_names,
+        user_groups_owned,
+        label_names,
+    })
 }
 
 struct CheckContext<'a> {
@@ -62,7 +125,8 @@ fn build_user_groups_and_labels(
     needed: bool,
 ) -> (Vec<(String, String)>, Vec<String>) {
     if needed {
-        let ug: Vec<(String, String)> = all_groups.iter()
+        let ug: Vec<(String, String)> = all_groups
+            .iter()
             .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
             .filter_map(|g| {
                 let name = g.name.as_deref()?;
@@ -78,7 +142,10 @@ fn build_user_groups_and_labels(
 }
 
 fn to_ref_vec(owned: &[(String, String)]) -> Vec<(&str, &str)> {
-    owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect()
+    owned
+        .iter()
+        .map(|(n, r)| (n.as_str(), r.as_str()))
+        .collect()
 }
 
 async fn rename_contact_group(
@@ -98,7 +165,8 @@ async fn rename_contact_group(
     retry_api(|| {
         let r = hub.contact_groups().update(req.clone(), resource_name);
         async { r.doit().await }
-    }).await?;
+    })
+    .await?;
     eprintln!("  Renamed \"{}\" -> \"{}\"", old_name, new_name);
     tokio::time::sleep(MUTATE_DELAY).await;
     Ok(())
@@ -213,7 +281,10 @@ pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::
     let scopes = &["https://www.googleapis.com/auth/contacts"];
     let _token = auth.token(scopes).await?;
 
-    eprintln!("Authentication successful. Token cached to {}", token_cache_path().display());
+    eprintln!(
+        "Authentication successful. Token cached to {}",
+        token_cache_path().display()
+    );
     Ok(())
 }
 
@@ -263,10 +334,21 @@ pub async fn cmd_test_connect() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub async fn cmd_list(emails: bool, labels: bool, starred: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_list(
+    emails: bool,
+    labels: bool,
+    starred: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let _ = emails; // emails are now always shown via format_person_line
     let hub = build_hub().await?;
-    let fields = vec!["names", "organizations", "phoneNumbers", "nicknames", "emailAddresses", "memberships"];
+    let fields = vec![
+        "names",
+        "organizations",
+        "phoneNumbers",
+        "nicknames",
+        "emailAddresses",
+        "memberships",
+    ];
     let contacts = fetch_all_contacts(&hub, &fields).await?;
 
     let contacts: Vec<_> = if starred {
@@ -302,17 +384,22 @@ where
     P: Fn(&str) -> bool,
     T: Fn(&str) -> String + Clone,
 {
-    let filtered: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
-        p.phone_numbers.as_ref().is_some_and(|nums| nums.iter().any(|pn| {
-            pn.value.as_deref().is_some_and(&predicate)
-        }))
-    }).collect();
+    let filtered: Vec<&google_people1::api::Person> = contacts
+        .iter()
+        .filter(|p| {
+            p.phone_numbers.as_ref().is_some_and(|nums| {
+                nums.iter()
+                    .any(|pn| pn.value.as_deref().is_some_and(&predicate))
+            })
+        })
+        .collect();
 
     if !ctx.quiet {
         if !filtered.is_empty()
-            && let Some(header) = ctx.header {
-                println!("=== {} ({}) ===", header, filtered.len());
-            }
+            && let Some(header) = ctx.header
+        {
+            println!("=== {} ({}) ===", header, filtered.len());
+        }
 
         for person in &filtered {
             println!("{}{}", ctx.prefix, format_person_line(person, None));
@@ -320,12 +407,13 @@ where
             if let Some(nums) = &person.phone_numbers {
                 for pn in nums {
                     if let Some(val) = pn.value.as_deref()
-                        && predicate(val) {
-                            let fixed = transform(val);
-                            if ctx.fix || ctx.dry_run {
-                                println!("{}  {} -> {}", ctx.prefix, val, fixed);
-                            }
+                        && predicate(val)
+                    {
+                        let fixed = transform(val);
+                        if ctx.fix || ctx.dry_run {
+                            println!("{}  {} -> {}", ctx.prefix, val, fixed);
                         }
+                    }
                 }
             }
 
@@ -338,7 +426,8 @@ where
                         } else {
                             None
                         }
-                    }).await?;
+                    })
+                    .await?;
                 } else {
                     eprintln!("  Skipped.");
                 }
@@ -353,12 +442,21 @@ where
     Ok(filtered.len())
 }
 
-pub async fn cmd_check_contact_given_name_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_given_name_regexp(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
     let config = load_config()?;
-    check_given_name_regexp(&s.hub, &s.contacts, &config.check_contact_given_name_regexp, &ctx).await?;
+    check_given_name_regexp(
+        &s.hub,
+        &s.contacts,
+        &config.check_contact_given_name_regexp,
+        &ctx,
+    )
+    .await?;
     Ok(())
 }
 
@@ -372,7 +470,9 @@ async fn check_given_name_regexp(
         Some(p) => p,
         None => {
             if !ctx.quiet {
-                eprintln!("No given name allow regex configured in config.toml. Set [check-contact-given-name-regexp] allow = \"...\"");
+                eprintln!(
+                    "No given name allow regex configured in config.toml. Set [check-contact-given-name-regexp] allow = \"...\""
+                );
             }
             return Ok(0);
         }
@@ -387,7 +487,9 @@ async fn check_given_name_regexp(
             continue;
         }
 
-        let given = person.names.as_ref()
+        let given = person
+            .names
+            .as_ref()
             .and_then(|names| names.first())
             .and_then(|n| n.given_name.as_deref())
             .unwrap_or("");
@@ -398,28 +500,51 @@ async fn check_given_name_regexp(
         if !re.is_match(given) {
             if !ctx.quiet {
                 if count == 0
-                    && let Some(header) = ctx.header {
-                        println!("=== {} ===", header);
-                    }
-                println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                    && let Some(header) = ctx.header
+                {
+                    println!("=== {} ===", header);
+                }
+                println!(
+                    "{}{}",
+                    ctx.prefix,
+                    format_person_line(person, Some(ctx.group_names))
+                );
 
                 if ctx.fix && !ctx.dry_run {
-                    interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                    interactive_edit_contact(
+                        hub,
+                        person,
+                        ctx.user_groups,
+                        ctx.label_names,
+                        ctx.group_names,
+                    )
+                    .await?;
                 }
             }
             count += 1;
         }
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
-pub async fn cmd_check_contact_suffix_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_suffix_regexp(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
     let config = load_config()?;
-    check_suffix_regexp(&s.hub, &s.contacts, &config.check_contact_suffix_regexp, &ctx).await?;
+    check_suffix_regexp(
+        &s.hub,
+        &s.contacts,
+        &config.check_contact_suffix_regexp,
+        &ctx,
+    )
+    .await?;
     Ok(())
 }
 
@@ -443,7 +568,9 @@ async fn check_suffix_regexp(
             continue;
         }
 
-        let suffix = person.names.as_ref()
+        let suffix = person
+            .names
+            .as_ref()
             .and_then(|names| names.first())
             .and_then(|n| n.honorific_suffix.as_deref())
             .unwrap_or("");
@@ -454,28 +581,51 @@ async fn check_suffix_regexp(
         if !re.is_match(suffix) {
             if !ctx.quiet {
                 if count == 0
-                    && let Some(header) = ctx.header {
-                        println!("=== {} ===", header);
-                    }
-                println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                    && let Some(header) = ctx.header
+                {
+                    println!("=== {} ===", header);
+                }
+                println!(
+                    "{}{}",
+                    ctx.prefix,
+                    format_person_line(person, Some(ctx.group_names))
+                );
 
                 if ctx.fix && !ctx.dry_run {
-                    interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                    interactive_edit_contact(
+                        hub,
+                        person,
+                        ctx.user_groups,
+                        ctx.label_names,
+                        ctx.group_names,
+                    )
+                    .await?;
                 }
             }
             count += 1;
         }
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
-pub async fn cmd_check_contact_family_name_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_family_name_regexp(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
     let config = load_config()?;
-    check_family_name_regexp(&s.hub, &s.contacts, &config.check_contact_family_name_regexp, &ctx).await?;
+    check_family_name_regexp(
+        &s.hub,
+        &s.contacts,
+        &config.check_contact_family_name_regexp,
+        &ctx,
+    )
+    .await?;
     Ok(())
 }
 
@@ -489,7 +639,9 @@ async fn check_family_name_regexp(
         Some(p) => p,
         None => {
             if !ctx.quiet {
-                eprintln!("No family name allow regex configured in config.toml. Set [check-contact-family-name-regexp] allow = \"...\"");
+                eprintln!(
+                    "No family name allow regex configured in config.toml. Set [check-contact-family-name-regexp] allow = \"...\""
+                );
             }
             return Ok(0);
         }
@@ -504,7 +656,9 @@ async fn check_family_name_regexp(
             continue;
         }
 
-        let family = person.names.as_ref()
+        let family = person
+            .names
+            .as_ref()
             .and_then(|names| names.first())
             .and_then(|n| n.family_name.as_deref())
             .unwrap_or("");
@@ -515,23 +669,40 @@ async fn check_family_name_regexp(
         if !re.is_match(family) {
             if !ctx.quiet {
                 if count == 0
-                    && let Some(header) = ctx.header {
-                        println!("=== {} ===", header);
-                    }
-                println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                    && let Some(header) = ctx.header
+                {
+                    println!("=== {} ===", header);
+                }
+                println!(
+                    "{}{}",
+                    ctx.prefix,
+                    format_person_line(person, Some(ctx.group_names))
+                );
 
                 if ctx.fix && !ctx.dry_run {
-                    interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                    interactive_edit_contact(
+                        hub,
+                        person,
+                        ctx.user_groups,
+                        ctx.label_names,
+                        ctx.group_names,
+                    )
+                    .await?;
                 }
             }
             count += 1;
         }
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
-pub async fn cmd_check_contact_no_given_name(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_given_name(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS;
     let contacts = if fix {
@@ -543,7 +714,16 @@ pub async fn cmd_check_contact_no_given_name(fix: bool, dry_run: bool) -> Result
     let group_names = build_group_name_map(&all_groups);
     let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
     let user_groups = to_ref_vec(&user_groups_owned);
-    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    let ctx = CheckContext {
+        fix,
+        dry_run,
+        prefix: "",
+        header: None,
+        quiet: false,
+        user_groups: &user_groups,
+        label_names: &label_names,
+        group_names: &group_names,
+    };
     check_no_given_name(&hub, &contacts, &ctx).await?;
     Ok(())
 }
@@ -570,22 +750,39 @@ async fn check_no_given_name(
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
+            println!(
+                "{}{}",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names))
+            );
 
             if ctx.fix && !ctx.dry_run {
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                interactive_edit_contact(
+                    hub,
+                    person,
+                    ctx.user_groups,
+                    ctx.label_names,
+                    ctx.group_names,
+                )
+                .await?;
             }
         }
         count += 1;
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
-pub async fn cmd_check_contact_no_displayname(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_displayname(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = if fix {
         fetch_all_contacts(&hub, ALL_CONTACT_FIELDS).await?
@@ -596,7 +793,16 @@ pub async fn cmd_check_contact_no_displayname(fix: bool, dry_run: bool) -> Resul
     let group_names = build_group_name_map(&all_groups);
     let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
     let user_groups = to_ref_vec(&user_groups_owned);
-    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    let ctx = CheckContext {
+        fix,
+        dry_run,
+        prefix: "",
+        header: None,
+        quiet: false,
+        user_groups: &user_groups,
+        label_names: &label_names,
+        group_names: &group_names,
+    };
     check_no_displayname(&hub, &contacts, &ctx).await?;
     Ok(())
 }
@@ -614,17 +820,29 @@ async fn check_no_displayname(
         }
 
         if count == 0
-            && let Some(header) = ctx.header {
-                println!("=== {} ===", header);
-            }
+            && let Some(header) = ctx.header
+        {
+            println!("=== {} ===", header);
+        }
         count += 1;
 
         if !ctx.quiet {
-            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+            println!(
+                "{}{}",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names))
+            );
         }
 
         if ctx.fix && !ctx.quiet {
-            interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+            interactive_edit_contact(
+                hub,
+                person,
+                ctx.user_groups,
+                ctx.label_names,
+                ctx.group_names,
+            )
+            .await?;
         }
     }
 
@@ -634,7 +852,10 @@ async fn check_no_displayname(
     Ok(count)
 }
 
-pub async fn cmd_check_contact_no_identity(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_identity(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS;
     let contacts = if fix {
@@ -646,7 +867,16 @@ pub async fn cmd_check_contact_no_identity(fix: bool, dry_run: bool) -> Result<(
     let group_names = build_group_name_map(&all_groups);
     let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
     let user_groups = to_ref_vec(&user_groups_owned);
-    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    let ctx = CheckContext {
+        fix,
+        dry_run,
+        prefix: "",
+        header: None,
+        quiet: false,
+        user_groups: &user_groups,
+        label_names: &label_names,
+        group_names: &group_names,
+    };
     check_no_identity(&hub, &contacts, &ctx).await?;
     Ok(())
 }
@@ -659,30 +889,48 @@ async fn check_no_identity(
     let mut count = 0;
 
     for person in contacts {
-        let has_any_type = person_labels(person, ctx.group_names).iter().any(|l| l.starts_with("type:"));
+        let has_any_type = person_labels(person, ctx.group_names)
+            .iter()
+            .any(|l| l.starts_with("type:"));
         if has_any_type {
             continue;
         }
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
+            println!(
+                "{}{}",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names))
+            );
 
             if ctx.fix && !ctx.dry_run {
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                interactive_edit_contact(
+                    hub,
+                    person,
+                    ctx.user_groups,
+                    ctx.label_names,
+                    ctx.group_names,
+                )
+                .await?;
             }
         }
         count += 1;
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
-
-pub async fn cmd_check_contact_company_known(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_company_known(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config()?;
     if config.check_contact_name_is_company.companies.is_empty() && !fix {
         eprintln!("No companies configured in config.toml.");
@@ -703,8 +951,23 @@ pub async fn cmd_check_contact_company_known(fix: bool, dry_run: bool) -> Result
     let group_names = build_group_name_map(&all_groups);
     let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
     let user_groups = to_ref_vec(&user_groups_owned);
-    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
-    check_company_known(&hub, &contacts, &config.check_contact_name_is_company.companies, &ctx).await?;
+    let ctx = CheckContext {
+        fix,
+        dry_run,
+        prefix: "",
+        header: None,
+        quiet: false,
+        user_groups: &user_groups,
+        label_names: &label_names,
+        group_names: &group_names,
+    };
+    check_company_known(
+        &hub,
+        &contacts,
+        &config.check_contact_name_is_company.companies,
+        &ctx,
+    )
+    .await?;
     Ok(())
 }
 
@@ -714,9 +977,8 @@ async fn check_company_known(
     companies: &[String],
     ctx: &CheckContext<'_>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    let mut company_set: std::collections::HashSet<String> = companies.iter()
-        .map(|c| c.to_lowercase())
-        .collect();
+    let mut company_set: std::collections::HashSet<String> =
+        companies.iter().map(|c| c.to_lowercase()).collect();
 
     let mut count = 0;
     for person in contacts {
@@ -725,7 +987,9 @@ async fn check_company_known(
             continue;
         }
 
-        let org_name = person.organizations.as_ref()
+        let org_name = person
+            .organizations
+            .as_ref()
             .and_then(|orgs| orgs.first())
             .and_then(|o| o.name.as_deref())
             .unwrap_or("");
@@ -736,10 +1000,15 @@ async fn check_company_known(
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
+            println!(
+                "{}{}",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names))
+            );
 
             if ctx.fix && !ctx.dry_run {
                 use std::io::Write;
@@ -756,7 +1025,14 @@ async fn check_company_known(
                             break;
                         }
                         Some('e') => {
-                            interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                            interactive_edit_contact(
+                                hub,
+                                person,
+                                ctx.user_groups,
+                                ctx.label_names,
+                                ctx.group_names,
+                            )
+                            .await?;
                             break;
                         }
                         Some('s') => {
@@ -780,24 +1056,39 @@ async fn check_company_known(
 
 fn add_company_to_config(company: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = load_config()?;
-    if !config.check_contact_name_is_company.companies.iter()
+    if !config
+        .check_contact_name_is_company
+        .companies
+        .iter()
         .any(|c| c.eq_ignore_ascii_case(company))
     {
-        config.check_contact_name_is_company.companies.push(company.to_string());
+        config
+            .check_contact_name_is_company
+            .companies
+            .push(company.to_string());
     }
-    config.check_contact_name_is_company.companies.sort_by_key(|a| a.to_lowercase());
+    config
+        .check_contact_name_is_company
+        .companies
+        .sort_by_key(|a| a.to_lowercase());
     save_company_list(&config.check_contact_name_is_company.companies)?;
     Ok(())
 }
 
 fn remove_company_from_config(company: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = load_config()?;
-    config.check_contact_name_is_company.companies.retain(|c| !c.eq_ignore_ascii_case(company));
+    config
+        .check_contact_name_is_company
+        .companies
+        .retain(|c| !c.eq_ignore_ascii_case(company));
     save_company_list(&config.check_contact_name_is_company.companies)?;
     Ok(())
 }
 
-pub async fn cmd_check_contact_company_exists(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_company_exists(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config()?;
     if config.check_contact_name_is_company.companies.is_empty() {
         eprintln!("No companies configured in config.toml.");
@@ -807,8 +1098,21 @@ pub async fn cmd_check_contact_company_exists(fix: bool, dry_run: bool) -> Resul
     let contacts = fetch_all_contacts(&hub, &["names", "organizations", "memberships"]).await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
     let group_names = build_group_name_map(&all_groups);
-    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &[], label_names: &[], group_names: &group_names };
-    check_company_exists(&contacts, &config.check_contact_name_is_company.companies, &ctx)?;
+    let ctx = CheckContext {
+        fix,
+        dry_run,
+        prefix: "",
+        header: None,
+        quiet: false,
+        user_groups: &[],
+        label_names: &[],
+        group_names: &group_names,
+    };
+    check_company_exists(
+        &contacts,
+        &config.check_contact_name_is_company.companies,
+        &ctx,
+    )?;
     Ok(())
 }
 
@@ -823,7 +1127,9 @@ fn check_company_exists(
         if !is_company(person, ctx.group_names) {
             continue;
         }
-        if let Some(org_name) = person.organizations.as_ref()
+        if let Some(org_name) = person
+            .organizations
+            .as_ref()
             .and_then(|orgs| orgs.first())
             .and_then(|o| o.name.as_deref())
             .filter(|n| !n.is_empty())
@@ -840,9 +1146,10 @@ fn check_company_exists(
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
             println!("{}\"{}\" - no contacts found", ctx.prefix, company);
 
             if ctx.fix && !ctx.dry_run {
@@ -888,12 +1195,15 @@ fn save_company_list(companies: &[String]) -> Result<(), Box<dyn std::error::Err
     let path = config_path();
     let content = std::fs::read_to_string(&path)?;
 
-    let mut doc = content.parse::<toml_edit::DocumentMut>()
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
         .map_err(|e| format!("Failed to parse config: {}", e))?;
 
-    let table = doc.entry("check-contact-name-is-company")
+    let table = doc
+        .entry("check-contact-name-is-company")
         .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-    let arr = companies.iter()
+    let arr = companies
+        .iter()
         .map(|c| toml_edit::Value::from(c.as_str()))
         .collect::<toml_edit::Array>();
     table["companies"] = toml_edit::value(arr);
@@ -902,12 +1212,21 @@ fn save_company_list(companies: &[String]) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
-pub async fn cmd_check_contact_given_name_known(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_given_name_known(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
     let config = load_config()?;
-    check_given_name_known(&s.hub, &s.contacts, &config.check_contact_given_name_known.names, &ctx).await?;
+    check_given_name_known(
+        &s.hub,
+        &s.contacts,
+        &config.check_contact_given_name_known.names,
+        &ctx,
+    )
+    .await?;
     Ok(())
 }
 
@@ -917,9 +1236,8 @@ async fn check_given_name_known(
     names: &[String],
     ctx: &CheckContext<'_>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    let mut name_set: std::collections::HashSet<String> = names.iter()
-        .map(|n| n.to_lowercase())
-        .collect();
+    let mut name_set: std::collections::HashSet<String> =
+        names.iter().map(|n| n.to_lowercase()).collect();
 
     let mut count = 0;
     for person in contacts {
@@ -927,7 +1245,9 @@ async fn check_given_name_known(
             continue;
         }
 
-        let given = person.names.as_ref()
+        let given = person
+            .names
+            .as_ref()
             .and_then(|n| n.first())
             .and_then(|n| n.given_name.as_deref())
             .unwrap_or("");
@@ -938,10 +1258,15 @@ async fn check_given_name_known(
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
+            println!(
+                "{}{}",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names))
+            );
 
             if ctx.fix && !ctx.dry_run {
                 use std::io::Write;
@@ -958,7 +1283,14 @@ async fn check_given_name_known(
                             break;
                         }
                         Some('e') => {
-                            interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                            interactive_edit_contact(
+                                hub,
+                                person,
+                                ctx.user_groups,
+                                ctx.label_names,
+                                ctx.group_names,
+                            )
+                            .await?;
                             break;
                         }
                         Some('s') => {
@@ -982,24 +1314,39 @@ async fn check_given_name_known(
 
 fn add_given_name_to_config(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = load_config()?;
-    if !config.check_contact_given_name_known.names.iter()
+    if !config
+        .check_contact_given_name_known
+        .names
+        .iter()
         .any(|n| n.eq_ignore_ascii_case(name))
     {
-        config.check_contact_given_name_known.names.push(name.to_string());
+        config
+            .check_contact_given_name_known
+            .names
+            .push(name.to_string());
     }
-    config.check_contact_given_name_known.names.sort_by_key(|a| a.to_lowercase());
+    config
+        .check_contact_given_name_known
+        .names
+        .sort_by_key(|a| a.to_lowercase());
     save_given_name_list(&config.check_contact_given_name_known.names)?;
     Ok(())
 }
 
 fn remove_given_name_from_config(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = load_config()?;
-    config.check_contact_given_name_known.names.retain(|n| !n.eq_ignore_ascii_case(name));
+    config
+        .check_contact_given_name_known
+        .names
+        .retain(|n| !n.eq_ignore_ascii_case(name));
     save_given_name_list(&config.check_contact_given_name_known.names)?;
     Ok(())
 }
 
-pub async fn cmd_check_contact_given_name_exists(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_given_name_exists(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config()?;
     if config.check_contact_given_name_known.names.is_empty() {
         eprintln!("No given names configured in config.toml.");
@@ -1009,8 +1356,21 @@ pub async fn cmd_check_contact_given_name_exists(fix: bool, dry_run: bool) -> Re
     let contacts = fetch_all_contacts(&hub, &["names", "memberships"]).await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
     let group_names = build_group_name_map(&all_groups);
-    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &[], label_names: &[], group_names: &group_names };
-    check_given_name_exists(&contacts, &config.check_contact_given_name_known.names, &ctx)?;
+    let ctx = CheckContext {
+        fix,
+        dry_run,
+        prefix: "",
+        header: None,
+        quiet: false,
+        user_groups: &[],
+        label_names: &[],
+        group_names: &group_names,
+    };
+    check_given_name_exists(
+        &contacts,
+        &config.check_contact_given_name_known.names,
+        &ctx,
+    )?;
     Ok(())
 }
 
@@ -1025,7 +1385,9 @@ fn check_given_name_exists(
         if is_company(person, ctx.group_names) {
             continue;
         }
-        if let Some(given) = person.names.as_ref()
+        if let Some(given) = person
+            .names
+            .as_ref()
             .and_then(|n| n.first())
             .and_then(|n| n.given_name.as_deref())
             .filter(|n| !n.is_empty())
@@ -1042,9 +1404,10 @@ fn check_given_name_exists(
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
             println!("{}\"{}\" - no contacts found", ctx.prefix, name);
 
             if ctx.fix && !ctx.dry_run {
@@ -1083,12 +1446,15 @@ fn save_given_name_list(names: &[String]) -> Result<(), Box<dyn std::error::Erro
     let path = config_path();
     let content = std::fs::read_to_string(&path)?;
 
-    let mut doc = content.parse::<toml_edit::DocumentMut>()
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
         .map_err(|e| format!("Failed to parse config: {}", e))?;
 
-    let table = doc.entry("check-contact-given-name-known")
+    let table = doc
+        .entry("check-contact-given-name-known")
         .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-    let arr = names.iter()
+    let arr = names
+        .iter()
         .map(|n| toml_edit::Value::from(n.as_str()))
         .collect::<toml_edit::Array>();
     table["names"] = toml_edit::value(arr);
@@ -1097,7 +1463,10 @@ fn save_given_name_list(names: &[String]) -> Result<(), Box<dyn std::error::Erro
     Ok(())
 }
 
-pub async fn cmd_check_contact_displayname_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_displayname_duplicate(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -1115,7 +1484,10 @@ async fn check_name_duplicate(
     for person in contacts {
         let name = person_name(person);
         if !name.is_empty() {
-            name_groups.entry(name.to_string()).or_default().push(person);
+            name_groups
+                .entry(name.to_string())
+                .or_default()
+                .push(person);
         }
     }
 
@@ -1136,12 +1508,23 @@ async fn check_name_duplicate(
         for (name, group) in &duplicates {
             println!("{}\"{}\" ({} contacts):", ctx.prefix, name, group.len());
             for person in *group {
-                println!("{}  - {}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                println!(
+                    "{}  - {}",
+                    ctx.prefix,
+                    format_person_line(person, Some(ctx.group_names))
+                );
             }
 
             if ctx.fix && !ctx.dry_run {
                 for person in *group {
-                    interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                    interactive_edit_contact(
+                        hub,
+                        person,
+                        ctx.user_groups,
+                        ctx.label_names,
+                        ctx.group_names,
+                    )
+                    .await?;
                 }
             }
         }
@@ -1154,7 +1537,10 @@ async fn check_name_duplicate(
     Ok(count)
 }
 
-pub async fn cmd_check_phone_country_label(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_country_label(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -1170,22 +1556,25 @@ async fn check_phone_country_label(
     let mut count = 0;
 
     // Collect expected country names per contact (by index)
-    let mut expected_countries: Vec<std::collections::HashSet<&'static str>> = Vec::with_capacity(contacts.len());
+    let mut expected_countries: Vec<std::collections::HashSet<&'static str>> =
+        Vec::with_capacity(contacts.len());
     for person in contacts {
         let mut countries = std::collections::HashSet::new();
         if let Some(phones) = &person.phone_numbers {
             for pn in phones {
                 if let Some(val) = pn.value.as_deref()
-                    && let Some(country_name) = phone_country_name(val) {
-                        countries.insert(country_name);
-                    }
+                    && let Some(country_name) = phone_country_name(val)
+                {
+                    countries.insert(country_name);
+                }
             }
         }
         expected_countries.push(countries);
     }
 
     // Build set of all recognized country label names for filtering
-    let all_country_labels: std::collections::HashSet<String> = expected_countries.iter()
+    let all_country_labels: std::collections::HashSet<String> = expected_countries
+        .iter()
         .flat_map(|cs| cs.iter().map(|c| format!("country:{}", c)))
         .collect();
 
@@ -1199,17 +1588,27 @@ async fn check_phone_country_label(
             if !current_labels.iter().any(|l| l == &expected_label) {
                 if !ctx.quiet {
                     if count == 0
-                        && let Some(header) = ctx.header {
-                            println!("=== {} ===", header);
-                        }
-                    println!("{}{} (missing label \"{}\")", ctx.prefix, format_person_line(person, Some(ctx.group_names)), expected_label);
+                        && let Some(header) = ctx.header
+                    {
+                        println!("=== {} ===", header);
+                    }
+                    println!(
+                        "{}{} (missing label \"{}\")",
+                        ctx.prefix,
+                        format_person_line(person, Some(ctx.group_names)),
+                        expected_label
+                    );
                 }
                 count += 1;
 
                 if ctx.fix && !ctx.dry_run {
                     let resource_name = get_resource_name(person)?;
                     // Find or create the contact group
-                    let group_rn = if let Some((_, rn)) = ctx.user_groups.iter().find(|(name, _)| *name == expected_label) {
+                    let group_rn = if let Some((_, rn)) = ctx
+                        .user_groups
+                        .iter()
+                        .find(|(name, _)| *name == expected_label)
+                    {
                         rn.to_string()
                     } else {
                         let new_group = google_people1::api::ContactGroup {
@@ -1223,8 +1622,10 @@ async fn check_phone_country_label(
                         let (_, created) = retry_api(|| {
                             let r = hub.contact_groups().create(req.clone());
                             async { r.doit().await }
-                        }).await?;
-                        let rn = created.resource_name
+                        })
+                        .await?;
+                        let rn = created
+                            .resource_name
                             .ok_or("Created group missing resource name")?;
                         eprintln!("  Created label \"{}\"", expected_label);
                         tokio::time::sleep(MUTATE_DELAY).await;
@@ -1237,8 +1638,13 @@ async fn check_phone_country_label(
                     retry_api(|| {
                         let r = hub.contact_groups().members_modify(req.clone(), &group_rn);
                         async { r.doit().await }
-                    }).await?;
-                    eprintln!("  Assigned label \"{}\" to {}", expected_label, person_display_name(person));
+                    })
+                    .await?;
+                    eprintln!(
+                        "  Assigned label \"{}\" to {}",
+                        expected_label,
+                        person_display_name(person)
+                    );
                     tokio::time::sleep(MUTATE_DELAY).await;
                 }
             }
@@ -1261,17 +1667,28 @@ async fn check_phone_country_label(
 
             if !ctx.quiet {
                 if count == 0
-                    && let Some(header) = ctx.header {
-                        println!("=== {} ===", header);
-                    }
-                println!("{}{} (has label \"{}\" but no {} phone number)", ctx.prefix, format_person_line(person, Some(ctx.group_names)), label, country_name);
+                    && let Some(header) = ctx.header
+                {
+                    println!("=== {} ===", header);
+                }
+                println!(
+                    "{}{} (has label \"{}\" but no {} phone number)",
+                    ctx.prefix,
+                    format_person_line(person, Some(ctx.group_names)),
+                    label,
+                    country_name
+                );
             }
             count += 1;
 
             if ctx.fix && !ctx.dry_run {
                 let resource_name = get_resource_name(person)?;
                 // Find the group resource name for this label
-                if let Some((_, rn)) = ctx.user_groups.iter().find(|(name, _)| *name == label.as_str()) {
+                if let Some((_, rn)) = ctx
+                    .user_groups
+                    .iter()
+                    .find(|(name, _)| *name == label.as_str())
+                {
                     let req = google_people1::api::ModifyContactGroupMembersRequest {
                         resource_names_to_add: None,
                         resource_names_to_remove: Some(vec![resource_name.to_string()]),
@@ -1279,8 +1696,13 @@ async fn check_phone_country_label(
                     retry_api(|| {
                         let r = hub.contact_groups().members_modify(req.clone(), rn);
                         async { r.doit().await }
-                    }).await?;
-                    eprintln!("  Removed label \"{}\" from {}", label, person_display_name(person));
+                    })
+                    .await?;
+                    eprintln!(
+                        "  Removed label \"{}\" from {}",
+                        label,
+                        person_display_name(person)
+                    );
                     tokio::time::sleep(MUTATE_DELAY).await;
                 }
             }
@@ -1294,37 +1716,71 @@ async fn check_phone_country_label(
     Ok(count)
 }
 
-pub async fn cmd_check_phone_countrycode(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_countrycode(
+    fix: bool,
+    dry_run: bool,
+    country: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
     let country = country.to_string();
     let empty_group_names = std::collections::HashMap::new();
-    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &[], label_names: &[], group_names: &empty_group_names };
+    let ctx = CheckContext {
+        fix,
+        dry_run,
+        prefix: "",
+        header: None,
+        quiet: false,
+        user_groups: &[],
+        label_names: &[],
+        group_names: &empty_group_names,
+    };
     check_phone_issues(
-        &hub, &contacts,
+        &hub,
+        &contacts,
         |v| is_fixable_phone(v) && !has_country_code(v),
         move |v| add_country_code(v, &country),
         &ctx,
-    ).await?;
+    )
+    .await?;
     Ok(())
 }
 
-pub async fn cmd_check_phone_format(fix: bool, dry_run: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_format(
+    fix: bool,
+    dry_run: bool,
+    country: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
     let country_owned = country.to_string();
     let empty_group_names = std::collections::HashMap::new();
-    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &[], label_names: &[], group_names: &empty_group_names };
+    let ctx = CheckContext {
+        fix,
+        dry_run,
+        prefix: "",
+        header: None,
+        quiet: false,
+        user_groups: &[],
+        label_names: &[],
+        group_names: &empty_group_names,
+    };
     check_phone_issues(
-        &hub, &contacts,
+        &hub,
+        &contacts,
         |v| is_fixable_phone(v) && !is_correct_phone_format(v),
         move |v| fix_phone_format(v, &country_owned),
         &ctx,
-    ).await?;
+    )
+    .await?;
     Ok(())
 }
 
-async fn check_duplicate_phones(hub: &HubType, contacts: &[google_people1::api::Person], ctx: &CheckContext<'_>) -> Result<usize, Box<dyn std::error::Error>> {
+async fn check_duplicate_phones(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
         if let Some(nums) = &person.phone_numbers {
@@ -1333,9 +1789,10 @@ async fn check_duplicate_phones(hub: &HubType, contacts: &[google_people1::api::
             if !dupes.is_empty() {
                 if !ctx.quiet {
                     if count == 0
-                        && let Some(header) = ctx.header {
-                            println!("=== {} ===", header);
-                        }
+                        && let Some(header) = ctx.header
+                    {
+                        println!("=== {} ===", header);
+                    }
                     println!("{}{}", ctx.prefix, format_person_line(person, None));
                     for phone in &dupes {
                         println!("{}  duplicate: {}", ctx.prefix, phone);
@@ -1344,21 +1801,36 @@ async fn check_duplicate_phones(hub: &HubType, contacts: &[google_people1::api::
                 count += dupes.len();
 
                 if ctx.fix && !ctx.dry_run && !ctx.quiet {
-                    interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                    interactive_edit_contact(
+                        hub,
+                        person,
+                        ctx.user_groups,
+                        ctx.label_names,
+                        ctx.group_names,
+                    )
+                    .await?;
                 }
             }
         }
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
-async fn check_email(hub: &HubType, contacts: &[google_people1::api::Person], ctx: &CheckContext<'_>) -> Result<usize, Box<dyn std::error::Error>> {
+async fn check_email(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
         if let Some(emails) = &person.email_addresses {
             let has_issue = emails.iter().any(|e| {
-                e.value.as_deref().is_some_and(|v| !is_valid_email(v) || v != v.to_lowercase().as_str())
+                e.value
+                    .as_deref()
+                    .is_some_and(|v| !is_valid_email(v) || v != v.to_lowercase().as_str())
             });
             if !has_issue {
                 continue;
@@ -1366,9 +1838,10 @@ async fn check_email(hub: &HubType, contacts: &[google_people1::api::Person], ct
 
             if !ctx.quiet {
                 if count == 0
-                    && let Some(header) = ctx.header {
-                        println!("=== {} ===", header);
-                    }
+                    && let Some(header) = ctx.header
+                {
+                    println!("=== {} ===", header);
+                }
                 println!("{}{}", ctx.prefix, format_person_line(person, None));
                 for email in emails {
                     if let Some(val) = email.value.as_deref() {
@@ -1385,17 +1858,31 @@ async fn check_email(hub: &HubType, contacts: &[google_people1::api::Person], ct
                 }
             }
 
-            let issue_count = emails.iter().filter(|e| {
-                e.value.as_deref().is_some_and(|v| !is_valid_email(v) || v != v.to_lowercase().as_str())
-            }).count();
+            let issue_count = emails
+                .iter()
+                .filter(|e| {
+                    e.value
+                        .as_deref()
+                        .is_some_and(|v| !is_valid_email(v) || v != v.to_lowercase().as_str())
+                })
+                .count();
             count += issue_count;
 
             if ctx.fix && !ctx.dry_run && !ctx.quiet {
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                interactive_edit_contact(
+                    hub,
+                    person,
+                    ctx.user_groups,
+                    ctx.label_names,
+                    ctx.group_names,
+                )
+                .await?;
             }
         }
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
@@ -1409,28 +1896,44 @@ async fn check_no_label(
         if !has_user_label(person) {
             if !ctx.quiet {
                 if count == 0
-                    && let Some(header) = ctx.header {
-                        println!("=== {} ===", header);
-                    }
-                println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                    && let Some(header) = ctx.header
+                {
+                    println!("=== {} ===", header);
+                }
+                println!(
+                    "{}{}",
+                    ctx.prefix,
+                    format_person_line(person, Some(ctx.group_names))
+                );
             }
             count += 1;
 
             if ctx.fix && !ctx.quiet {
-
                 if ctx.dry_run {
                     eprintln!("(dry-run) would prompt for action\n");
                     continue;
                 }
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                interactive_edit_contact(
+                    hub,
+                    person,
+                    ctx.user_groups,
+                    ctx.label_names,
+                    ctx.group_names,
+                )
+                .await?;
             }
         }
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
-pub async fn cmd_check_phone_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_duplicate(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -1438,7 +1941,10 @@ pub async fn cmd_check_phone_duplicate(fix: bool, dry_run: bool) -> Result<(), B
     Ok(())
 }
 
-pub async fn cmd_check_contact_email(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_email(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -1446,7 +1952,11 @@ pub async fn cmd_check_contact_email(fix: bool, dry_run: bool) -> Result<(), Box
     Ok(())
 }
 
-async fn check_duplicate_emails(hub: &HubType, contacts: &[google_people1::api::Person], ctx: &CheckContext<'_>) -> Result<usize, Box<dyn std::error::Error>> {
+async fn check_duplicate_emails(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
         if let Some(emails) = &person.email_addresses {
@@ -1455,9 +1965,10 @@ async fn check_duplicate_emails(hub: &HubType, contacts: &[google_people1::api::
             if !dupes.is_empty() {
                 if !ctx.quiet {
                     if count == 0
-                        && let Some(header) = ctx.header {
-                            println!("=== {} ===", header);
-                        }
+                        && let Some(header) = ctx.header
+                    {
+                        println!("=== {} ===", header);
+                    }
                     println!("{}{}", ctx.prefix, format_person_line(person, None));
                     for email in &dupes {
                         println!("{}  duplicate: {}", ctx.prefix, email);
@@ -1466,16 +1977,28 @@ async fn check_duplicate_emails(hub: &HubType, contacts: &[google_people1::api::
                 count += dupes.len();
 
                 if ctx.fix && !ctx.dry_run && !ctx.quiet {
-                    interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                    interactive_edit_contact(
+                        hub,
+                        person,
+                        ctx.user_groups,
+                        ctx.label_names,
+                        ctx.group_names,
+                    )
+                    .await?;
                 }
             }
         }
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
-pub async fn cmd_check_contact_email_duplicate(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_email_duplicate(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -1483,7 +2006,11 @@ pub async fn cmd_check_contact_email_duplicate(fix: bool, dry_run: bool) -> Resu
     Ok(())
 }
 
-async fn check_phone_label_missing(hub: &HubType, contacts: &[google_people1::api::Person], ctx: &CheckContext<'_>) -> Result<usize, Box<dyn std::error::Error>> {
+async fn check_phone_label_missing(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
         if let Some(nums) = &person.phone_numbers {
@@ -1491,25 +2018,38 @@ async fn check_phone_label_missing(hub: &HubType, contacts: &[google_people1::ap
             if has_untyped {
                 if !ctx.quiet {
                     if count == 0
-                        && let Some(header) = ctx.header {
-                            println!("=== {} ===", header);
-                        }
+                        && let Some(header) = ctx.header
+                    {
+                        println!("=== {} ===", header);
+                    }
                     println!("{}{}", ctx.prefix, format_person_line(person, None));
                 }
                 let untyped_count = nums.iter().filter(|pn| !phone_has_type(pn)).count();
                 count += untyped_count;
 
                 if ctx.fix && !ctx.dry_run && !ctx.quiet {
-                    interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                    interactive_edit_contact(
+                        hub,
+                        person,
+                        ctx.user_groups,
+                        ctx.label_names,
+                        ctx.group_names,
+                    )
+                    .await?;
                 }
             }
         }
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
-pub async fn cmd_check_phone_label_missing(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_label_missing(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -1517,7 +2057,11 @@ pub async fn cmd_check_phone_label_missing(fix: bool, dry_run: bool) -> Result<(
     Ok(())
 }
 
-async fn check_phone_label_english(hub: &HubType, contacts: &[google_people1::api::Person], ctx: &CheckContext<'_>) -> Result<usize, Box<dyn std::error::Error>> {
+async fn check_phone_label_english(
+    hub: &HubType,
+    contacts: &[google_people1::api::Person],
+    ctx: &CheckContext<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
     let mut count = 0;
     for person in contacts {
         if let Some(nums) = &person.phone_numbers {
@@ -1528,27 +2072,43 @@ async fn check_phone_label_english(hub: &HubType, contacts: &[google_people1::ap
             if has_non_english {
                 if !ctx.quiet {
                     if count == 0
-                        && let Some(header) = ctx.header {
-                            println!("=== {} ===", header);
-                        }
+                        && let Some(header) = ctx.header
+                    {
+                        println!("=== {} ===", header);
+                    }
                     println!("{}{}", ctx.prefix, format_person_line(person, None));
                 }
-                count += nums.iter().filter(|pn| {
-                    let label = get_phone_label(pn);
-                    !label.is_empty() && !label.is_ascii()
-                }).count();
+                count += nums
+                    .iter()
+                    .filter(|pn| {
+                        let label = get_phone_label(pn);
+                        !label.is_empty() && !label.is_ascii()
+                    })
+                    .count();
 
                 if ctx.fix && !ctx.dry_run && !ctx.quiet {
-                    interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                    interactive_edit_contact(
+                        hub,
+                        person,
+                        ctx.user_groups,
+                        ctx.label_names,
+                        ctx.group_names,
+                    )
+                    .await?;
                 }
             }
         }
     }
-    if !ctx.quiet && count > 0 && ctx.header.is_some() { println!(); }
+    if !ctx.quiet && count > 0 && ctx.header.is_some() {
+        println!();
+    }
     Ok(count)
 }
 
-pub async fn cmd_check_phone_label_english(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_label_english(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -1556,7 +2116,10 @@ pub async fn cmd_check_phone_label_english(fix: bool, dry_run: bool) -> Result<(
     Ok(())
 }
 
-pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_label(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS;
     let contacts = if fix {
@@ -1568,7 +2131,8 @@ pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), 
     let (user_groups_owned, label_names, group_names) = if fix {
         let all_groups = fetch_all_contact_groups(&hub).await?;
         let gn = build_group_name_map(&all_groups);
-        let ug: Vec<(String, String)> = all_groups.iter()
+        let ug: Vec<(String, String)> = all_groups
+            .iter()
             .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
             .filter_map(|g| {
                 let name = g.name.as_deref()?;
@@ -1581,9 +2145,21 @@ pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), 
     } else {
         (vec![], vec![], std::collections::HashMap::new())
     };
-    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    let user_groups: Vec<(&str, &str)> = user_groups_owned
+        .iter()
+        .map(|(n, r)| (n.as_str(), r.as_str()))
+        .collect();
 
-    let ctx = CheckContext { fix, dry_run, prefix: "", header: None, quiet: false, user_groups: &user_groups, label_names: &label_names, group_names: &group_names };
+    let ctx = CheckContext {
+        fix,
+        dry_run,
+        prefix: "",
+        header: None,
+        quiet: false,
+        user_groups: &user_groups,
+        label_names: &label_names,
+        group_names: &group_names,
+    };
     check_no_label(&hub, &contacts, &ctx).await?;
     Ok(())
 }
@@ -1593,12 +2169,12 @@ async fn prompt_label_autocomplete(
     label_names: &[String],
     user_groups: &[(&str, &str)],
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    use rustyline::completion::{Completer, Pair};
     use rustyline::Editor;
+    use rustyline::Helper;
+    use rustyline::completion::{Completer, Pair};
     use rustyline::highlight::Highlighter;
     use rustyline::hint::Hinter;
     use rustyline::validate::Validator;
-    use rustyline::Helper;
 
     struct LabelCompleter {
         labels: Vec<String>,
@@ -1620,15 +2196,22 @@ async fn prompt_label_autocomplete(
             _ctx: &rustyline::Context<'_>,
         ) -> rustyline::Result<(usize, Vec<Pair>)> {
             let input = &line[..pos].to_lowercase();
-            let matches: Vec<Pair> = self.labels.iter()
+            let matches: Vec<Pair> = self
+                .labels
+                .iter()
                 .filter(|l| l.to_lowercase().starts_with(input))
-                .map(|l| Pair { display: l.clone(), replacement: l.clone() })
+                .map(|l| Pair {
+                    display: l.clone(),
+                    replacement: l.clone(),
+                })
                 .collect();
             Ok((0, matches))
         }
     }
 
-    let completer = LabelCompleter { labels: label_names.to_vec() };
+    let completer = LabelCompleter {
+        labels: label_names.to_vec(),
+    };
     let mut rl = Editor::new()?;
     rl.set_helper(Some(completer));
     match rl.readline("  Label (tab to complete, or type new name): ") {
@@ -1639,7 +2222,10 @@ async fn prompt_label_autocomplete(
             }
             // Find matching group (case-insensitive)
             let lower = trimmed.to_lowercase();
-            if let Some((_, rn)) = user_groups.iter().find(|(name, _)| name.to_lowercase() == lower) {
+            if let Some((_, rn)) = user_groups
+                .iter()
+                .find(|(name, _)| name.to_lowercase() == lower)
+            {
                 Ok(Some(rn.to_string()))
             } else {
                 // Create a new label
@@ -1655,8 +2241,10 @@ async fn prompt_label_autocomplete(
                     let (_, created) = retry_api(|| {
                         let r = hub.contact_groups().create(req.clone());
                         async { r.doit().await }
-                    }).await?;
-                    let rn = created.resource_name
+                    })
+                    .await?;
+                    let rn = created
+                        .resource_name
                         .ok_or("Created group missing resource name")?;
                     eprintln!("  Created label \"{}\"", trimmed);
                     tokio::time::sleep(MUTATE_DELAY).await;
@@ -1676,8 +2264,12 @@ fn get_name_field<'a>(person: &'a google_people1::api::Person, field: &str) -> &
         "given_name" => names.and_then(|n| n.given_name.as_deref()).unwrap_or(""),
         "family_name" => names.and_then(|n| n.family_name.as_deref()).unwrap_or(""),
         "middle_name" => names.and_then(|n| n.middle_name.as_deref()).unwrap_or(""),
-        "honorific_prefix" => names.and_then(|n| n.honorific_prefix.as_deref()).unwrap_or(""),
-        "honorific_suffix" => names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or(""),
+        "honorific_prefix" => names
+            .and_then(|n| n.honorific_prefix.as_deref())
+            .unwrap_or(""),
+        "honorific_suffix" => names
+            .and_then(|n| n.honorific_suffix.as_deref())
+            .unwrap_or(""),
         _ => "",
     }
 }
@@ -1692,29 +2284,71 @@ fn get_org_field<'a>(person: &'a google_people1::api::Person, field: &str) -> &'
     }
 }
 
-fn display_edit_menu(person: &google_people1::api::Person, group_names: &std::collections::HashMap<String, String>) {
+fn display_edit_menu(
+    person: &google_people1::api::Person,
+    group_names: &std::collections::HashMap<String, String>,
+) {
     let names = person.names.as_ref().and_then(|n| n.first());
     let org = person.organizations.as_ref().and_then(|o| o.first());
 
     eprintln!();
     eprintln!("  ---- Name fields ----");
-    eprintln!("   1) Prefix        : {}", names.and_then(|n| n.honorific_prefix.as_deref()).unwrap_or(""));
-    eprintln!("   2) Given name    : {}", names.and_then(|n| n.given_name.as_deref()).unwrap_or(""));
-    eprintln!("   3) Middle name   : {}", names.and_then(|n| n.middle_name.as_deref()).unwrap_or(""));
-    eprintln!("   4) Family name   : {}", names.and_then(|n| n.family_name.as_deref()).unwrap_or(""));
-    eprintln!("   5) Suffix        : {}", names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or(""));
-    eprintln!("   6) Nickname      : {}", person.nicknames.as_ref().and_then(|n| n.first()).and_then(|n| n.value.as_deref()).unwrap_or(""));
+    eprintln!(
+        "   1) Prefix        : {}",
+        names
+            .and_then(|n| n.honorific_prefix.as_deref())
+            .unwrap_or("")
+    );
+    eprintln!(
+        "   2) Given name    : {}",
+        names.and_then(|n| n.given_name.as_deref()).unwrap_or("")
+    );
+    eprintln!(
+        "   3) Middle name   : {}",
+        names.and_then(|n| n.middle_name.as_deref()).unwrap_or("")
+    );
+    eprintln!(
+        "   4) Family name   : {}",
+        names.and_then(|n| n.family_name.as_deref()).unwrap_or("")
+    );
+    eprintln!(
+        "   5) Suffix        : {}",
+        names
+            .and_then(|n| n.honorific_suffix.as_deref())
+            .unwrap_or("")
+    );
+    eprintln!(
+        "   6) Nickname      : {}",
+        person
+            .nicknames
+            .as_ref()
+            .and_then(|n| n.first())
+            .and_then(|n| n.value.as_deref())
+            .unwrap_or("")
+    );
     eprintln!("  ---- Organization ----");
-    eprintln!("   7) Company       : {}", org.and_then(|o| o.name.as_deref()).unwrap_or(""));
-    eprintln!("   8) Title         : {}", org.and_then(|o| o.title.as_deref()).unwrap_or(""));
-    eprintln!("   9) Department    : {}", org.and_then(|o| o.department.as_deref()).unwrap_or(""));
+    eprintln!(
+        "   7) Company       : {}",
+        org.and_then(|o| o.name.as_deref()).unwrap_or("")
+    );
+    eprintln!(
+        "   8) Title         : {}",
+        org.and_then(|o| o.title.as_deref()).unwrap_or("")
+    );
+    eprintln!(
+        "   9) Department    : {}",
+        org.and_then(|o| o.department.as_deref()).unwrap_or("")
+    );
     eprintln!("  ---- Phones ----");
     if let Some(phones) = &person.phone_numbers {
         for (i, pn) in phones.iter().enumerate() {
             let val = pn.value.as_deref().unwrap_or("");
             let label = get_phone_label(pn);
-            if label.is_empty() { eprintln!("       {}. {}", i + 1, val); }
-            else { eprintln!("       {}. {} [{}]", i + 1, val, label); }
+            if label.is_empty() {
+                eprintln!("       {}. {}", i + 1, val);
+            } else {
+                eprintln!("       {}. {} [{}]", i + 1, val, label);
+            }
         }
     }
     eprintln!("  10) Edit phones");
@@ -1722,9 +2356,16 @@ fn display_edit_menu(person: &google_people1::api::Person, group_names: &std::co
     if let Some(emails) = &person.email_addresses {
         for (i, e) in emails.iter().enumerate() {
             let val = e.value.as_deref().unwrap_or("");
-            let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
-            if t.is_empty() { eprintln!("       {}. {}", i + 1, val); }
-            else { eprintln!("       {}. {} [{}]", i + 1, val, t); }
+            let t = e
+                .formatted_type
+                .as_deref()
+                .or(e.type_.as_deref())
+                .unwrap_or("");
+            if t.is_empty() {
+                eprintln!("       {}. {}", i + 1, val);
+            } else {
+                eprintln!("       {}. {} [{}]", i + 1, val, t);
+            }
         }
     }
     eprintln!("  11) Edit emails");
@@ -1749,7 +2390,10 @@ async fn edit_simple_name_field(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
     let cur_val = get_name_field(current, field);
-    eprint!("  {} [{}] (new value / - to clear / Enter to skip): ", label, cur_val);
+    eprint!(
+        "  {} [{}] (new value / - to clear / Enter to skip): ",
+        label, cur_val
+    );
     std::io::stderr().flush()?;
     let mut val = String::new();
     std::io::stdin().read_line(&mut val)?;
@@ -1758,34 +2402,50 @@ async fn edit_simple_name_field(
         eprintln!("  Unchanged.");
         return Ok(());
     }
-    let new_val = if val == "-" { None } else { Some(val.to_string()) };
+    let new_val = if val == "-" {
+        None
+    } else {
+        Some(val.to_string())
+    };
     let mut updated = current.clone();
     if updated.names.is_none() {
         updated.names = Some(vec![google_people1::api::Name::default()]);
     }
     if let Some(ref mut names) = updated.names
-        && let Some(first) = names.first_mut() {
-            match field {
-                "given_name" => first.given_name = new_val.clone(),
-                "family_name" => first.family_name = new_val.clone(),
-                "middle_name" => first.middle_name = new_val.clone(),
-                "honorific_prefix" => first.honorific_prefix = new_val.clone(),
-                "honorific_suffix" => first.honorific_suffix = new_val.clone(),
-                _ => {}
-            }
-            // Rebuild unstructured_name for given/family changes
-            let g = first.given_name.as_deref().unwrap_or("");
-            let f = first.family_name.as_deref().unwrap_or("");
-            let combined = [g, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
-            first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
+        && let Some(first) = names.first_mut()
+    {
+        match field {
+            "given_name" => first.given_name = new_val.clone(),
+            "family_name" => first.family_name = new_val.clone(),
+            "middle_name" => first.middle_name = new_val.clone(),
+            "honorific_prefix" => first.honorific_prefix = new_val.clone(),
+            "honorific_suffix" => first.honorific_suffix = new_val.clone(),
+            _ => {}
         }
+        // Rebuild unstructured_name for given/family changes
+        let g = first.given_name.as_deref().unwrap_or("");
+        let f = first.family_name.as_deref().unwrap_or("");
+        let combined = [g, f]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join(" ");
+        first.unstructured_name = if combined.is_empty() {
+            None
+        } else {
+            Some(combined)
+        };
+    }
     let (_, refreshed) = retry_api(|| {
-        let r = hub.people()
+        let r = hub
+            .people()
             .update_contact(updated.clone(), resource_name)
             .update_person_fields(FieldMask::new::<&str>(&["names"]))
             .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
         async { r.doit().await }
-    }).await?;
+    })
+    .await?;
     *current = refreshed;
     match new_val {
         Some(v) => eprintln!("  Set {} to \"{}\"", label.to_lowercase(), v),
@@ -1804,7 +2464,10 @@ async fn edit_org_field(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
     let cur_val = get_org_field(current, field);
-    eprint!("  {} [{}] (new value / - to clear / Enter to skip): ", label, cur_val);
+    eprint!(
+        "  {} [{}] (new value / - to clear / Enter to skip): ",
+        label, cur_val
+    );
     std::io::stderr().flush()?;
     let mut val = String::new();
     std::io::stdin().read_line(&mut val)?;
@@ -1818,32 +2481,42 @@ async fn edit_org_field(
         // Clearing company clears the whole org
         updated.organizations = Some(vec![]);
     } else {
-        if updated.organizations.is_none() || updated.organizations.as_ref().is_some_and(|o| o.is_empty()) {
+        if updated.organizations.is_none()
+            || updated.organizations.as_ref().is_some_and(|o| o.is_empty())
+        {
             updated.organizations = Some(vec![google_people1::api::Organization::default()]);
         }
         if field == "name" {
             // Setting company replaces the org but preserves other fields
             if let Some(ref mut orgs) = updated.organizations
-                && let Some(first) = orgs.first_mut() {
-                    first.name = Some(val.to_string());
-                }
-        } else if let Some(ref mut orgs) = updated.organizations
-            && let Some(first) = orgs.first_mut() {
-                let new_val = if val == "-" { None } else { Some(val.to_string()) };
-                match field {
-                    "title" => first.title = new_val,
-                    "department" => first.department = new_val,
-                    _ => {}
-                }
+                && let Some(first) = orgs.first_mut()
+            {
+                first.name = Some(val.to_string());
             }
+        } else if let Some(ref mut orgs) = updated.organizations
+            && let Some(first) = orgs.first_mut()
+        {
+            let new_val = if val == "-" {
+                None
+            } else {
+                Some(val.to_string())
+            };
+            match field {
+                "title" => first.title = new_val,
+                "department" => first.department = new_val,
+                _ => {}
+            }
+        }
     }
     let (_, refreshed) = retry_api(|| {
-        let r = hub.people()
+        let r = hub
+            .people()
             .update_contact(updated.clone(), resource_name)
             .update_person_fields(FieldMask::new::<&str>(&["organizations"]))
             .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
         async { r.doit().await }
-    }).await?;
+    })
+    .await?;
     *current = refreshed;
     if val == "-" {
         eprintln!("  Cleared {}.", label.to_lowercase());
@@ -1860,11 +2533,16 @@ async fn edit_nickname(
     resource_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
-    let cur_val = current.nicknames.as_ref()
+    let cur_val = current
+        .nicknames
+        .as_ref()
         .and_then(|n| n.first())
         .and_then(|n| n.value.as_deref())
         .unwrap_or("");
-    eprint!("  Nickname [{}] (new value / - to clear / Enter to skip): ", cur_val);
+    eprint!(
+        "  Nickname [{}] (new value / - to clear / Enter to skip): ",
+        cur_val
+    );
     std::io::stderr().flush()?;
     let mut val = String::new();
     std::io::stdin().read_line(&mut val)?;
@@ -1883,12 +2561,14 @@ async fn edit_nickname(
         }]);
     }
     let (_, refreshed) = retry_api(|| {
-        let r = hub.people()
+        let r = hub
+            .people()
             .update_contact(updated.clone(), resource_name)
             .update_person_fields(FieldMask::new::<&str>(&["nicknames"]))
             .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
         async { r.doit().await }
-    }).await?;
+    })
+    .await?;
     *current = refreshed;
     if val == "-" {
         eprintln!("  Cleared nickname.");
@@ -1905,18 +2585,30 @@ async fn edit_phones(
     resource_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
-    let phones: Vec<String> = current.phone_numbers.as_ref()
-        .map(|nums| nums.iter().enumerate().map(|(i, pn)| {
-            let val = pn.value.as_deref().unwrap_or("");
-            let label = get_phone_label(pn);
-            if label.is_empty() { format!("  {}: {}", i + 1, val) }
-            else { format!("  {}: {} [{}]", i + 1, val, label) }
-        }).collect())
+    let phones: Vec<String> = current
+        .phone_numbers
+        .as_ref()
+        .map(|nums| {
+            nums.iter()
+                .enumerate()
+                .map(|(i, pn)| {
+                    let val = pn.value.as_deref().unwrap_or("");
+                    let label = get_phone_label(pn);
+                    if label.is_empty() {
+                        format!("  {}: {}", i + 1, val)
+                    } else {
+                        format!("  {}: {} [{}]", i + 1, val, label)
+                    }
+                })
+                .collect()
+        })
         .unwrap_or_default();
     if phones.is_empty() {
         eprintln!("  No phone numbers.");
     } else {
-        for p in &phones { eprintln!("{}", p); }
+        for p in &phones {
+            eprintln!("{}", p);
+        }
     }
     eprint!("  [a]dd / [r]emove #N / [e]dit #N / [b]ack? ");
     std::io::stderr().flush()?;
@@ -1929,9 +2621,14 @@ async fn edit_phones(
         let mut num = String::new();
         std::io::stdin().read_line(&mut num)?;
         let num = num.trim();
-        if num.is_empty() { return Ok(()); }
+        if num.is_empty() {
+            return Ok(());
+        }
         if is_fixable_phone(num) && !is_correct_phone_format(num) {
-            eprintln!("  Warning: phone \"{}\" is not in correct format (+CC-NUMBER).", num);
+            eprintln!(
+                "  Warning: phone \"{}\" is not in correct format (+CC-NUMBER).",
+                num
+            );
         }
         let label = prompt_phone_label_fix(&person_display_name(current))?;
         let mut updated = current.clone();
@@ -1944,12 +2641,14 @@ async fn edit_phones(
         }
         updated.phone_numbers.get_or_insert_with(Vec::new).push(pn);
         let (_, refreshed) = retry_api(|| {
-            let r = hub.people()
+            let r = hub
+                .people()
                 .update_contact(updated.clone(), resource_name)
                 .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
                 .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
             async { r.doit().await }
-        }).await?;
+        })
+        .await?;
         *current = refreshed;
         eprintln!("  Added phone \"{}\"", num);
         tokio::time::sleep(MUTATE_DELAY).await;
@@ -1960,12 +2659,14 @@ async fn edit_phones(
                 if idx >= 1 && idx <= nums.len() {
                     nums.remove(idx - 1);
                     let (_, refreshed) = retry_api(|| {
-                        let r = hub.people()
+                        let r = hub
+                            .people()
                             .update_contact(updated.clone(), resource_name)
                             .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
                             .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
                         async { r.doit().await }
-                    }).await?;
+                    })
+                    .await?;
                     *current = refreshed;
                     eprintln!("  Removed phone #{}", idx);
                     tokio::time::sleep(MUTATE_DELAY).await;
@@ -1980,27 +2681,39 @@ async fn edit_phones(
         if let Ok(idx) = rest.trim().parse::<usize>() {
             let nums_len = current.phone_numbers.as_ref().map_or(0, |n| n.len());
             if idx >= 1 && idx <= nums_len {
-                let cur_phone = current.phone_numbers.as_ref().and_then(|p| p.get(idx - 1)).and_then(|p| p.value.as_deref()).unwrap_or("");
+                let cur_phone = current
+                    .phone_numbers
+                    .as_ref()
+                    .and_then(|p| p.get(idx - 1))
+                    .and_then(|p| p.value.as_deref())
+                    .unwrap_or("");
                 eprint!("  Phone [{}]: ", cur_phone);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
                 let val = val.trim();
-                if val.is_empty() { return Ok(()); }
+                if val.is_empty() {
+                    return Ok(());
+                }
                 if is_fixable_phone(val) && !is_correct_phone_format(val) {
-                    eprintln!("  Warning: phone \"{}\" is not in correct format (+CC-NUMBER).", val);
+                    eprintln!(
+                        "  Warning: phone \"{}\" is not in correct format (+CC-NUMBER).",
+                        val
+                    );
                 }
                 let mut updated = current.clone();
                 if let Some(ref mut nums) = updated.phone_numbers {
                     nums[idx - 1].value = Some(val.to_string());
                 }
                 let (_, refreshed) = retry_api(|| {
-                    let r = hub.people()
+                    let r = hub
+                        .people()
                         .update_contact(updated.clone(), resource_name)
                         .update_person_fields(FieldMask::new::<&str>(&["phoneNumbers"]))
                         .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
                     async { r.doit().await }
-                }).await?;
+                })
+                .await?;
                 *current = refreshed;
                 eprintln!("  Updated phone #{} to \"{}\"", idx, val);
                 tokio::time::sleep(MUTATE_DELAY).await;
@@ -2020,18 +2733,34 @@ async fn edit_emails(
     resource_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
-    let emails: Vec<String> = current.email_addresses.as_ref()
-        .map(|ems| ems.iter().enumerate().map(|(i, e)| {
-            let val = e.value.as_deref().unwrap_or("");
-            let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
-            if t.is_empty() { format!("  {}: {}", i + 1, val) }
-            else { format!("  {}: {} [{}]", i + 1, val, t) }
-        }).collect())
+    let emails: Vec<String> = current
+        .email_addresses
+        .as_ref()
+        .map(|ems| {
+            ems.iter()
+                .enumerate()
+                .map(|(i, e)| {
+                    let val = e.value.as_deref().unwrap_or("");
+                    let t = e
+                        .formatted_type
+                        .as_deref()
+                        .or(e.type_.as_deref())
+                        .unwrap_or("");
+                    if t.is_empty() {
+                        format!("  {}: {}", i + 1, val)
+                    } else {
+                        format!("  {}: {} [{}]", i + 1, val, t)
+                    }
+                })
+                .collect()
+        })
         .unwrap_or_default();
     if emails.is_empty() {
         eprintln!("  No email addresses.");
     } else {
-        for e in &emails { eprintln!("{}", e); }
+        for e in &emails {
+            eprintln!("{}", e);
+        }
     }
     eprint!("  [a]dd / [r]emove #N / [e]dit #N / [b]ack? ");
     std::io::stderr().flush()?;
@@ -2044,7 +2773,9 @@ async fn edit_emails(
         let mut val = String::new();
         std::io::stdin().read_line(&mut val)?;
         let val = val.trim();
-        if val.is_empty() { return Ok(()); }
+        if val.is_empty() {
+            return Ok(());
+        }
         if !is_valid_email(val) {
             eprintln!("  Error: \"{}\" is not a valid email address.", val);
             return Ok(());
@@ -2054,14 +2785,19 @@ async fn edit_emails(
             value: Some(val.to_string()),
             ..Default::default()
         };
-        updated.email_addresses.get_or_insert_with(Vec::new).push(em);
+        updated
+            .email_addresses
+            .get_or_insert_with(Vec::new)
+            .push(em);
         let (_, refreshed) = retry_api(|| {
-            let r = hub.people()
+            let r = hub
+                .people()
                 .update_contact(updated.clone(), resource_name)
                 .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
                 .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
             async { r.doit().await }
-        }).await?;
+        })
+        .await?;
         *current = refreshed;
         eprintln!("  Added email \"{}\"", val);
         tokio::time::sleep(MUTATE_DELAY).await;
@@ -2072,12 +2808,14 @@ async fn edit_emails(
                 if idx >= 1 && idx <= ems.len() {
                     ems.remove(idx - 1);
                     let (_, refreshed) = retry_api(|| {
-                        let r = hub.people()
+                        let r = hub
+                            .people()
                             .update_contact(updated.clone(), resource_name)
                             .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
                             .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
                         async { r.doit().await }
-                    }).await?;
+                    })
+                    .await?;
                     *current = refreshed;
                     eprintln!("  Removed email #{}", idx);
                     tokio::time::sleep(MUTATE_DELAY).await;
@@ -2092,13 +2830,20 @@ async fn edit_emails(
         if let Ok(idx) = rest.trim().parse::<usize>() {
             let ems_len = current.email_addresses.as_ref().map_or(0, |e| e.len());
             if idx >= 1 && idx <= ems_len {
-                let cur_email = current.email_addresses.as_ref().and_then(|e| e.get(idx - 1)).and_then(|e| e.value.as_deref()).unwrap_or("");
+                let cur_email = current
+                    .email_addresses
+                    .as_ref()
+                    .and_then(|e| e.get(idx - 1))
+                    .and_then(|e| e.value.as_deref())
+                    .unwrap_or("");
                 eprint!("  Email [{}]: ", cur_email);
                 std::io::stderr().flush()?;
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
                 let val = val.trim();
-                if val.is_empty() { return Ok(()); }
+                if val.is_empty() {
+                    return Ok(());
+                }
                 if !is_valid_email(val) {
                     eprintln!("  Error: \"{}\" is not a valid email address.", val);
                     return Ok(());
@@ -2108,12 +2853,14 @@ async fn edit_emails(
                     ems[idx - 1].value = Some(val.to_string());
                 }
                 let (_, refreshed) = retry_api(|| {
-                    let r = hub.people()
+                    let r = hub
+                        .people()
                         .update_contact(updated.clone(), resource_name)
                         .update_person_fields(FieldMask::new::<&str>(&["emailAddresses"]))
                         .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
                     async { r.doit().await }
-                }).await?;
+                })
+                .await?;
                 *current = refreshed;
                 eprintln!("  Updated email #{} to \"{}\"", idx, val);
                 tokio::time::sleep(MUTATE_DELAY).await;
@@ -2148,19 +2895,75 @@ async fn interactive_edit_contact(
         let choice = input.trim();
 
         match choice {
-            "1" => edit_simple_name_field(hub, &mut current, &resource_name, "honorific_prefix", "Prefix").await?,
-            "2" => edit_simple_name_field(hub, &mut current, &resource_name, "given_name", "Given name").await?,
-            "3" => edit_simple_name_field(hub, &mut current, &resource_name, "middle_name", "Middle name").await?,
-            "4" => edit_simple_name_field(hub, &mut current, &resource_name, "family_name", "Family name").await?,
-            "5" => edit_simple_name_field(hub, &mut current, &resource_name, "honorific_suffix", "Suffix").await?,
+            "1" => {
+                edit_simple_name_field(
+                    hub,
+                    &mut current,
+                    &resource_name,
+                    "honorific_prefix",
+                    "Prefix",
+                )
+                .await?
+            }
+            "2" => {
+                edit_simple_name_field(
+                    hub,
+                    &mut current,
+                    &resource_name,
+                    "given_name",
+                    "Given name",
+                )
+                .await?
+            }
+            "3" => {
+                edit_simple_name_field(
+                    hub,
+                    &mut current,
+                    &resource_name,
+                    "middle_name",
+                    "Middle name",
+                )
+                .await?
+            }
+            "4" => {
+                edit_simple_name_field(
+                    hub,
+                    &mut current,
+                    &resource_name,
+                    "family_name",
+                    "Family name",
+                )
+                .await?
+            }
+            "5" => {
+                edit_simple_name_field(
+                    hub,
+                    &mut current,
+                    &resource_name,
+                    "honorific_suffix",
+                    "Suffix",
+                )
+                .await?
+            }
             "6" => edit_nickname(hub, &mut current, &resource_name).await?,
             "7" => edit_org_field(hub, &mut current, &resource_name, "name", "Company").await?,
             "8" => edit_org_field(hub, &mut current, &resource_name, "title", "Title").await?,
-            "9" => edit_org_field(hub, &mut current, &resource_name, "department", "Department").await?,
+            "9" => {
+                edit_org_field(
+                    hub,
+                    &mut current,
+                    &resource_name,
+                    "department",
+                    "Department",
+                )
+                .await?
+            }
             "10" => edit_phones(hub, &mut current, &resource_name).await?,
             "11" => edit_emails(hub, &mut current, &resource_name).await?,
             "12" => {
-                if let Some(group_rn) = prompt_label_autocomplete(hub, label_names, user_groups).await? {
+                if let Some(group_rn) =
+                    prompt_label_autocomplete(hub, label_names, user_groups).await?
+                {
                     let req = google_people1::api::ModifyContactGroupMembersRequest {
                         resource_names_to_add: Some(vec![resource_name.to_string()]),
                         resource_names_to_remove: None,
@@ -2168,16 +2971,22 @@ async fn interactive_edit_contact(
                     retry_api(|| {
                         let r = hub.contact_groups().members_modify(req.clone(), &group_rn);
                         async { r.doit().await }
-                    }).await?;
+                    })
+                    .await?;
                     // Update local memberships
                     let new_membership = google_people1::api::Membership {
-                        contact_group_membership: Some(google_people1::api::ContactGroupMembership {
-                            contact_group_id: None,
-                            contact_group_resource_name: Some(group_rn.clone()),
-                        }),
+                        contact_group_membership: Some(
+                            google_people1::api::ContactGroupMembership {
+                                contact_group_id: None,
+                                contact_group_resource_name: Some(group_rn.clone()),
+                            },
+                        ),
                         ..Default::default()
                     };
-                    current.memberships.get_or_insert_with(Vec::new).push(new_membership);
+                    current
+                        .memberships
+                        .get_or_insert_with(Vec::new)
+                        .push(new_membership);
                     eprintln!("  Assigned label.");
                     tokio::time::sleep(MUTATE_DELAY).await;
                 }
@@ -2196,11 +3005,15 @@ async fn interactive_edit_contact(
                 let mut val = String::new();
                 std::io::stdin().read_line(&mut val)?;
                 let val = val.trim();
-                if val.is_empty() { continue; }
+                if val.is_empty() {
+                    continue;
+                }
                 if let Ok(idx) = val.parse::<usize>() {
                     if idx >= 1 && idx <= labels.len() {
                         let label_name = &labels[idx - 1];
-                        if let Some((_, rn)) = user_groups.iter().find(|(name, _)| name == label_name) {
+                        if let Some((_, rn)) =
+                            user_groups.iter().find(|(name, _)| name == label_name)
+                        {
                             let req = google_people1::api::ModifyContactGroupMembersRequest {
                                 resource_names_to_add: None,
                                 resource_names_to_remove: Some(vec![resource_name.to_string()]),
@@ -2208,11 +3021,13 @@ async fn interactive_edit_contact(
                             retry_api(|| {
                                 let r = hub.contact_groups().members_modify(req.clone(), rn);
                                 async { r.doit().await }
-                            }).await?;
+                            })
+                            .await?;
                             // Update local memberships
                             if let Some(ref mut memberships) = current.memberships {
                                 memberships.retain(|m| {
-                                    m.contact_group_membership.as_ref()
+                                    m.contact_group_membership
+                                        .as_ref()
                                         .and_then(|cgm| cgm.contact_group_resource_name.as_deref())
                                         != Some(rn)
                                 });
@@ -2232,7 +3047,8 @@ async fn interactive_edit_contact(
                     retry_api(|| {
                         let r = hub.people().delete_contact(&resource_name);
                         async { r.doit().await }
-                    }).await?;
+                    })
+                    .await?;
                     eprintln!("  Deleted.");
                     tokio::time::sleep(MUTATE_DELAY).await;
                 }
@@ -2249,7 +3065,10 @@ async fn interactive_edit_contact(
     Ok(())
 }
 
-pub async fn cmd_check_contact_type(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_type(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2260,18 +3079,23 @@ pub async fn cmd_check_contact_type(fix: bool, dry_run: bool) -> Result<(), Box<
 const TYPE_PERSON_LABEL: &str = "type:Person";
 const TYPE_COMPANY_LABEL: &str = "type:Company";
 
-fn person_type_labels(person: &google_people1::api::Person, group_names: &std::collections::HashMap<String, String>) -> (bool, bool) {
+fn person_type_labels(
+    person: &google_people1::api::Person,
+    group_names: &std::collections::HashMap<String, String>,
+) -> (bool, bool) {
     let labels = person_labels(person, group_names);
     let has_person = labels.iter().any(|l| l == TYPE_PERSON_LABEL);
     let has_company = labels.iter().any(|l| l == TYPE_COMPANY_LABEL);
     (has_person, has_company)
 }
 
-fn is_company(person: &google_people1::api::Person, group_names: &std::collections::HashMap<String, String>) -> bool {
+fn is_company(
+    person: &google_people1::api::Person,
+    group_names: &std::collections::HashMap<String, String>,
+) -> bool {
     let (_, has_company) = person_type_labels(person, group_names);
     has_company
 }
-
 
 async fn check_contact_type(
     hub: &HubType,
@@ -2282,7 +3106,9 @@ async fn check_contact_type(
 
     for person in contacts {
         let (has_person, has_company) = person_type_labels(person, ctx.group_names);
-        let has_any_type = person_labels(person, ctx.group_names).iter().any(|l| l.starts_with("type:"));
+        let has_any_type = person_labels(person, ctx.group_names)
+            .iter()
+            .any(|l| l.starts_with("type:"));
 
         let issue = if has_person && has_company {
             Some("has both type:Person and type:Company")
@@ -2292,17 +3118,32 @@ async fn check_contact_type(
             None
         };
 
-        let Some(issue) = issue else { continue; };
+        let Some(issue) = issue else {
+            continue;
+        };
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{} ({})", ctx.prefix, format_person_line(person, Some(ctx.group_names)), issue);
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
+            println!(
+                "{}{} ({})",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names)),
+                issue
+            );
 
             if ctx.fix && !ctx.dry_run {
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                interactive_edit_contact(
+                    hub,
+                    person,
+                    ctx.user_groups,
+                    ctx.label_names,
+                    ctx.group_names,
+                )
+                .await?;
             }
         }
         count += 1;
@@ -2321,21 +3162,41 @@ pub async fn cmd_export_json(short: bool) -> Result<(), Box<dyn std::error::Erro
         &["names", "organizations"]
     } else {
         &[
-            "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
-            "organizations", "memberships", "biographies", "urls", "events",
-            "relations", "nicknames", "occupations", "interests", "skills",
-            "userDefined", "imClients", "sipAddresses", "locations",
-            "externalIds", "clientData", "metadata",
+            "names",
+            "emailAddresses",
+            "phoneNumbers",
+            "addresses",
+            "birthdays",
+            "organizations",
+            "memberships",
+            "biographies",
+            "urls",
+            "events",
+            "relations",
+            "nicknames",
+            "occupations",
+            "interests",
+            "skills",
+            "userDefined",
+            "imClients",
+            "sipAddresses",
+            "locations",
+            "externalIds",
+            "clientData",
+            "metadata",
         ]
     };
     let contacts = fetch_all_contacts(&hub, fields).await?;
     if short {
-        let short_entries: Vec<_> = contacts.iter().map(|p| {
-            serde_json::json!({
-                "resourceName": p.resource_name,
-                "displayName": person_display_name(p),
+        let short_entries: Vec<_> = contacts
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "resourceName": p.resource_name,
+                    "displayName": person_display_name(p),
+                })
             })
-        }).collect();
+            .collect();
         let json = serde_json::to_string_pretty(&short_entries)?;
         println!("{}", json);
     } else {
@@ -2348,13 +3209,20 @@ pub async fn cmd_export_json(short: bool) -> Result<(), Box<dyn std::error::Erro
 pub async fn cmd_sync_gnome_contacts(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_fields = &[
-        "names", "emailAddresses", "phoneNumbers", "addresses", "birthdays",
-        "organizations", "memberships", "nicknames",
+        "names",
+        "emailAddresses",
+        "phoneNumbers",
+        "addresses",
+        "birthdays",
+        "organizations",
+        "memberships",
+        "nicknames",
     ];
     let contacts = fetch_all_contacts(&hub, all_fields).await?;
-    let with_name: Vec<_> = contacts.into_iter().filter(|p| {
-        !person_name(p).is_empty()
-    }).collect();
+    let with_name: Vec<_> = contacts
+        .into_iter()
+        .filter(|p| !person_name(p).is_empty())
+        .collect();
 
     let db_path = dirs::data_dir()
         .ok_or("Could not determine XDG data directory")?
@@ -2383,7 +3251,10 @@ pub async fn cmd_sync_gnome_contacts(dry_run: bool) -> Result<(), Box<dyn std::e
     for person in &with_name {
         let resource_name = match person.resource_name.as_deref() {
             Some(rn) => rn,
-            None => { skipped += 1; continue; }
+            None => {
+                skipped += 1;
+                continue;
+            }
         };
         // Use Google resource name as UID (e.g. "people/c12345" -> "google-people-c12345")
         let uid = resource_name.replace('/', "-");
@@ -2392,7 +3263,9 @@ pub async fn cmd_sync_gnome_contacts(dry_run: bool) -> Result<(), Box<dyn std::e
         let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
         let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
         let full = person_display_name(person);
-        let nickname = person.nicknames.as_ref()
+        let nickname = person
+            .nicknames
+            .as_ref()
             .and_then(|n| n.first())
             .and_then(|n| n.value.as_deref())
             .unwrap_or("");
@@ -2415,8 +3288,14 @@ pub async fn cmd_sync_gnome_contacts(dry_run: bool) -> Result<(), Box<dyn std::e
                     rusqlite::params![now, file_as, full, given, family, nickname, vcard, uid],
                 )?;
                 // Clear stale index entries before re-inserting
-                conn.execute("DELETE FROM folder_id_email_list WHERE uid=?", rusqlite::params![uid])?;
-                conn.execute("DELETE FROM folder_id_phone_list WHERE uid=?", rusqlite::params![uid])?;
+                conn.execute(
+                    "DELETE FROM folder_id_email_list WHERE uid=?",
+                    rusqlite::params![uid],
+                )?;
+                conn.execute(
+                    "DELETE FROM folder_id_phone_list WHERE uid=?",
+                    rusqlite::params![uid],
+                )?;
             } else {
                 conn.execute(
                     "INSERT INTO folder_id (uid, Rev, file_as, full_name, given_name, family_name, nickname, is_list, list_show_addresses, wants_html, x509Cert, pgpCert, vcard) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, ?)",
@@ -2464,14 +3343,27 @@ pub async fn cmd_sync_gnome_contacts(dry_run: bool) -> Result<(), Box<dyn std::e
     }
 
     if dry_run {
-        println!("Dry run: would insert {} and update {} contacts ({} skipped).", inserted, updated, skipped);
+        println!(
+            "Dry run: would insert {} and update {} contacts ({} skipped).",
+            inserted, updated, skipped
+        );
     } else {
-        println!("Synced {} contacts to GNOME Contacts ({} inserted, {} updated, {} skipped).", inserted + updated, inserted, updated, skipped);
+        println!(
+            "Synced {} contacts to GNOME Contacts ({} inserted, {} updated, {} skipped).",
+            inserted + updated,
+            inserted,
+            updated,
+            skipped
+        );
     }
     Ok(())
 }
 
-pub async fn cmd_check_contact_type_company_given_name(fix: bool, auto_fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_type_company_given_name(
+    fix: bool,
+    auto_fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2491,7 +3383,9 @@ async fn check_type_company_given_name(
             continue;
         }
 
-        let company_name = person.organizations.as_ref()
+        let company_name = person
+            .organizations
+            .as_ref()
             .and_then(|orgs| orgs.first())
             .and_then(|o| o.name.as_deref())
             .unwrap_or("");
@@ -2499,7 +3393,9 @@ async fn check_type_company_given_name(
             continue;
         }
 
-        let given_name = person.names.as_ref()
+        let given_name = person
+            .names
+            .as_ref()
             .and_then(|n| n.first())
             .and_then(|n| n.given_name.as_deref())
             .unwrap_or("");
@@ -2510,10 +3406,17 @@ async fn check_type_company_given_name(
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{} (given name \"{}\" != company \"{}\")", ctx.prefix, format_person_line(person, Some(ctx.group_names)), given_name, company_name);
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
+            println!(
+                "{}{} (given name \"{}\" != company \"{}\")",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names)),
+                given_name,
+                company_name
+            );
 
             if auto_fix && !ctx.dry_run {
                 let resource_name = get_resource_name(person)?;
@@ -2522,23 +3425,42 @@ async fn check_type_company_given_name(
                     updated.names = Some(vec![google_people1::api::Name::default()]);
                 }
                 if let Some(ref mut names) = updated.names
-                    && let Some(first) = names.first_mut() {
-                        first.given_name = Some(company_name.to_string());
-                        let f = first.family_name.as_deref().unwrap_or("");
-                        let combined = [company_name, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
-                        first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
-                    }
+                    && let Some(first) = names.first_mut()
+                {
+                    first.given_name = Some(company_name.to_string());
+                    let f = first.family_name.as_deref().unwrap_or("");
+                    let combined = [company_name, f]
+                        .iter()
+                        .filter(|s| !s.is_empty())
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    first.unstructured_name = if combined.is_empty() {
+                        None
+                    } else {
+                        Some(combined)
+                    };
+                }
                 retry_api(|| {
-                    let r = hub.people()
+                    let r = hub
+                        .people()
                         .update_contact(updated.clone(), resource_name)
                         .update_person_fields(FieldMask::new::<&str>(&["names"]))
                         .person_fields(FieldMask::new::<&str>(STANDARD_CONTACT_FIELDS));
                     async { r.doit().await }
-                }).await?;
+                })
+                .await?;
                 eprintln!("  Set given name to \"{}\"", company_name);
                 tokio::time::sleep(MUTATE_DELAY).await;
             } else if ctx.fix && !ctx.dry_run {
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                interactive_edit_contact(
+                    hub,
+                    person,
+                    ctx.user_groups,
+                    ctx.label_names,
+                    ctx.group_names,
+                )
+                .await?;
             }
         }
         count += 1;
@@ -2551,7 +3473,11 @@ async fn check_type_company_given_name(
     Ok(count)
 }
 
-pub async fn cmd_check_contact_type_company_no_label(fix: bool, auto_fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_type_company_no_label(
+    fix: bool,
+    auto_fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix || auto_fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2571,7 +3497,9 @@ async fn check_type_company_no_label(
             continue;
         }
 
-        let company_name = person.organizations.as_ref()
+        let company_name = person
+            .organizations
+            .as_ref()
             .and_then(|orgs| orgs.first())
             .and_then(|o| o.name.as_deref())
             .unwrap_or("");
@@ -2587,15 +3515,25 @@ async fn check_type_company_no_label(
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{} (missing label \"{}\")", ctx.prefix, format_person_line(person, Some(ctx.group_names)), expected_label);
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
+            println!(
+                "{}{} (missing label \"{}\")",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names)),
+                expected_label
+            );
 
             if auto_fix && !ctx.dry_run {
                 let resource_name = get_resource_name(person)?;
                 // Find or create the contact group for the expected label
-                let group_rn = if let Some((_, rn)) = ctx.user_groups.iter().find(|(name, _)| *name == expected_label) {
+                let group_rn = if let Some((_, rn)) = ctx
+                    .user_groups
+                    .iter()
+                    .find(|(name, _)| *name == expected_label)
+                {
                     rn.to_string()
                 } else {
                     let new_group = google_people1::api::ContactGroup {
@@ -2609,8 +3547,10 @@ async fn check_type_company_no_label(
                     let (_, created) = retry_api(|| {
                         let r = hub.contact_groups().create(req.clone());
                         async { r.doit().await }
-                    }).await?;
-                    let rn = created.resource_name
+                    })
+                    .await?;
+                    let rn = created
+                        .resource_name
                         .ok_or("Created group missing resource name")?;
                     eprintln!("  Created label \"{}\"", expected_label);
                     tokio::time::sleep(MUTATE_DELAY).await;
@@ -2624,11 +3564,19 @@ async fn check_type_company_no_label(
                 retry_api(|| {
                     let r = hub.contact_groups().members_modify(req.clone(), &group_rn);
                     async { r.doit().await }
-                }).await?;
+                })
+                .await?;
                 eprintln!("  Assigned label \"{}\"", expected_label);
                 tokio::time::sleep(MUTATE_DELAY).await;
             } else if ctx.fix && !ctx.dry_run {
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                interactive_edit_contact(
+                    hub,
+                    person,
+                    ctx.user_groups,
+                    ctx.label_names,
+                    ctx.group_names,
+                )
+                .await?;
             }
         }
         count += 1;
@@ -2641,7 +3589,10 @@ async fn check_type_company_no_label(
     Ok(count)
 }
 
-pub async fn cmd_check_contact_type_company_no_company(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_type_company_no_company(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2660,7 +3611,9 @@ async fn check_type_company_no_company(
             continue;
         }
 
-        let has_company_field = person.organizations.as_ref()
+        let has_company_field = person
+            .organizations
+            .as_ref()
             .and_then(|orgs| orgs.first())
             .and_then(|o| o.name.as_deref())
             .is_some_and(|v| !v.is_empty());
@@ -2670,13 +3623,25 @@ async fn check_type_company_no_company(
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
+            println!(
+                "{}{}",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names))
+            );
 
             if ctx.fix && !ctx.dry_run {
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                interactive_edit_contact(
+                    hub,
+                    person,
+                    ctx.user_groups,
+                    ctx.label_names,
+                    ctx.group_names,
+                )
+                .await?;
             }
         }
         count += 1;
@@ -2689,7 +3654,10 @@ async fn check_type_company_no_company(
     Ok(count)
 }
 
-pub async fn cmd_check_contact_no_middle_name(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_middle_name(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2708,7 +3676,9 @@ async fn check_no_middle_name(
             continue;
         }
 
-        let has_middle = person.names.as_ref()
+        let has_middle = person
+            .names
+            .as_ref()
             .and_then(|n| n.first())
             .and_then(|n| n.middle_name.as_deref())
             .is_some_and(|v| !v.is_empty());
@@ -2718,13 +3688,25 @@ async fn check_no_middle_name(
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
+            println!(
+                "{}{}",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names))
+            );
 
             if ctx.fix && !ctx.dry_run {
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                interactive_edit_contact(
+                    hub,
+                    person,
+                    ctx.user_groups,
+                    ctx.label_names,
+                    ctx.group_names,
+                )
+                .await?;
             }
         }
         count += 1;
@@ -2737,7 +3719,10 @@ async fn check_no_middle_name(
     Ok(count)
 }
 
-pub async fn cmd_check_contact_no_nickname(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_nickname(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2756,21 +3741,36 @@ async fn check_no_nickname(
             continue;
         }
 
-        let has_nickname = person.nicknames.as_ref()
-            .is_some_and(|nicks| nicks.iter().any(|n| n.value.as_ref().is_some_and(|v| !v.is_empty())));
+        let has_nickname = person.nicknames.as_ref().is_some_and(|nicks| {
+            nicks
+                .iter()
+                .any(|n| n.value.as_ref().is_some_and(|v| !v.is_empty()))
+        });
         if !has_nickname {
             continue;
         }
 
         if !ctx.quiet {
             if count == 0
-                && let Some(header) = ctx.header {
-                    println!("=== {} ===", header);
-                }
-            println!("{}{}", ctx.prefix, format_person_line(person, Some(ctx.group_names)));
+                && let Some(header) = ctx.header
+            {
+                println!("=== {} ===", header);
+            }
+            println!(
+                "{}{}",
+                ctx.prefix,
+                format_person_line(person, Some(ctx.group_names))
+            );
 
             if ctx.fix && !ctx.dry_run {
-                interactive_edit_contact(hub, person, ctx.user_groups, ctx.label_names, ctx.group_names).await?;
+                interactive_edit_contact(
+                    hub,
+                    person,
+                    ctx.user_groups,
+                    ctx.label_names,
+                    ctx.group_names,
+                )
+                .await?;
             }
         }
         count += 1;
@@ -2783,15 +3783,21 @@ async fn check_no_nickname(
     Ok(count)
 }
 
-pub async fn cmd_check_contact_label_nophone(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_label_nophone(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
-    let empty_groups: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
-        let count = g.member_count.unwrap_or(0);
-        let is_user_group = g.group_type.as_deref() == Some("USER_CONTACT_GROUP");
-        count == 0 && is_user_group
-    }).collect();
+    let empty_groups: Vec<&google_people1::api::ContactGroup> = all_groups
+        .iter()
+        .filter(|g| {
+            let count = g.member_count.unwrap_or(0);
+            let is_user_group = g.group_type.as_deref() == Some("USER_CONTACT_GROUP");
+            count == 0 && is_user_group
+        })
+        .collect();
 
     for group in &empty_groups {
         let name = group.name.as_deref().unwrap_or("<unnamed>");
@@ -2805,7 +3811,8 @@ pub async fn cmd_check_contact_label_nophone(fix: bool, dry_run: bool) -> Result
                     retry_api(|| {
                         let r = hub.contact_groups().delete(resource_name);
                         async { r.doit().await }
-                    }).await?;
+                    })
+                    .await?;
                     eprintln!("  Deleted.");
                     tokio::time::sleep(MUTATE_DELAY).await;
                 } else {
@@ -2823,9 +3830,10 @@ pub async fn cmd_show_contact(search: &str) -> Result<(), Box<dyn std::error::Er
     let all_fields = ALL_CONTACT_FIELDS_WITH_METADATA;
     let contacts = fetch_all_contacts(&hub, all_fields).await?;
     let search_lower = search.to_lowercase();
-    let matches: Vec<_> = contacts.iter().filter(|p| {
-        person_name(p).to_lowercase().contains(&search_lower)
-    }).collect();
+    let matches: Vec<_> = contacts
+        .iter()
+        .filter(|p| person_name(p).to_lowercase().contains(&search_lower))
+        .collect();
 
     if matches.is_empty() {
         println!("No contacts found matching \"{}\"", search);
@@ -2833,7 +3841,8 @@ pub async fn cmd_show_contact(search: &str) -> Result<(), Box<dyn std::error::Er
     }
 
     let all_groups = fetch_all_contact_groups(&hub).await?;
-    let group_names: std::collections::HashMap<String, String> = all_groups.iter()
+    let group_names: std::collections::HashMap<String, String> = all_groups
+        .iter()
         .filter_map(|g| {
             let rn = g.resource_name.as_deref()?;
             let name = g.name.as_deref()?;
@@ -2842,7 +3851,9 @@ pub async fn cmd_show_contact(search: &str) -> Result<(), Box<dyn std::error::Er
         .collect();
 
     for (i, person) in matches.iter().enumerate() {
-        if i > 0 { println!("\n{}", "=".repeat(60)); }
+        if i > 0 {
+            println!("\n{}", "=".repeat(60));
+        }
         print_person_details(person, Some(&group_names));
     }
     Ok(())
@@ -2853,9 +3864,10 @@ pub async fn cmd_edit_contact(search: &str) -> Result<(), Box<dyn std::error::Er
     let all_fields = ALL_CONTACT_FIELDS_WITH_METADATA;
     let contacts = fetch_all_contacts(&hub, all_fields).await?;
     let search_lower = search.to_lowercase();
-    let matches: Vec<_> = contacts.iter().filter(|p| {
-        person_name(p).to_lowercase().contains(&search_lower)
-    }).collect();
+    let matches: Vec<_> = contacts
+        .iter()
+        .filter(|p| person_name(p).to_lowercase().contains(&search_lower))
+        .collect();
 
     if matches.is_empty() {
         println!("No contacts found matching \"{}\"", search);
@@ -2864,7 +3876,8 @@ pub async fn cmd_edit_contact(search: &str) -> Result<(), Box<dyn std::error::Er
 
     let all_groups = fetch_all_contact_groups(&hub).await?;
     let group_names = build_group_name_map(&all_groups);
-    let user_groups_owned: Vec<(String, String)> = all_groups.iter()
+    let user_groups_owned: Vec<(String, String)> = all_groups
+        .iter()
         .filter(|g| g.group_type.as_deref() == Some("USER_CONTACT_GROUP"))
         .filter_map(|g| {
             let name = g.name.as_deref()?;
@@ -2872,8 +3885,14 @@ pub async fn cmd_edit_contact(search: &str) -> Result<(), Box<dyn std::error::Er
             Some((name.to_string(), rn.to_string()))
         })
         .collect();
-    let label_names: Vec<String> = user_groups_owned.iter().map(|(name, _)| name.clone()).collect();
-    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    let label_names: Vec<String> = user_groups_owned
+        .iter()
+        .map(|(name, _)| name.clone())
+        .collect();
+    let user_groups: Vec<(&str, &str)> = user_groups_owned
+        .iter()
+        .map(|(n, r)| (n.as_str(), r.as_str()))
+        .collect();
 
     let person = if matches.len() == 1 {
         matches[0]
@@ -2899,50 +3918,84 @@ pub async fn cmd_edit_contact(search: &str) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-fn print_person_details(person: &google_people1::api::Person, group_names: Option<&std::collections::HashMap<String, String>>) {
+fn print_person_details(
+    person: &google_people1::api::Person,
+    group_names: Option<&std::collections::HashMap<String, String>>,
+) {
     let names = person.names.as_ref().and_then(|n| n.first());
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
     let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
-    let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
-    let prefix_name = names.and_then(|n| n.honorific_prefix.as_deref()).unwrap_or("");
+    let suffix = names
+        .and_then(|n| n.honorific_suffix.as_deref())
+        .unwrap_or("");
+    let prefix_name = names
+        .and_then(|n| n.honorific_prefix.as_deref())
+        .unwrap_or("");
     let middle = names.and_then(|n| n.middle_name.as_deref()).unwrap_or("");
 
     println!("Given name: {}", given);
     println!("Family name: {}", family);
     println!("Suffix: {}", suffix);
-    if !middle.is_empty() { println!("Middle name: {}", middle); }
-    if !prefix_name.is_empty() { println!("Prefix: {}", prefix_name); }
+    if !middle.is_empty() {
+        println!("Middle name: {}", middle);
+    }
+    if !prefix_name.is_empty() {
+        println!("Prefix: {}", prefix_name);
+    }
 
     if let Some(nicknames) = &person.nicknames {
         for n in nicknames {
-            if let Some(val) = &n.value { println!("Nickname: {}", val); }
+            if let Some(val) = &n.value {
+                println!("Nickname: {}", val);
+            }
         }
     }
 
     if let Some(emails) = &person.email_addresses {
         for e in emails {
             let val = e.value.as_deref().unwrap_or("");
-            let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
-            if t.is_empty() { println!("Email: {}", val); }
-            else { println!("Email: {} [{}]", val, t); }
+            let t = e
+                .formatted_type
+                .as_deref()
+                .or(e.type_.as_deref())
+                .unwrap_or("");
+            if t.is_empty() {
+                println!("Email: {}", val);
+            } else {
+                println!("Email: {} [{}]", val, t);
+            }
         }
     }
 
     if let Some(phones) = &person.phone_numbers {
         for p in phones {
             let val = p.value.as_deref().unwrap_or("");
-            let t = p.formatted_type.as_deref().or(p.type_.as_deref()).unwrap_or("");
-            if t.is_empty() { println!("Phone: {}", val); }
-            else { println!("Phone: {} [{}]", val, t); }
+            let t = p
+                .formatted_type
+                .as_deref()
+                .or(p.type_.as_deref())
+                .unwrap_or("");
+            if t.is_empty() {
+                println!("Phone: {}", val);
+            } else {
+                println!("Phone: {} [{}]", val, t);
+            }
         }
     }
 
     if let Some(addrs) = &person.addresses {
         for a in addrs {
-            let t = a.formatted_type.as_deref().or(a.type_.as_deref()).unwrap_or("");
+            let t = a
+                .formatted_type
+                .as_deref()
+                .or(a.type_.as_deref())
+                .unwrap_or("");
             if let Some(formatted) = &a.formatted_value {
-                if t.is_empty() { println!("Address: {}", formatted); }
-                else { println!("Address [{}]: {}", t, formatted); }
+                if t.is_empty() {
+                    println!("Address: {}", formatted);
+                } else {
+                    println!("Address [{}]: {}", t, formatted);
+                }
             }
         }
     }
@@ -2955,8 +4008,12 @@ fn print_person_details(person: &google_people1::api::Person, group_names: Optio
         for o in orgs {
             let title = o.title.as_deref().unwrap_or("");
             let dept = o.department.as_deref().unwrap_or("");
-            if !title.is_empty() { println!("  Title: {}", title); }
-            if !dept.is_empty() { println!("  Department: {}", dept); }
+            if !title.is_empty() {
+                println!("  Title: {}", title);
+            }
+            if !dept.is_empty() {
+                println!("  Department: {}", dept);
+            }
         }
     }
 
@@ -2966,95 +4023,147 @@ fn print_person_details(person: &google_people1::api::Person, group_names: Optio
                 let y = date.year.unwrap_or(0);
                 let m = date.month.unwrap_or(0);
                 let d = date.day.unwrap_or(0);
-                if y > 0 { println!("Birthday: {}-{:02}-{:02}", y, m, d); }
-                else { println!("Birthday: {:02}-{:02}", m, d); }
+                if y > 0 {
+                    println!("Birthday: {}-{:02}-{:02}", y, m, d);
+                } else {
+                    println!("Birthday: {:02}-{:02}", m, d);
+                }
             }
-            if let Some(text) = &b.text { println!("Birthday: {}", text); }
+            if let Some(text) = &b.text {
+                println!("Birthday: {}", text);
+            }
         }
     }
 
     if let Some(relations) = &person.relations {
         for r in relations {
             let val = r.person.as_deref().unwrap_or("");
-            let t = r.formatted_type.as_deref().or(r.type_.as_deref()).unwrap_or("");
-            if t.is_empty() { println!("Relation: {}", val); }
-            else { println!("Relation: {} [{}]", val, t); }
+            let t = r
+                .formatted_type
+                .as_deref()
+                .or(r.type_.as_deref())
+                .unwrap_or("");
+            if t.is_empty() {
+                println!("Relation: {}", val);
+            } else {
+                println!("Relation: {} [{}]", val, t);
+            }
         }
     }
 
     if let Some(events) = &person.events {
         for e in events {
-            let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("event");
+            let t = e
+                .formatted_type
+                .as_deref()
+                .or(e.type_.as_deref())
+                .unwrap_or("event");
             if let Some(date) = &e.date {
                 let y = date.year.unwrap_or(0);
                 let m = date.month.unwrap_or(0);
                 let d = date.day.unwrap_or(0);
-                if y > 0 { println!("Event [{}]: {}-{:02}-{:02}", t, y, m, d); }
-                else { println!("Event [{}]: {:02}-{:02}", t, m, d); }
+                if y > 0 {
+                    println!("Event [{}]: {}-{:02}-{:02}", t, y, m, d);
+                } else {
+                    println!("Event [{}]: {:02}-{:02}", t, m, d);
+                }
             }
         }
     }
 
     if let Some(bios) = &person.biographies {
         for b in bios {
-            if let Some(val) = &b.value { println!("Biography: {}", val); }
+            if let Some(val) = &b.value {
+                println!("Biography: {}", val);
+            }
         }
     }
 
     if let Some(urls) = &person.urls {
         for u in urls {
             let val = u.value.as_deref().unwrap_or("");
-            let t = u.formatted_type.as_deref().or(u.type_.as_deref()).unwrap_or("");
-            if t.is_empty() { println!("URL: {}", val); }
-            else { println!("URL: {} [{}]", val, t); }
+            let t = u
+                .formatted_type
+                .as_deref()
+                .or(u.type_.as_deref())
+                .unwrap_or("");
+            if t.is_empty() {
+                println!("URL: {}", val);
+            } else {
+                println!("URL: {} [{}]", val, t);
+            }
         }
     }
 
     if let Some(ims) = &person.im_clients {
         for im in ims {
             let val = im.username.as_deref().unwrap_or("");
-            let proto = im.formatted_protocol.as_deref().or(im.protocol.as_deref()).unwrap_or("");
-            if proto.is_empty() { println!("IM: {}", val); }
-            else { println!("IM: {} [{}]", val, proto); }
+            let proto = im
+                .formatted_protocol
+                .as_deref()
+                .or(im.protocol.as_deref())
+                .unwrap_or("");
+            if proto.is_empty() {
+                println!("IM: {}", val);
+            } else {
+                println!("IM: {} [{}]", val, proto);
+            }
         }
     }
 
     if let Some(sips) = &person.sip_addresses {
         for s in sips {
-            if let Some(val) = &s.value { println!("SIP: {}", val); }
+            if let Some(val) = &s.value {
+                println!("SIP: {}", val);
+            }
         }
     }
 
     if let Some(occupations) = &person.occupations {
         for o in occupations {
-            if let Some(val) = &o.value { println!("Occupation: {}", val); }
+            if let Some(val) = &o.value {
+                println!("Occupation: {}", val);
+            }
         }
     }
 
     if let Some(interests) = &person.interests {
         for i in interests {
-            if let Some(val) = &i.value { println!("Interest: {}", val); }
+            if let Some(val) = &i.value {
+                println!("Interest: {}", val);
+            }
         }
     }
 
     if let Some(skills) = &person.skills {
         for s in skills {
-            if let Some(val) = &s.value { println!("Skill: {}", val); }
+            if let Some(val) = &s.value {
+                println!("Skill: {}", val);
+            }
         }
     }
 
     if let Some(locations) = &person.locations {
         for l in locations {
-            if let Some(val) = &l.value { println!("Location: {}", val); }
+            if let Some(val) = &l.value {
+                println!("Location: {}", val);
+            }
         }
     }
 
     if let Some(ext_ids) = &person.external_ids {
         for e in ext_ids {
             let val = e.value.as_deref().unwrap_or("");
-            let t = e.formatted_type.as_deref().or(e.type_.as_deref()).unwrap_or("");
-            if t.is_empty() { println!("External ID: {}", val); }
-            else { println!("External ID: {} [{}]", val, t); }
+            let t = e
+                .formatted_type
+                .as_deref()
+                .or(e.type_.as_deref())
+                .unwrap_or("");
+            if t.is_empty() {
+                println!("External ID: {}", val);
+            } else {
+                println!("External ID: {} [{}]", val, t);
+            }
         }
     }
 
@@ -3074,25 +4183,48 @@ fn print_person_details(person: &google_people1::api::Person, group_names: Optio
         }
     }
 
-    let labels: Vec<String> = person.memberships.as_ref().map(|memberships| {
-        memberships.iter().filter_map(|m| {
-            let rn = m.contact_group_membership.as_ref()?.contact_group_resource_name.as_deref()?;
-            if rn == "contactGroups/myContacts" { return None; }
-            let display = group_names
-                .and_then(|gn| gn.get(rn))
-                .map(|s| s.as_str())
-                .unwrap_or(rn);
-            Some(display.to_string())
-        }).collect()
-    }).unwrap_or_default();
-    println!("Labels: {}", if labels.is_empty() { "(none)".to_string() } else { labels.join(", ") });
+    let labels: Vec<String> = person
+        .memberships
+        .as_ref()
+        .map(|memberships| {
+            memberships
+                .iter()
+                .filter_map(|m| {
+                    let rn = m
+                        .contact_group_membership
+                        .as_ref()?
+                        .contact_group_resource_name
+                        .as_deref()?;
+                    if rn == "contactGroups/myContacts" {
+                        return None;
+                    }
+                    let display = group_names
+                        .and_then(|gn| gn.get(rn))
+                        .map(|s| s.as_str())
+                        .unwrap_or(rn);
+                    Some(display.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    println!(
+        "Labels: {}",
+        if labels.is_empty() {
+            "(none)".to_string()
+        } else {
+            labels.join(", ")
+        }
+    );
 
     if let Some(rn) = &person.resource_name {
         println!("Resource: {}", rn);
     }
 }
 
-pub async fn cmd_check_contact_label_regexp(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_label_regexp(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config()?;
     let allow = match config.check_contact_label_regexp.allow {
         Some(ref pattern) => pattern.clone(),
@@ -3109,10 +4241,13 @@ pub async fn cmd_check_contact_label_regexp(fix: bool, dry_run: bool) -> Result<
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
-    let bad_labels: Vec<&google_people1::api::ContactGroup> = all_groups.iter().filter(|g| {
-        g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-            && g.name.as_deref().is_some_and(|n| !re.is_match(n))
-    }).collect();
+    let bad_labels: Vec<&google_people1::api::ContactGroup> = all_groups
+        .iter()
+        .filter(|g| {
+            g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+                && g.name.as_deref().is_some_and(|n| !re.is_match(n))
+        })
+        .collect();
 
     for group in &bad_labels {
         let name = group.name.as_deref().unwrap_or("<unnamed>");
@@ -3122,7 +4257,9 @@ pub async fn cmd_check_contact_label_regexp(fix: bool, dry_run: bool) -> Result<
             use std::io::Write;
             std::io::stdout().flush()?;
             if let Some(new_name) = prompt_rename_label(name)? {
-                let resource_name = group.resource_name.as_deref()
+                let resource_name = group
+                    .resource_name
+                    .as_deref()
                     .ok_or("Contact group missing resource name")?;
                 rename_contact_group(&hub, group, resource_name, &new_name, name).await?;
             } else {
@@ -3134,15 +4271,18 @@ pub async fn cmd_check_contact_label_regexp(fix: bool, dry_run: bool) -> Result<
     Ok(())
 }
 
-pub async fn cmd_remove_label_from_all_contacts(label: &str, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_remove_label_from_all_contacts(
+    label: &str,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
     // Find the group by name (case-insensitive)
     let lower = label.to_lowercase();
-    let group = all_groups.iter().find(|g| {
-        g.name.as_deref().is_some_and(|n| n.to_lowercase() == lower)
-    });
+    let group = all_groups
+        .iter()
+        .find(|g| g.name.as_deref().is_some_and(|n| n.to_lowercase() == lower));
     let group = match group {
         Some(g) => g,
         None => {
@@ -3150,28 +4290,37 @@ pub async fn cmd_remove_label_from_all_contacts(label: &str, dry_run: bool) -> R
             return Ok(());
         }
     };
-    let group_rn = group.resource_name.as_deref()
+    let group_rn = group
+        .resource_name
+        .as_deref()
         .ok_or("Contact group missing resource name")?;
     let group_name = group.name.as_deref().unwrap_or(label);
 
     // Find all contacts that have this label
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
-    let members: Vec<&google_people1::api::Person> = contacts.iter().filter(|p| {
-        p.memberships.as_ref().is_some_and(|ms| {
-            ms.iter().any(|m| {
-                m.contact_group_membership.as_ref().is_some_and(|cgm| {
-                    cgm.contact_group_resource_name.as_deref() == Some(group_rn)
+    let members: Vec<&google_people1::api::Person> = contacts
+        .iter()
+        .filter(|p| {
+            p.memberships.as_ref().is_some_and(|ms| {
+                ms.iter().any(|m| {
+                    m.contact_group_membership.as_ref().is_some_and(|cgm| {
+                        cgm.contact_group_resource_name.as_deref() == Some(group_rn)
+                    })
                 })
             })
         })
-    }).collect();
+        .collect();
 
     if members.is_empty() {
         println!("No contacts have the label \"{}\".", group_name);
         return Ok(());
     }
 
-    println!("Removing label \"{}\" from {} contacts:", group_name, members.len());
+    println!(
+        "Removing label \"{}\" from {} contacts:",
+        group_name,
+        members.len()
+    );
     for person in &members {
         let name = person_display_name(person);
         println!("  {}", name);
@@ -3179,7 +4328,8 @@ pub async fn cmd_remove_label_from_all_contacts(label: &str, dry_run: bool) -> R
 
     if !dry_run {
         // Remove in batches — the API accepts up to 1000 resource names per call
-        let resource_names: Vec<String> = members.iter()
+        let resource_names: Vec<String> = members
+            .iter()
             .filter_map(|p| p.resource_name.as_ref().cloned())
             .collect();
         for chunk in resource_names.chunks(1000) {
@@ -3190,10 +4340,15 @@ pub async fn cmd_remove_label_from_all_contacts(label: &str, dry_run: bool) -> R
             retry_api(|| {
                 let r = hub.contact_groups().members_modify(req.clone(), group_rn);
                 async { r.doit().await }
-            }).await?;
+            })
+            .await?;
             tokio::time::sleep(MUTATE_DELAY).await;
         }
-        eprintln!("Done. Removed label \"{}\" from {} contacts.", group_name, members.len());
+        eprintln!(
+            "Done. Removed label \"{}\" from {} contacts.",
+            group_name,
+            members.len()
+        );
     }
 
     Ok(())
@@ -3239,7 +4394,11 @@ pub async fn cmd_show_email_labels() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub async fn cmd_review_phone_label(label: &str, fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_review_phone_label(
+    label: &str,
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS;
     let contacts = if fix {
@@ -3255,10 +4414,13 @@ pub async fn cmd_review_phone_label(label: &str, fix: bool, dry_run: bool) -> Re
     let mut count = 0;
     for person in &contacts {
         if let Some(nums) = &person.phone_numbers {
-            let matching: Vec<_> = nums.iter()
+            let matching: Vec<_> = nums
+                .iter()
                 .filter(|pn| get_phone_label(pn).to_lowercase() == label_lower)
                 .collect();
-            if matching.is_empty() { continue; }
+            if matching.is_empty() {
+                continue;
+            }
             for pn in &matching {
                 println!("{}", format_person_line(person, None));
                 if let Some(val) = pn.value.as_deref() {
@@ -3266,7 +4428,14 @@ pub async fn cmd_review_phone_label(label: &str, fix: bool, dry_run: bool) -> Re
                 }
                 count += 1;
                 if fix && !dry_run {
-                    interactive_edit_contact(&hub, person, &user_groups, &label_names, &group_names).await?;
+                    interactive_edit_contact(
+                        &hub,
+                        person,
+                        &user_groups,
+                        &label_names,
+                        &group_names,
+                    )
+                    .await?;
                 }
             }
         }
@@ -3279,7 +4448,11 @@ pub async fn cmd_review_phone_label(label: &str, fix: bool, dry_run: bool) -> Re
     Ok(())
 }
 
-pub async fn cmd_review_email_label(label: &str, fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_review_email_label(
+    label: &str,
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS;
     let contacts = if fix {
@@ -3295,10 +4468,13 @@ pub async fn cmd_review_email_label(label: &str, fix: bool, dry_run: bool) -> Re
     let mut count = 0;
     for person in &contacts {
         if let Some(emails) = &person.email_addresses {
-            let matching: Vec<_> = emails.iter()
+            let matching: Vec<_> = emails
+                .iter()
                 .filter(|e| get_email_label(e).to_lowercase() == label_lower)
                 .collect();
-            if matching.is_empty() { continue; }
+            if matching.is_empty() {
+                continue;
+            }
             for e in &matching {
                 println!("{}", format_person_line(person, None));
                 if let Some(val) = e.value.as_deref() {
@@ -3306,7 +4482,14 @@ pub async fn cmd_review_email_label(label: &str, fix: bool, dry_run: bool) -> Re
                 }
                 count += 1;
                 if fix && !dry_run {
-                    interactive_edit_contact(&hub, person, &user_groups, &label_names, &group_names).await?;
+                    interactive_edit_contact(
+                        &hub,
+                        person,
+                        &user_groups,
+                        &label_names,
+                        &group_names,
+                    )
+                    .await?;
                 }
             }
         }
@@ -3336,9 +4519,16 @@ pub async fn cmd_show_contact_labels() -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool, country: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_all(
+    fix: bool,
+    dry_run: bool,
+    stats: bool,
+    verbose: bool,
+    country: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config()?;
-    let skip: std::collections::HashSet<&str> = config.check_all.skip.iter().map(|s| s.as_str()).collect();
+    let skip: std::collections::HashSet<&str> =
+        config.check_all.skip.iter().map(|s| s.as_str()).collect();
 
     let hub = build_hub().await?;
     let all_contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
@@ -3346,15 +4536,31 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     let group_names = build_group_name_map(&all_groups);
 
     let (user_groups_owned, label_names) = build_user_groups_and_labels(&all_groups, fix);
-    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    let user_groups: Vec<(&str, &str)> = user_groups_owned
+        .iter()
+        .map(|(n, r)| (n.as_str(), r.as_str()))
+        .collect();
 
     let mut results: Vec<(&str, usize)> = Vec::new();
 
     let prefix = if stats { "" } else { "  " };
     let hdr = |s: &'static str| -> Option<&'static str> { if stats { None } else { Some(s) } };
-    let log = |name: &str| { if verbose { eprintln!("Running {}...", name); } };
+    let log = |name: &str| {
+        if verbose {
+            eprintln!("Running {}...", name);
+        }
+    };
     let make_ctx = |header: Option<&'static str>| -> CheckContext<'_> {
-        CheckContext { fix, dry_run, prefix, header, quiet: stats, user_groups: &user_groups, label_names: &label_names, group_names: &group_names }
+        CheckContext {
+            fix,
+            dry_run,
+            prefix,
+            header,
+            quiet: stats,
+            user_groups: &user_groups,
+            label_names: &label_names,
+            group_names: &group_names,
+        }
     };
 
     if !skip.contains("check-phone-countrycode") {
@@ -3362,11 +4568,13 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         let country_owned = country.to_string();
         let ctx = make_ctx(hdr("Phones missing country code (check-phone-countrycode)"));
         let no_country = check_phone_issues(
-            &hub, &all_contacts,
+            &hub,
+            &all_contacts,
             |v| is_fixable_phone(v) && !has_country_code(v),
             move |v| add_country_code(v, &country_owned),
             &ctx,
-        ).await?;
+        )
+        .await?;
         results.push(("check-phone-countrycode", no_country));
     }
 
@@ -3375,46 +4583,78 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
         let country_owned2 = country.to_string();
         let ctx = make_ctx(hdr("Phones not in +CC-NUMBER format (check-phone-format)"));
         let bad_format = check_phone_issues(
-            &hub, &all_contacts,
+            &hub,
+            &all_contacts,
             |v| is_fixable_phone(v) && !is_correct_phone_format(v),
             move |v| fix_phone_format(v, &country_owned2),
             &ctx,
-        ).await?;
+        )
+        .await?;
         results.push(("check-phone-format", bad_format));
     }
 
     if !skip.contains("check-contact-given-name-regexp") {
         log("check-contact-given-name-regexp");
         if config.check_contact_given_name_regexp.allow.is_some() {
-            let ctx = make_ctx(hdr("Given name doesn't match allow regex (check-contact-given-name-regexp)"));
-            let given_name_regexp = check_given_name_regexp(&hub, &all_contacts, &config.check_contact_given_name_regexp, &ctx).await?;
+            let ctx = make_ctx(hdr(
+                "Given name doesn't match allow regex (check-contact-given-name-regexp)",
+            ));
+            let given_name_regexp = check_given_name_regexp(
+                &hub,
+                &all_contacts,
+                &config.check_contact_given_name_regexp,
+                &ctx,
+            )
+            .await?;
             results.push(("check-contact-given-name-regexp", given_name_regexp));
         } else {
-            eprintln!("Warning: check-contact-given-name-regexp has no allow regex configured, skipping.");
+            eprintln!(
+                "Warning: check-contact-given-name-regexp has no allow regex configured, skipping."
+            );
         }
     }
 
     if !skip.contains("check-contact-family-name-regexp") {
         log("check-contact-family-name-regexp");
         if config.check_contact_family_name_regexp.allow.is_some() {
-            let ctx = make_ctx(hdr("Family name doesn't match allow regex (check-contact-family-name-regexp)"));
-            let family_name_regexp = check_family_name_regexp(&hub, &all_contacts, &config.check_contact_family_name_regexp, &ctx).await?;
+            let ctx = make_ctx(hdr(
+                "Family name doesn't match allow regex (check-contact-family-name-regexp)",
+            ));
+            let family_name_regexp = check_family_name_regexp(
+                &hub,
+                &all_contacts,
+                &config.check_contact_family_name_regexp,
+                &ctx,
+            )
+            .await?;
             results.push(("check-contact-family-name-regexp", family_name_regexp));
         } else {
-            eprintln!("Warning: check-contact-family-name-regexp has no allow regex configured, skipping.");
+            eprintln!(
+                "Warning: check-contact-family-name-regexp has no allow regex configured, skipping."
+            );
         }
     }
 
     if !skip.contains("check-contact-suffix-regexp") {
         log("check-contact-suffix-regexp");
-        let ctx = make_ctx(hdr("Suffix doesn't match allow regex (check-contact-suffix-regexp)"));
-        let suffix_regexp = check_suffix_regexp(&hub, &all_contacts, &config.check_contact_suffix_regexp, &ctx).await?;
+        let ctx = make_ctx(hdr(
+            "Suffix doesn't match allow regex (check-contact-suffix-regexp)",
+        ));
+        let suffix_regexp = check_suffix_regexp(
+            &hub,
+            &all_contacts,
+            &config.check_contact_suffix_regexp,
+            &ctx,
+        )
+        .await?;
         results.push(("check-contact-suffix-regexp", suffix_regexp));
     }
 
     if !skip.contains("check-contact-no-given-name") {
         log("check-contact-no-given-name");
-        let ctx = make_ctx(hdr("Contacts with family name but no given name (check-contact-no-given-name)"));
+        let ctx = make_ctx(hdr(
+            "Contacts with family name but no given name (check-contact-no-given-name)",
+        ));
         let no_given = check_no_given_name(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-no-given-name", no_given));
     }
@@ -3428,16 +4668,30 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-given-name-known") {
         log("check-contact-given-name-known");
-        let ctx = make_ctx(hdr("Given name not in allowed list (check-contact-given-name-known)"));
-        let given_name_known = check_given_name_known(&hub, &all_contacts, &config.check_contact_given_name_known.names, &ctx).await?;
+        let ctx = make_ctx(hdr(
+            "Given name not in allowed list (check-contact-given-name-known)",
+        ));
+        let given_name_known = check_given_name_known(
+            &hub,
+            &all_contacts,
+            &config.check_contact_given_name_known.names,
+            &ctx,
+        )
+        .await?;
         results.push(("check-contact-given-name-known", given_name_known));
     }
 
     if !skip.contains("check-contact-given-name-exists") {
         log("check-contact-given-name-exists");
         if !config.check_contact_given_name_known.names.is_empty() {
-            let ctx = make_ctx(hdr("Configured given names with no contacts (check-contact-given-name-exists)"));
-            let given_name_exists = check_given_name_exists(&all_contacts, &config.check_contact_given_name_known.names, &ctx)?;
+            let ctx = make_ctx(hdr(
+                "Configured given names with no contacts (check-contact-given-name-exists)",
+            ));
+            let given_name_exists = check_given_name_exists(
+                &all_contacts,
+                &config.check_contact_given_name_known.names,
+                &ctx,
+            )?;
             results.push(("check-contact-given-name-exists", given_name_exists));
         }
     }
@@ -3445,68 +4699,107 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
     if !skip.contains("check-contact-company-known") {
         log("check-contact-company-known");
         if !config.check_contact_name_is_company.companies.is_empty() {
-            let ctx = make_ctx(hdr("Company not in configured list (check-contact-company-known)"));
-            let company_known = check_company_known(&hub, &all_contacts, &config.check_contact_name_is_company.companies, &ctx).await?;
+            let ctx = make_ctx(hdr(
+                "Company not in configured list (check-contact-company-known)",
+            ));
+            let company_known = check_company_known(
+                &hub,
+                &all_contacts,
+                &config.check_contact_name_is_company.companies,
+                &ctx,
+            )
+            .await?;
             results.push(("check-contact-company-known", company_known));
         } else {
-            eprintln!("Warning: check-contact-company-known has no companies configured, skipping.");
+            eprintln!(
+                "Warning: check-contact-company-known has no companies configured, skipping."
+            );
         }
     }
 
     if !skip.contains("check-contact-company-exists") {
         log("check-contact-company-exists");
         if !config.check_contact_name_is_company.companies.is_empty() {
-            let ctx = make_ctx(hdr("Configured companies with no contacts (check-contact-company-exists)"));
-            let company_exists = check_company_exists(&all_contacts, &config.check_contact_name_is_company.companies, &ctx)?;
+            let ctx = make_ctx(hdr(
+                "Configured companies with no contacts (check-contact-company-exists)",
+            ));
+            let company_exists = check_company_exists(
+                &all_contacts,
+                &config.check_contact_name_is_company.companies,
+                &ctx,
+            )?;
             results.push(("check-contact-company-exists", company_exists));
         }
     }
 
     if !skip.contains("check-contact-displayname-duplicate") {
         log("check-contact-displayname-duplicate");
-        let ctx = make_ctx(hdr("Duplicate contact names (check-contact-displayname-duplicate)"));
+        let ctx = make_ctx(hdr(
+            "Duplicate contact names (check-contact-displayname-duplicate)",
+        ));
         let name_dup = check_name_duplicate(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-displayname-duplicate", name_dup));
     }
 
     if !skip.contains("check-contact-no-displayname") {
         log("check-contact-no-displayname");
-        let ctx = make_ctx(hdr("Contacts with empty display name (check-contact-no-displayname)"));
+        let ctx = make_ctx(hdr(
+            "Contacts with empty display name (check-contact-no-displayname)",
+        ));
         let no_displayname = check_no_displayname(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-no-displayname", no_displayname));
     }
 
     if !skip.contains("check-contact-type") {
         log("check-contact-type");
-        let ctx = make_ctx(hdr("Contacts missing or having both type:Person/type:Company (check-contact-type)"));
+        let ctx = make_ctx(hdr(
+            "Contacts missing or having both type:Person/type:Company (check-contact-type)",
+        ));
         let type_count = check_contact_type(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-type", type_count));
     }
 
     if !skip.contains("check-contact-type-company-no-company") {
         log("check-contact-type-company-no-company");
-        let ctx = make_ctx(hdr("Company-tagged contacts without company field (check-contact-type-company-no-company)"));
-        let type_company_no_company = check_type_company_no_company(&hub, &all_contacts, &ctx).await?;
-        results.push(("check-contact-type-company-no-company", type_company_no_company));
+        let ctx = make_ctx(hdr(
+            "Company-tagged contacts without company field (check-contact-type-company-no-company)",
+        ));
+        let type_company_no_company =
+            check_type_company_no_company(&hub, &all_contacts, &ctx).await?;
+        results.push((
+            "check-contact-type-company-no-company",
+            type_company_no_company,
+        ));
     }
 
     if !skip.contains("check-contact-type-company-given-name") {
         log("check-contact-type-company-given-name");
-        let ctx = make_ctx(hdr("Company-tagged contacts with given name != company field (check-contact-type-company-given-name)"));
-        let type_company_given_name = check_type_company_given_name(&hub, &all_contacts, &ctx, false).await?;
-        results.push(("check-contact-type-company-given-name", type_company_given_name));
+        let ctx = make_ctx(hdr(
+            "Company-tagged contacts with given name != company field (check-contact-type-company-given-name)",
+        ));
+        let type_company_given_name =
+            check_type_company_given_name(&hub, &all_contacts, &ctx, false).await?;
+        results.push((
+            "check-contact-type-company-given-name",
+            type_company_given_name,
+        ));
     }
 
     if !skip.contains("check-contact-type-company-no-label") {
         log("check-contact-type-company-no-label");
-        let ctx = make_ctx(hdr("Company-tagged contacts missing company:<name> label (check-contact-type-company-no-label)"));
-        let type_company_no_label = check_type_company_no_label(&hub, &all_contacts, &ctx, false).await?;
+        let ctx = make_ctx(hdr(
+            "Company-tagged contacts missing company:<name> label (check-contact-type-company-no-label)",
+        ));
+        let type_company_no_label =
+            check_type_company_no_label(&hub, &all_contacts, &ctx, false).await?;
         results.push(("check-contact-type-company-no-label", type_company_no_label));
     }
 
     if !skip.contains("check-contact-no-middle-name") {
         log("check-contact-no-middle-name");
-        let ctx = make_ctx(hdr("Contacts with middle name (check-contact-no-middle-name)"));
+        let ctx = make_ctx(hdr(
+            "Contacts with middle name (check-contact-no-middle-name)",
+        ));
         let middle_name_count = check_no_middle_name(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-no-middle-name", middle_name_count));
     }
@@ -3541,7 +4834,9 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-phone-country-label") {
         log("check-phone-country-label");
-        let ctx = make_ctx(hdr("Missing/wrong country labels for phone numbers (check-phone-country-label)"));
+        let ctx = make_ctx(hdr(
+            "Missing/wrong country labels for phone numbers (check-phone-country-label)",
+        ));
         let country_label = check_phone_country_label(&hub, &all_contacts, &ctx).await?;
         results.push(("check-phone-country-label", country_label));
     }
@@ -3562,19 +4857,27 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-email-duplicate") {
         log("check-contact-email-duplicate");
-        let ctx = make_ctx(hdr("Duplicate email addresses (check-contact-email-duplicate)"));
+        let ctx = make_ctx(hdr(
+            "Duplicate email addresses (check-contact-email-duplicate)",
+        ));
         let dup_emails = check_duplicate_emails(&hub, &all_contacts, &ctx).await?;
         results.push(("check-contact-email-duplicate", dup_emails));
     }
 
     if !skip.contains("check-contact-label-nophone") {
         log("check-contact-label-nophone");
-        let empty: Vec<_> = all_groups.iter().filter(|g| {
-            g.member_count.unwrap_or(0) == 0
-                && g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-        }).collect();
+        let empty: Vec<_> = all_groups
+            .iter()
+            .filter(|g| {
+                g.member_count.unwrap_or(0) == 0
+                    && g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+            })
+            .collect();
         if !stats && !empty.is_empty() {
-            println!("=== Empty labels (check-contact-label-nophone) ({}) ===", empty.len());
+            println!(
+                "=== Empty labels (check-contact-label-nophone) ({}) ===",
+                empty.len()
+            );
             for group in &empty {
                 let name = group.name.as_deref().unwrap_or("<unnamed>");
                 println!("  {}", name);
@@ -3587,7 +4890,8 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
                             retry_api(|| {
                                 let r = hub.contact_groups().delete(resource_name);
                                 async { r.doit().await }
-                            }).await?;
+                            })
+                            .await?;
                             eprintln!("  Deleted.");
                             tokio::time::sleep(MUTATE_DELAY).await;
                         } else {
@@ -3603,14 +4907,21 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
 
     if !skip.contains("check-contact-label-regexp") {
         log("check-contact-label-regexp");
-        let label_regexp_count = if let Some(ref pattern) = config.check_contact_label_regexp.allow {
+        let label_regexp_count = if let Some(ref pattern) = config.check_contact_label_regexp.allow
+        {
             let re = regex::Regex::new(pattern)?;
-            let bad_labels: Vec<_> = all_groups.iter().filter(|g| {
-                g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
-                    && g.name.as_deref().is_some_and(|n| !re.is_match(n))
-            }).collect();
+            let bad_labels: Vec<_> = all_groups
+                .iter()
+                .filter(|g| {
+                    g.group_type.as_deref() == Some("USER_CONTACT_GROUP")
+                        && g.name.as_deref().is_some_and(|n| !re.is_match(n))
+                })
+                .collect();
             if !stats && !bad_labels.is_empty() {
-                println!("=== Labels not matching regex (check-contact-label-regexp) ({}) ===", bad_labels.len());
+                println!(
+                    "=== Labels not matching regex (check-contact-label-regexp) ({}) ===",
+                    bad_labels.len()
+                );
                 for group in &bad_labels {
                     let name = group.name.as_deref().unwrap_or("<unnamed>");
                     println!("  {}", name);
@@ -3619,9 +4930,12 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
                         use std::io::Write;
                         std::io::stdout().flush()?;
                         if let Some(new_name) = prompt_rename_label(name)? {
-                            let resource_name = group.resource_name.as_deref()
+                            let resource_name = group
+                                .resource_name
+                                .as_deref()
                                 .ok_or("Contact group missing resource name")?;
-                            rename_contact_group(&hub, group, resource_name, &new_name, name).await?;
+                            rename_contact_group(&hub, group, resource_name, &new_name, name)
+                                .await?;
                         } else {
                             eprintln!("  Skipped.");
                         }
@@ -3631,7 +4945,9 @@ pub async fn cmd_check_all(fix: bool, dry_run: bool, stats: bool, verbose: bool,
             }
             bad_labels.len()
         } else {
-            eprintln!("Warning: check-contact-label-regexp has no allow regex configured, skipping.");
+            eprintln!(
+                "Warning: check-contact-label-regexp has no allow regex configured, skipping."
+            );
             0
         };
         results.push(("check-contact-label-regexp", label_regexp_count));
@@ -3689,7 +5005,10 @@ fn uf_union(parent: &mut [usize], a: usize, b: usize) {
 }
 
 /// Build connected-component merge groups from a value-to-contact-indices map.
-fn build_merge_groups(value_to_contacts: &std::collections::HashMap<String, Vec<usize>>, n: usize) -> Vec<Vec<usize>> {
+fn build_merge_groups(
+    value_to_contacts: &std::collections::HashMap<String, Vec<usize>>,
+    n: usize,
+) -> Vec<Vec<usize>> {
     let mut parent: Vec<usize> = (0..n).collect();
     for indices in value_to_contacts.values() {
         if indices.len() > 1 {
@@ -3703,54 +5022,59 @@ fn build_merge_groups(value_to_contacts: &std::collections::HashMap<String, Vec<
         let root = uf_find(&mut parent, i);
         groups.entry(root).or_default().push(i);
     }
-    let mut merge_groups: Vec<Vec<usize>> = groups.into_values()
-        .filter(|g| g.len() > 1)
-        .collect();
+    let mut merge_groups: Vec<Vec<usize>> = groups.into_values().filter(|g| g.len() > 1).collect();
     merge_groups.sort_by_key(|g| g[0]);
     merge_groups
 }
 
 /// Merge all fields from `source` into `target` (phones, emails, addresses, org, birthday, bio).
-fn merge_contact_fields(target: &mut google_people1::api::Person, source: &google_people1::api::Person) {
+fn merge_contact_fields(
+    target: &mut google_people1::api::Person,
+    source: &google_people1::api::Person,
+) {
     // Merge phone numbers (add ones not already present)
     if let Some(src_phones) = &source.phone_numbers {
         let target_phones = target.phone_numbers.get_or_insert_with(Vec::new);
-        let existing: std::collections::HashSet<String> = target_phones.iter()
+        let existing: std::collections::HashSet<String> = target_phones
+            .iter()
             .filter_map(|p| p.value.as_deref())
             .map(normalize_phone)
             .collect();
         for pn in src_phones {
             if let Some(val) = pn.value.as_deref()
-                && !existing.contains(&normalize_phone(val)) {
-                    target_phones.push(google_people1::api::PhoneNumber {
-                        value: Some(val.to_string()),
-                        type_: pn.type_.clone(),
-                        formatted_type: pn.formatted_type.clone(),
-                        metadata: None,
-                        ..Default::default()
-                    });
-                }
+                && !existing.contains(&normalize_phone(val))
+            {
+                target_phones.push(google_people1::api::PhoneNumber {
+                    value: Some(val.to_string()),
+                    type_: pn.type_.clone(),
+                    formatted_type: pn.formatted_type.clone(),
+                    metadata: None,
+                    ..Default::default()
+                });
+            }
         }
     }
 
     // Merge email addresses
     if let Some(src_emails) = &source.email_addresses {
         let target_emails = target.email_addresses.get_or_insert_with(Vec::new);
-        let existing: std::collections::HashSet<String> = target_emails.iter()
+        let existing: std::collections::HashSet<String> = target_emails
+            .iter()
             .filter_map(|e| e.value.as_deref())
             .map(|v| v.to_lowercase())
             .collect();
         for email in src_emails {
             if let Some(val) = email.value.as_deref()
-                && !existing.contains(&val.to_lowercase()) {
-                    target_emails.push(google_people1::api::EmailAddress {
-                        value: Some(val.to_string()),
-                        type_: email.type_.clone(),
-                        formatted_type: email.formatted_type.clone(),
-                        metadata: None,
-                        ..Default::default()
-                    });
-                }
+                && !existing.contains(&val.to_lowercase())
+            {
+                target_emails.push(google_people1::api::EmailAddress {
+                    value: Some(val.to_string()),
+                    type_: email.type_.clone(),
+                    formatted_type: email.formatted_type.clone(),
+                    metadata: None,
+                    ..Default::default()
+                });
+            }
         }
     }
 
@@ -3773,35 +5097,53 @@ fn merge_contact_fields(target: &mut google_people1::api::Person, source: &googl
     // Merge organization (only if target has none)
     if target.organizations.as_ref().is_none_or(|o| o.is_empty())
         && let Some(src_orgs) = &source.organizations
-        && !src_orgs.is_empty() {
-            target.organizations = Some(src_orgs.iter().map(|o| {
-                let mut new_org = o.clone();
-                new_org.metadata = None;
-                new_org
-            }).collect());
-        }
+        && !src_orgs.is_empty()
+    {
+        target.organizations = Some(
+            src_orgs
+                .iter()
+                .map(|o| {
+                    let mut new_org = o.clone();
+                    new_org.metadata = None;
+                    new_org
+                })
+                .collect(),
+        );
+    }
 
     // Merge birthdays (only if target has none)
     if target.birthdays.as_ref().is_none_or(|b| b.is_empty())
         && let Some(src_bdays) = &source.birthdays
-        && !src_bdays.is_empty() {
-            target.birthdays = Some(src_bdays.iter().map(|b| {
-                let mut new_b = b.clone();
-                new_b.metadata = None;
-                new_b
-            }).collect());
-        }
+        && !src_bdays.is_empty()
+    {
+        target.birthdays = Some(
+            src_bdays
+                .iter()
+                .map(|b| {
+                    let mut new_b = b.clone();
+                    new_b.metadata = None;
+                    new_b
+                })
+                .collect(),
+        );
+    }
 
     // Merge biographies (only if target has none)
     if target.biographies.as_ref().is_none_or(|b| b.is_empty())
         && let Some(src_bios) = &source.biographies
-        && !src_bios.is_empty() {
-            target.biographies = Some(src_bios.iter().map(|b| {
-                let mut new_b = b.clone();
-                new_b.metadata = None;
-                new_b
-            }).collect());
-        }
+        && !src_bios.is_empty()
+    {
+        target.biographies = Some(
+            src_bios
+                .iter()
+                .map(|b| {
+                    let mut new_b = b.clone();
+                    new_b.metadata = None;
+                    new_b
+                })
+                .collect(),
+        );
+    }
 }
 
 /// Copy labels (contact group memberships) from source to target, skipping duplicates.
@@ -3820,7 +5162,8 @@ async fn merge_contact_labels(
                 }
                 let already = target.memberships.as_ref().is_some_and(|ms| {
                     ms.iter().any(|tm| {
-                        tm.contact_group_membership.as_ref()
+                        tm.contact_group_membership
+                            .as_ref()
                             .and_then(|c| c.contact_group_resource_name.as_deref())
                             == Some(rn)
                     })
@@ -3834,8 +5177,12 @@ async fn merge_contact_labels(
                     retry_api(|| {
                         let r = hub.contact_groups().members_modify(req.clone(), rn);
                         async { r.doit().await }
-                    }).await?;
-                    eprintln!("  Copied label \"{}\"", group_names.get(rn).map(|s| s.as_str()).unwrap_or(rn));
+                    })
+                    .await?;
+                    eprintln!(
+                        "  Copied label \"{}\"",
+                        group_names.get(rn).map(|s| s.as_str()).unwrap_or(rn)
+                    );
                     tokio::time::sleep(MUTATE_DELAY).await;
                 }
             }
@@ -3854,13 +5201,20 @@ async fn interactive_merge_group(
     group_names: &std::collections::HashMap<String, String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (user_groups_owned, label_names) = build_user_groups_and_labels(all_groups, true);
-    let user_groups: Vec<(&str, &str)> = user_groups_owned.iter().map(|(n, r)| (n.as_str(), r.as_str())).collect();
+    let user_groups: Vec<(&str, &str)> = user_groups_owned
+        .iter()
+        .map(|(n, r)| (n.as_str(), r.as_str()))
+        .collect();
 
     let mut deleted: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
     use std::io::Write;
     loop {
-        let alive: Vec<usize> = group.iter().copied().filter(|i| !deleted.contains(i)).collect();
+        let alive: Vec<usize> = group
+            .iter()
+            .copied()
+            .filter(|i| !deleted.contains(i))
+            .collect();
         if alive.len() <= 1 {
             if alive.len() == 1 {
                 eprintln!("  Only one contact remains, nothing to merge.\n");
@@ -3889,40 +5243,49 @@ async fn interactive_merge_group(
         // Parse d<N> or e<N>
         if choice.len() >= 2
             && let Some(num_str) = choice.get(1..)
-            && let Ok(n) = num_str.parse::<usize>() {
-                if n < 1 || n > alive.len() {
-                    eprintln!("  Invalid index. Choose 1-{}.", alive.len());
+            && let Ok(n) = num_str.parse::<usize>()
+        {
+            if n < 1 || n > alive.len() {
+                eprintln!("  Invalid index. Choose 1-{}.", alive.len());
+                continue;
+            }
+            let target_idx = alive[n - 1];
+
+            match choice.as_bytes()[0] {
+                b'd' => {
+                    let name = person_display_name(&contacts[target_idx]);
+                    if prompt_yes_no(&format!("Delete {}?", name))? {
+                        let rn = get_resource_name(&contacts[target_idx])?;
+                        retry_api(|| {
+                            let r = hub.people().delete_contact(rn);
+                            async { r.doit().await }
+                        })
+                        .await?;
+                        eprintln!("  Deleted {}.", name);
+                        tokio::time::sleep(MUTATE_DELAY).await;
+                        deleted.insert(target_idx);
+                    } else {
+                        eprintln!("  Skipped.");
+                    }
                     continue;
                 }
-                let target_idx = alive[n - 1];
-
-                match choice.as_bytes()[0] {
-                    b'd' => {
-                        let name = person_display_name(&contacts[target_idx]);
-                        if prompt_yes_no(&format!("Delete {}?", name))? {
-                            let rn = get_resource_name(&contacts[target_idx])?;
-                            retry_api(|| {
-                                let r = hub.people().delete_contact(rn);
-                                async { r.doit().await }
-                            }).await?;
-                            eprintln!("  Deleted {}.", name);
-                            tokio::time::sleep(MUTATE_DELAY).await;
-                            deleted.insert(target_idx);
-                        } else {
-                            eprintln!("  Skipped.");
-                        }
-                        continue;
-                    }
-                    b'e' => {
-                        interactive_edit_contact(hub, &contacts[target_idx], &user_groups, &label_names, group_names).await?;
-                        continue;
-                    }
-                    _ => {
-                        eprintln!("  Invalid choice.");
-                        continue;
-                    }
+                b'e' => {
+                    interactive_edit_contact(
+                        hub,
+                        &contacts[target_idx],
+                        &user_groups,
+                        &label_names,
+                        group_names,
+                    )
+                    .await?;
+                    continue;
+                }
+                _ => {
+                    eprintln!("  Invalid choice.");
+                    continue;
                 }
             }
+        }
 
         if choice == "m" {
             eprint!("  Keep which contact? [1-{}]: ", alive.len());
@@ -3940,12 +5303,15 @@ async fn interactive_merge_group(
             // Re-fetch the target contact to get fresh etag
             let keep_rn = get_resource_name(&contacts[keep_idx])?;
             let (_, fresh_keep) = retry_api(|| {
-                let r = hub.people().get(keep_rn)
+                let r = hub
+                    .people()
+                    .get(keep_rn)
                     .person_fields(FieldMask::new::<&str>(ALL_CONTACT_FIELDS))
                     .clear_scopes()
                     .add_scope(google_people1::api::Scope::Contact);
                 async { r.doit().await }
-            }).await?;
+            })
+            .await?;
 
             let mut target = fresh_keep;
 
@@ -3957,14 +5323,20 @@ async fn interactive_merge_group(
             // Update the target contact with merged fields
             let target_rn = get_resource_name(&target)?;
             retry_api(|| {
-                let r = hub.people()
+                let r = hub
+                    .people()
                     .update_contact(target.clone(), target_rn)
                     .update_person_fields(FieldMask::new::<&str>(&[
-                        "phoneNumbers", "emailAddresses", "addresses",
-                        "organizations", "birthdays", "biographies",
+                        "phoneNumbers",
+                        "emailAddresses",
+                        "addresses",
+                        "organizations",
+                        "birthdays",
+                        "biographies",
                     ]));
                 async { r.doit().await }
-            }).await?;
+            })
+            .await?;
             eprintln!("  Updated {}", person_display_name(&target));
             tokio::time::sleep(MUTATE_DELAY).await;
 
@@ -3974,7 +5346,8 @@ async fn interactive_merge_group(
                 retry_api(|| {
                     let r = hub.people().delete_contact(src_rn);
                     async { r.doit().await }
-                }).await?;
+                })
+                .await?;
                 eprintln!("  Deleted {}", person_display_name(&contacts[src_idx]));
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
@@ -3987,14 +5360,18 @@ async fn interactive_merge_group(
     Ok(())
 }
 
-pub async fn cmd_merge_by_phone(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_merge_by_phone(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, ALL_CONTACT_FIELDS).await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
     let group_names = build_group_name_map(&all_groups);
 
     // Build map: normalized phone -> list of contact indices
-    let mut phone_to_contacts: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
+    let mut phone_to_contacts: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
     for (i, person) in contacts.iter().enumerate() {
         if let Some(phones) = &person.phone_numbers {
             for pn in phones {
@@ -4018,29 +5395,47 @@ pub async fn cmd_merge_by_phone(fix: bool, dry_run: bool) -> Result<(), Box<dyn 
         return Ok(());
     }
 
-    println!("Found {} groups of contacts sharing phone numbers:\n", merge_groups.len());
+    println!(
+        "Found {} groups of contacts sharing phone numbers:\n",
+        merge_groups.len()
+    );
 
     for (group_idx, group) in merge_groups.iter().enumerate() {
         // Find shared phones for display
-        let mut group_phones: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
+        let mut group_phones: std::collections::HashMap<String, Vec<&str>> =
+            std::collections::HashMap::new();
         for &idx in group {
             if let Some(phones) = &contacts[idx].phone_numbers {
                 for pn in phones {
                     if let Some(val) = pn.value.as_deref()
-                        && is_fixable_phone(val) {
-                            group_phones.entry(normalize_phone(val)).or_default().push(val);
-                        }
+                        && is_fixable_phone(val)
+                    {
+                        group_phones
+                            .entry(normalize_phone(val))
+                            .or_default()
+                            .push(val);
+                    }
                 }
             }
         }
-        let shared: Vec<String> = group_phones.iter()
+        let shared: Vec<String> = group_phones
+            .iter()
             .filter(|(_, vals)| vals.len() > 1)
             .map(|(_, vals)| vals[0].to_string())
             .collect();
 
-        println!("--- Group {} ({} contacts, {} shared phones) ---", group_idx + 1, group.len(), shared.len());
+        println!(
+            "--- Group {} ({} contacts, {} shared phones) ---",
+            group_idx + 1,
+            group.len(),
+            shared.len()
+        );
         for &idx in group {
-            println!("  [{}] {}", idx + 1, format_person_line(&contacts[idx], Some(&group_names)));
+            println!(
+                "  [{}] {}",
+                idx + 1,
+                format_person_line(&contacts[idx], Some(&group_names))
+            );
         }
         println!("  Shared: {}", shared.join(", "));
         println!();
@@ -4057,14 +5452,18 @@ pub async fn cmd_merge_by_phone(fix: bool, dry_run: bool) -> Result<(), Box<dyn 
     Ok(())
 }
 
-pub async fn cmd_merge_by_email(fix: bool, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_merge_by_email(
+    fix: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, ALL_CONTACT_FIELDS).await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
     let group_names = build_group_name_map(&all_groups);
 
     // Build map: lowercased email -> list of contact indices
-    let mut email_to_contacts: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
+    let mut email_to_contacts: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
     for (i, person) in contacts.iter().enumerate() {
         if let Some(emails) = &person.email_addresses {
             for ea in emails {
@@ -4085,11 +5484,15 @@ pub async fn cmd_merge_by_email(fix: bool, dry_run: bool) -> Result<(), Box<dyn 
         return Ok(());
     }
 
-    println!("Found {} groups of contacts sharing email addresses:\n", merge_groups.len());
+    println!(
+        "Found {} groups of contacts sharing email addresses:\n",
+        merge_groups.len()
+    );
 
     for (group_idx, group) in merge_groups.iter().enumerate() {
         // Find shared emails for display
-        let mut group_emails: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
+        let mut group_emails: std::collections::HashMap<String, Vec<&str>> =
+            std::collections::HashMap::new();
         for &idx in group {
             if let Some(emails) = &contacts[idx].email_addresses {
                 for ea in emails {
@@ -4102,14 +5505,24 @@ pub async fn cmd_merge_by_email(fix: bool, dry_run: bool) -> Result<(), Box<dyn 
                 }
             }
         }
-        let shared: Vec<String> = group_emails.iter()
+        let shared: Vec<String> = group_emails
+            .iter()
             .filter(|(_, vals)| vals.len() > 1)
             .map(|(_, vals)| vals[0].to_string())
             .collect();
 
-        println!("--- Group {} ({} contacts, {} shared emails) ---", group_idx + 1, group.len(), shared.len());
+        println!(
+            "--- Group {} ({} contacts, {} shared emails) ---",
+            group_idx + 1,
+            group.len(),
+            shared.len()
+        );
         for &idx in group {
-            println!("  [{}] {}", idx + 1, format_person_line(&contacts[idx], Some(&group_names)));
+            println!(
+                "  [{}] {}",
+                idx + 1,
+                format_person_line(&contacts[idx], Some(&group_names))
+            );
         }
         println!("  Shared: {}", shared.join(", "));
         println!();
@@ -4134,32 +5547,50 @@ pub async fn cmd_move_family_to_suffix(dry_run: bool) -> Result<(), Box<dyn std:
     for person in &contacts {
         let names = person.names.as_ref().and_then(|n| n.first());
         let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
-        let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
+        let suffix = names
+            .and_then(|n| n.honorific_suffix.as_deref())
+            .unwrap_or("");
 
         // Only act on numeric family names with no existing suffix
         if family.is_empty() || !suffix.is_empty() || family.parse::<u32>().is_err() {
             continue;
         }
 
-        println!("{} -> moving family name \"{}\" to suffix", format_person_line(person, None), family);
+        println!(
+            "{} -> moving family name \"{}\" to suffix",
+            format_person_line(person, None),
+            family
+        );
 
         if !dry_run {
             let resource_name = get_resource_name(person)?;
             let mut updated = person.clone();
             if let Some(ref mut names) = updated.names
-                && let Some(first) = names.first_mut() {
-                    first.honorific_suffix = first.family_name.take();
-                    let g = first.given_name.as_deref().unwrap_or("");
-                    let s = first.honorific_suffix.as_deref().unwrap_or("");
-                    let combined = [g, s].iter().filter(|p| !p.is_empty()).copied().collect::<Vec<_>>().join(" ");
-                    first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
-                }
+                && let Some(first) = names.first_mut()
+            {
+                first.honorific_suffix = first.family_name.take();
+                let g = first.given_name.as_deref().unwrap_or("");
+                let s = first.honorific_suffix.as_deref().unwrap_or("");
+                let combined = [g, s]
+                    .iter()
+                    .filter(|p| !p.is_empty())
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                first.unstructured_name = if combined.is_empty() {
+                    None
+                } else {
+                    Some(combined)
+                };
+            }
             retry_api(|| {
-                let r = hub.people()
+                let r = hub
+                    .people()
                     .update_contact(updated.clone(), resource_name)
                     .update_person_fields(FieldMask::new::<&str>(&["names"]));
                 async { r.doit().await }
-            }).await?;
+            })
+            .await?;
             tokio::time::sleep(MUTATE_DELAY).await;
         }
         total += 1;
@@ -4182,7 +5613,9 @@ pub async fn cmd_move_suffix_to_family(dry_run: bool) -> Result<(), Box<dyn std:
     let mut total = 0;
     for person in &contacts {
         let names = person.names.as_ref().and_then(|n| n.first());
-        let suffix = names.and_then(|n| n.honorific_suffix.as_deref()).unwrap_or("");
+        let suffix = names
+            .and_then(|n| n.honorific_suffix.as_deref())
+            .unwrap_or("");
         let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
 
         // Only act on numeric suffixes with no family name
@@ -4190,25 +5623,41 @@ pub async fn cmd_move_suffix_to_family(dry_run: bool) -> Result<(), Box<dyn std:
             continue;
         }
 
-        println!("{} -> moving suffix \"{}\" to family name", format_person_line(person, None), suffix);
+        println!(
+            "{} -> moving suffix \"{}\" to family name",
+            format_person_line(person, None),
+            suffix
+        );
 
         if !dry_run {
             let resource_name = get_resource_name(person)?;
             let mut updated = person.clone();
             if let Some(ref mut names) = updated.names
-                && let Some(first) = names.first_mut() {
-                    first.family_name = first.honorific_suffix.take();
-                    let g = first.given_name.as_deref().unwrap_or("");
-                    let f = first.family_name.as_deref().unwrap_or("");
-                    let combined = [g, f].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
-                    first.unstructured_name = if combined.is_empty() { None } else { Some(combined) };
-                }
+                && let Some(first) = names.first_mut()
+            {
+                first.family_name = first.honorific_suffix.take();
+                let g = first.given_name.as_deref().unwrap_or("");
+                let f = first.family_name.as_deref().unwrap_or("");
+                let combined = [g, f]
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                first.unstructured_name = if combined.is_empty() {
+                    None
+                } else {
+                    Some(combined)
+                };
+            }
             retry_api(|| {
-                let r = hub.people()
+                let r = hub
+                    .people()
                     .update_contact(updated.clone(), resource_name)
                     .update_person_fields(FieldMask::new::<&str>(&["names"]));
                 async { r.doit().await }
-            }).await?;
+            })
+            .await?;
             tokio::time::sleep(MUTATE_DELAY).await;
         }
         total += 1;
@@ -4224,7 +5673,9 @@ pub async fn cmd_move_suffix_to_family(dry_run: bool) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_compact_suffixes_for_contacts(
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations"]).await?;
 
@@ -4233,7 +5684,11 @@ pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<
         std::collections::HashMap::new();
     for person in &contacts {
         let base = person_base_name(person);
-        let key = if base.is_empty() { person_name(person) } else { base };
+        let key = if base.is_empty() {
+            person_name(person)
+        } else {
+            base
+        };
         if !key.is_empty() {
             base_groups.entry(key).or_default().push(person);
         }
@@ -4253,7 +5708,9 @@ pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<
         let suffix_contacts: Vec<(&google_people1::api::Person, Option<u32>)> = group
             .iter()
             .map(|p| {
-                let suffix = p.names.as_ref()
+                let suffix = p
+                    .names
+                    .as_ref()
                     .and_then(|names| names.first())
                     .and_then(|n| n.honorific_suffix.as_deref())
                     .and_then(|s| s.parse::<u32>().ok());
@@ -4266,7 +5723,8 @@ pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<
         let target: std::collections::BTreeSet<u32> = (1..=n).collect();
 
         // Current valid suffixes (>= 1, <= N, no duplicates counted)
-        let mut suffix_counts: std::collections::HashMap<Option<u32>, usize> = std::collections::HashMap::new();
+        let mut suffix_counts: std::collections::HashMap<Option<u32>, usize> =
+            std::collections::HashMap::new();
         for (_, s) in &suffix_contacts {
             *suffix_counts.entry(*s).or_default() += 1;
         }
@@ -4323,7 +5781,12 @@ pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<
                 Some(s) => s.to_string(),
                 None => "none".to_string(),
             };
-            println!("  {} -> suffix \"{}\" (was \"{}\")", format_person_line(person, None), hole, old_str);
+            println!(
+                "  {} -> suffix \"{}\" (was \"{}\")",
+                format_person_line(person, None),
+                hole,
+                old_str
+            );
 
             if !dry_run {
                 let resource_name = get_resource_name(person)?;
@@ -4340,11 +5803,13 @@ pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), Box<
                     }
                 }
                 retry_api(|| {
-                    let r = hub.people()
+                    let r = hub
+                        .people()
                         .update_contact(updated.clone(), resource_name)
                         .update_person_fields(FieldMask::new::<&str>(&["names"]));
                     async { r.doit().await }
-                }).await?;
+                })
+                .await?;
                 tokio::time::sleep(MUTATE_DELAY).await;
             }
             total_changes += 1;
