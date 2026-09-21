@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/veltzer/rscontacts"
 
 [dependencies]
-google-people1 = "6"
+google-people1 = "7"
 yup-oauth2 = "11"
 hyper = "1"
 hyper-rustls = "0.27"

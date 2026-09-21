@@ -413,12 +413,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
-name = "either"
-version = "1.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
-
-[[package]]
 name = "endian-type"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -614,9 +608,9 @@ dependencies = [
 
 [[package]]
 name = "google-apis-common"
-version = "7.0.0"
+version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7530ee92a7e9247c3294ae1b84ea98474dbc27563c49a14d3938e816499bf38f"
+checksum = "020dd415ee200770d835d01674084400a4d11e6c108ae941f660e8264f49d4ca"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -624,7 +618,6 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "itertools",
  "mime",
  "percent-encoding",
  "serde",
@@ -632,14 +625,14 @@ dependencies = [
  "serde_with",
  "tokio",
  "url",
- "yup-oauth2",
+ "yup-oauth2 12.1.2",
 ]
 
 [[package]]
 name = "google-people1"
-version = "6.0.0+20240625"
+version = "7.0.0+20251221"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c3ad7f1acd98b74a7c66633e077aff31e7484e96b2f1d8870f79904720c731b"
+checksum = "374268325a4f7ddab3c41a88f4ca3cde839bc825b37623a0f245bb7dcf3c96bf"
 dependencies = [
  "chrono",
  "google-apis-common",
@@ -652,7 +645,7 @@ dependencies = [
  "serde_with",
  "tokio",
  "url",
- "yup-oauth2",
+ "yup-oauth2 12.1.2",
 ]
 
 [[package]]
@@ -1010,15 +1003,6 @@ name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
-
-[[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
 
 [[package]]
 name = "itoa"
@@ -1425,7 +1409,7 @@ dependencies = [
  "tokio",
  "toml",
  "toml_edit",
- "yup-oauth2",
+ "yup-oauth2 11.0.0",
 ]
 
 [[package]]
@@ -2302,6 +2286,31 @@ dependencies = [
  "seahash",
  "serde",
  "serde_json",
+ "time",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "yup-oauth2"
+version = "12.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef19a12dfb29fe39f78e1547e1be49717b84aef8762a4001359ed4f94d3accc1"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "log",
+ "percent-encoding",
+ "rustls",
+ "seahash",
+ "serde",
+ "serde_json",
+ "thiserror",
  "time",
  "tokio",
  "url",
