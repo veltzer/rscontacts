@@ -632,7 +632,7 @@ dependencies = [
  "serde_with",
  "tokio",
  "url",
- "yup-oauth2",
+ "yup-oauth2 11.0.0",
 ]
 
 [[package]]
@@ -652,7 +652,7 @@ dependencies = [
  "serde_with",
  "tokio",
  "url",
- "yup-oauth2",
+ "yup-oauth2 11.0.0",
 ]
 
 [[package]]
@@ -1425,7 +1425,7 @@ dependencies = [
  "tokio",
  "toml",
  "toml_edit",
- "yup-oauth2",
+ "yup-oauth2 12.1.2",
 ]
 
 [[package]]
@@ -2302,6 +2302,31 @@ dependencies = [
  "seahash",
  "serde",
  "serde_json",
+ "time",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "yup-oauth2"
+version = "12.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef19a12dfb29fe39f78e1547e1be49717b84aef8762a4001359ed4f94d3accc1"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "log",
+ "percent-encoding",
+ "rustls",
+ "seahash",
+ "serde",
+ "serde_json",
+ "thiserror",
  "time",
  "tokio",
  "url",

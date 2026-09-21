@@ -9,7 +9,7 @@ repository = "https://github.com/veltzer/rscontacts"
 
 [dependencies]
 google-people1 = "6"
-yup-oauth2 = "11"
+yup-oauth2 = "12"
 hyper = "1"
 hyper-rustls = "0.27"
 hyper-util = { version = "0.1", features = ["client-legacy", "http2"] }
