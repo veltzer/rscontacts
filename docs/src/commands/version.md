@@ -10,7 +10,7 @@ rscontacts version
 
 ## Output
 
-```
+```text
 rscontacts 0.1.0 by Mark Veltzer <mark.veltzer@gmail.com>
 GIT_DESCRIBE: v0.1.0
 GIT_SHA: abc1234

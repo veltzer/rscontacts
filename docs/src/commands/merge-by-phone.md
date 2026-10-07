@@ -24,7 +24,7 @@ Without `--fix`, displays each group showing:
 
 With `--fix`, for each group of N contacts you are prompted with:
 
-```
+```text
 [d1]elete [e1]dit [d2]elete [e2]dit ... [m]erge / [s]kip
 ```
 

@@ -12,7 +12,7 @@ rscontacts show-phone-labels
 
 Lists each unique label alphabetically:
 
-```
+```text
 home
 mobile
 work

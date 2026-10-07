@@ -23,20 +23,20 @@ rscontacts list --emails --labels
 
 Default (name and first phone number):
 
-```
+```text
 Mark Veltzer | +972-505665636
 John Doe
 ```
 
 With `--emails`:
 
-```
+```text
 Mark Veltzer | mark@example.com | +972-505665636
 ```
 
 With `--labels`:
 
-```
+```text
 Mark Veltzer | +972-505665636 | [Friends, Work]
 John Doe | +972-501234567 | [Family]
 ```

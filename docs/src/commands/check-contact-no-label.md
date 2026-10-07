@@ -14,7 +14,7 @@ rscontacts check-contact-no-label --fix --dry-run
 
 With `--fix`, shows full contact details (name, phones, emails, organization, etc.) and prompts for each unlabeled contact:
 
-```
+```text
 [l]abel / [d]elete / [s]kip:
 ```
 

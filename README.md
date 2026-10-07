@@ -16,7 +16,7 @@ Requires Rust edition 2024.
 
 1. **Create a Google Cloud project** with the People API enabled.
 2. **Download OAuth2 credentials** (Desktop app type) and save as:
-   ```
+   ```text
    ~/.config/rscontacts/credentials.json
    ```
 3. **Authenticate:**
@@ -24,7 +24,6 @@ Requires Rust edition 2024.
    rscontacts auth
    ```
    This opens a browser for OAuth2 consent. Use `--no-browser` to print the URL instead.
-
 4. **Initialize config** (optional):
    ```bash
    rscontacts init-config

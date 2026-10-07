@@ -2,7 +2,7 @@
 
 rscontacts uses an optional TOML configuration file located at:
 
-```
+```text
 ~/.config/rscontacts/config.toml
 ```
 

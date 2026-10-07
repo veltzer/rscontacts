@@ -12,7 +12,7 @@ rscontacts check-phone-label-english --fix --dry-run
 
 ## Output
 
-```
+```text
 Alex | +972542518077 [Мобильный]
 Oren | +972528478018 [נייד]
 ```
@@ -21,6 +21,6 @@ Oren | +972528478018 [נייד]
 
 With `--fix`, prompts with predefined English label choices:
 
-```
+```text
 Label for Alex's phone? [m]obile/[h]ome/[w]ork/m[a]in/[o]ther/[s]kip:
 ```
