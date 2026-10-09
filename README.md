@@ -138,7 +138,7 @@ names = ["Alice", "Bob", "Charlie"]
 
 ```bash
 cargo build                    # Debug build
-cargo build --release          # Release build (stripped, LTO, single codegen unit)
+cargo build --profile dist     # Shipped build (stripped, fat LTO, single codegen unit)
 cargo clippy                   # Lint
 cargo nextest run              # Run tests
 ```
