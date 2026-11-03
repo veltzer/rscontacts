@@ -915,7 +915,9 @@ impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for NoInteraction
         _url: &'a str,
         _need_code: bool,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
-        Box::pin(async move { Err("Not authenticated. Run 'rscontacts auth' first.".to_string()) })
+        Box::pin(async move {
+            Err("cached token is expired or revoked and cannot be refreshed without a browser. Run 'rscontacts auth --force'.".to_string())
+        })
     }
 }
 
@@ -950,22 +952,37 @@ pub fn build_connector() -> Result<
         .build())
 }
 
+/// Build an authenticator that never starts a browser sign-in.
+///
+/// A valid cached access token is used as is and an expired one is refreshed;
+/// when that refresh fails, yup-oauth2 falls back to the installed flow, and
+/// [`NoInteractionDelegate`] refuses it so the caller gets an error.
+///
+/// The return method must be `Interactive`: with `HTTPRedirect` yup-oauth2
+/// ignores the delegate's refusal and waits forever for a browser callback,
+/// so every command hung once the refresh token expired.
+pub async fn noninteractive_authenticator(
+    credentials: &std::path::Path,
+    cache: &std::path::Path,
+) -> Result<yup_oauth2::authenticator::DefaultAuthenticator, Box<dyn std::error::Error>> {
+    let secret = yup_oauth2::read_application_secret(credentials).await?;
+    Ok(yup_oauth2::InstalledFlowAuthenticator::builder(
+        secret,
+        yup_oauth2::InstalledFlowReturnMethod::Interactive,
+    )
+    .persist_tokens_to_disk(cache)
+    .flow_delegate(Box::new(NoInteractionDelegate))
+    .build()
+    .await?)
+}
+
 pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
     let cache_path = token_cache_path();
     if !cache_path.exists() {
         return Err("not authenticated. Run 'rscontacts auth' first.".into());
     }
 
-    let secret = yup_oauth2::read_application_secret(credentials_path()?).await?;
-
-    let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
-        secret,
-        yup_oauth2::InstalledFlowReturnMethod::HTTPRedirect,
-    )
-    .persist_tokens_to_disk(cache_path)
-    .flow_delegate(Box::new(NoInteractionDelegate))
-    .build()
-    .await?;
+    let auth = noninteractive_authenticator(&credentials_path()?, &cache_path).await?;
 
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
         .pool_idle_timeout(Duration::from_secs(30))

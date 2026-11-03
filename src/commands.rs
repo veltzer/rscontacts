@@ -304,18 +304,7 @@ pub async fn cmd_auth_check_token() -> Result<(), Box<dyn std::error::Error>> {
         );
         std::process::exit(1);
     }
-    let secret = yup_oauth2::read_application_secret(credentials_path()?).await?;
-    let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
-        secret,
-        // Interactive, not HTTPRedirect: the redirect flow ignores the
-        // delegate's refusal and waits forever for a browser callback, while
-        // the interactive flow propagates it as an error.
-        yup_oauth2::InstalledFlowReturnMethod::Interactive,
-    )
-    .persist_tokens_to_disk(cache_path)
-    .flow_delegate(Box::new(NoInteractionDelegate))
-    .build()
-    .await?;
+    let auth = noninteractive_authenticator(&credentials_path()?, &cache_path).await?;
     let scopes = &["https://www.googleapis.com/auth/contacts"];
     match auth.token(scopes).await {
         Ok(token) => {
