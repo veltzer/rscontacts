@@ -37,7 +37,10 @@ pub enum Commands {
         country: String,
     },
     /// Authenticate with Google (opens browser for OAuth2 consent)
+    #[command(args_conflicts_with_subcommands = true)]
     Auth {
+        #[command(subcommand)]
+        action: Option<AuthAction>,
         /// Don't open browser automatically; print URL instead
         #[arg(long)]
         no_browser: bool,
@@ -431,6 +434,12 @@ pub enum Commands {
     TestConnect,
     /// Print version information
     Version,
+}
+
+#[derive(Subcommand)]
+pub enum AuthAction {
+    /// Check whether the cached token is valid, refreshing it if expired (no browser)
+    CheckToken,
 }
 
 pub fn generate_completions(shell: clap_complete::Shell) {

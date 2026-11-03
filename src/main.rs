@@ -1,5 +1,5 @@
 use clap::Parser;
-use rscontacts::{Cli, Commands, commands};
+use rscontacts::{AuthAction, Cli, Commands, commands};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,7 +18,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             verbose,
             ref country,
         } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
-        Commands::Auth { no_browser, force } => commands::cmd_auth(no_browser, force).await?,
+        Commands::Auth {
+            action: Some(AuthAction::CheckToken),
+            ..
+        } => commands::cmd_auth_check_token().await?,
+        Commands::Auth {
+            action: None,
+            no_browser,
+            force,
+        } => commands::cmd_auth(no_browser, force).await?,
         Commands::CheckContactCompanyExists { fix, dry_run } => {
             commands::cmd_check_contact_company_exists(fix, dry_run).await?
         }

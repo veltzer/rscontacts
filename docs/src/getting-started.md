@@ -18,6 +18,14 @@ rscontacts auth --no-browser
 
 This prints the auth URL instead of opening a browser.
 
+To check whether the cached token still works, without opening a browser
+(refreshes the access token if it has expired; exits 1 if the refresh token
+is missing, expired or revoked):
+
+```bash
+rscontacts auth check-token
+```
+
 ## Basic Usage
 
 List all contacts:

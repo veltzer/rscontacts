@@ -1,5 +1,5 @@
 use clap::Parser;
-use rscontacts::{Cli, Commands};
+use rscontacts::{AuthAction, Cli, Commands};
 
 #[test]
 fn test_cli_auth_subcommand() {
@@ -7,10 +7,28 @@ fn test_cli_auth_subcommand() {
     assert!(matches!(
         cli.command,
         Commands::Auth {
+            action: None,
             no_browser: false,
             force: false
         }
     ));
+}
+
+#[test]
+fn test_cli_auth_check_token() {
+    let cli = Cli::parse_from(["rscontacts", "auth", "check-token"]);
+    assert!(matches!(
+        cli.command,
+        Commands::Auth {
+            action: Some(AuthAction::CheckToken),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn test_cli_auth_check_token_rejects_login_flags() {
+    assert!(Cli::try_parse_from(["rscontacts", "auth", "--force", "check-token"]).is_err());
 }
 
 #[test]
@@ -19,6 +37,7 @@ fn test_cli_auth_no_browser() {
     assert!(matches!(
         cli.command,
         Commands::Auth {
+            action: None,
             no_browser: true,
             force: false
         }
@@ -31,6 +50,7 @@ fn test_cli_auth_force() {
     assert!(matches!(
         cli.command,
         Commands::Auth {
+            action: None,
             no_browser: false,
             force: true
         }
