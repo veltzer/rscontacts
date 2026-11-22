@@ -17,6 +17,7 @@ Scans all contacts and identifies groups of contacts that share one or more emai
 Contacts are grouped using connected components: if contact A shares an email with contact B, and contact B shares a different email with contact C, all three are in the same merge group.
 
 Without `--fix`, displays each group showing:
+
 - All contacts in the group with full details
 - Which email addresses are shared
 

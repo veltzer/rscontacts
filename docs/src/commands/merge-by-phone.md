@@ -17,6 +17,7 @@ Scans all contacts and identifies groups of contacts that share one or more phon
 Contacts are grouped using connected components: if contact A shares a phone with contact B, and contact B shares a different phone with contact C, all three are in the same merge group.
 
 Without `--fix`, displays each group showing:
+
 - All contacts in the group with full details
 - Which phone numbers are shared
 
