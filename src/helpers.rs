@@ -1,5 +1,6 @@
 use google_people1::api::ListConnectionsResponse;
 use google_people1::{FieldMask, PeopleService};
+use std::fmt::Write as _;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -30,6 +31,10 @@ fn is_transient_status(status: u16) -> bool {
 /// The closure must rebuild the request each time since `.doit()` consumes the builder.
 /// The error is boxed because `google_people1::Error` is large (>128 bytes)
 /// and would otherwise bloat every `Result` this returns.
+///
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn retry_api<F, Fut, T>(mut make_request: F) -> Result<T, Box<google_people1::Error>>
 where
     F: FnMut() -> Fut,
@@ -141,10 +146,14 @@ pub struct NameRegexpConfig {
     pub allow: Option<String>,
 }
 
+#[must_use]
 pub fn config_path() -> PathBuf {
     config_dir().join("config.toml")
 }
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     let path = config_path();
     if !path.exists() {
@@ -157,6 +166,10 @@ pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     Ok(config)
 }
 
+#[must_use]
+/// # Panics
+///
+/// Panics if the home directory cannot be determined.
 pub fn config_dir() -> PathBuf {
     let mut dir = dirs::home_dir().expect("Could not determine home directory");
     dir.push(".config");
@@ -165,6 +178,9 @@ pub fn config_dir() -> PathBuf {
     dir
 }
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub fn credentials_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let path = config_dir().join("credentials.json");
     if !path.exists() {
@@ -176,10 +192,12 @@ pub fn credentials_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(path)
 }
 
+#[must_use]
 pub fn token_cache_path() -> PathBuf {
     config_dir().join("token_cache.json")
 }
 
+#[must_use]
 pub fn is_valid_email(email: &str) -> bool {
     let trimmed = email.trim();
     if trimmed.is_empty() {
@@ -201,6 +219,7 @@ pub fn is_valid_email(email: &str) -> bool {
     true
 }
 
+#[must_use]
 pub fn get_phone_label(pn: &google_people1::api::PhoneNumber) -> &str {
     pn.formatted_type
         .as_deref()
@@ -208,6 +227,7 @@ pub fn get_phone_label(pn: &google_people1::api::PhoneNumber) -> &str {
         .unwrap_or("")
 }
 
+#[must_use]
 pub fn get_email_label(e: &google_people1::api::EmailAddress) -> &str {
     e.formatted_type
         .as_deref()
@@ -215,6 +235,7 @@ pub fn get_email_label(e: &google_people1::api::EmailAddress) -> &str {
         .unwrap_or("")
 }
 
+#[must_use]
 pub fn find_duplicates<'a>(values: &[&'a str]) -> Vec<&'a str> {
     let mut seen = std::collections::HashSet::new();
     values
@@ -224,29 +245,33 @@ pub fn find_duplicates<'a>(values: &[&'a str]) -> Vec<&'a str> {
         .collect()
 }
 
+#[must_use]
 pub fn phone_has_type(pn: &google_people1::api::PhoneNumber) -> bool {
     !pn.type_.as_deref().unwrap_or("").is_empty()
         || !pn.formatted_type.as_deref().unwrap_or("").is_empty()
 }
 
+#[must_use]
 pub fn is_fixable_phone(phone: &str) -> bool {
     let trimmed = phone.trim();
-    let digits: Vec<char> = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
+    let digits: Vec<char> = trimmed.chars().filter(char::is_ascii_digit).collect();
     !trimmed.is_empty()
         && !trimmed.contains(|c: char| c.is_alphabetic())
         && !trimmed.starts_with('*')
         && digits.len() > 3
 }
 
+#[must_use]
 pub fn has_country_code(phone: &str) -> bool {
     let trimmed = phone.trim();
     trimmed.starts_with('+') || trimmed.starts_with("00")
 }
 
+#[must_use]
 pub fn add_country_code(phone: &str, country: &str) -> String {
     let trimmed = phone.trim();
     let without_leading_zero = trimmed.strip_prefix('0').unwrap_or(trimmed);
-    format!("+{}{}", country, without_leading_zero)
+    format!("+{country}{without_leading_zero}")
 }
 
 pub fn is_correct_phone_format(phone: &str) -> bool {
@@ -518,7 +543,7 @@ pub fn extract_country_code(phone: &str) -> Option<&'static str> {
     if !trimmed.starts_with('+') && !trimmed.starts_with("00") {
         return None;
     }
-    let digits: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
+    let digits: String = trimmed.chars().filter(char::is_ascii_digit).collect();
     let pure_digits = if trimmed.starts_with("00") {
         &digits[2..]
     } else {
@@ -549,10 +574,11 @@ pub fn detect_country_code(digits: &str) -> Option<usize> {
     None
 }
 
+#[must_use]
 pub fn fix_phone_format(phone: &str, country: &str) -> String {
     let trimmed = phone.trim();
     let has_plus = trimmed.starts_with('+');
-    let digits: String = trimmed.chars().filter(|c| c.is_ascii_digit()).collect();
+    let digits: String = trimmed.chars().filter(char::is_ascii_digit).collect();
 
     if has_plus || trimmed.starts_with("00") {
         // Already has country code — extract it
@@ -565,12 +591,12 @@ pub fn fix_phone_format(phone: &str, country: &str) -> String {
             format!("+{}-{}", &pure_digits[..cc_len], &pure_digits[cc_len..])
         } else {
             // Unknown country code, use default
-            format!("+{}-{}", country, pure_digits)
+            format!("+{country}-{pure_digits}")
         }
     } else {
         // No country code — add it, strip leading 0
         let without_zero = digits.strip_prefix('0').unwrap_or(&digits);
-        format!("+{}-{}", country, without_zero)
+        format!("+{country}-{without_zero}")
     }
 }
 
@@ -579,6 +605,9 @@ pub fn fix_phone_format(phone: &str, country: &str) -> String {
 pub type HubType =
     PeopleService<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>;
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn fetch_all_contacts(
     hub: &HubType,
     fields: &[&str],
@@ -614,6 +643,7 @@ pub async fn fetch_all_contacts(
     Ok(all)
 }
 
+#[must_use]
 pub fn person_name(person: &google_people1::api::Person) -> String {
     let names = person.names.as_ref().and_then(|n| n.first());
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
@@ -641,13 +671,14 @@ pub fn person_name(person: &google_people1::api::Person) -> String {
         if name_parts.is_empty() {
             name_parts.push(company.to_string());
         } else {
-            name_parts.push(format!("({})", company));
+            name_parts.push(format!("({company})"));
         }
     }
     name_parts.join(" ")
 }
 
 /// Returns given + family name only (no suffix, no company).
+#[must_use]
 pub fn person_base_name(person: &google_people1::api::Person) -> String {
     let names = person.names.as_ref().and_then(|n| n.first());
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
@@ -662,13 +693,8 @@ pub fn person_base_name(person: &google_people1::api::Person) -> String {
     parts.join(" ")
 }
 
-/// Format a person as a pipe-delimited line showing all non-empty fields.
-/// This is the canonical way to display a contact — used by `list` and all checks.
-/// `group_names` is optional; when provided, labels are included.
-pub fn format_person_line(
-    person: &google_people1::api::Person,
-    group_names: Option<&std::collections::HashMap<String, String>>,
-) -> String {
+/// The name and organization fields of a person, as `key: value` parts.
+fn name_and_org_parts(person: &google_people1::api::Person) -> Vec<String> {
     let names = person.names.as_ref().and_then(|n| n.first());
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
     let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
@@ -700,34 +726,46 @@ pub fn format_person_line(
 
     let mut parts = Vec::new();
     if !prefix_name.is_empty() {
-        parts.push(format!("prefix: {}", prefix_name));
+        parts.push(format!("prefix: {prefix_name}"));
     }
     if !given.is_empty() {
-        parts.push(format!("given: {}", given));
+        parts.push(format!("given: {given}"));
     }
     if !middle.is_empty() {
-        parts.push(format!("middle: {}", middle));
+        parts.push(format!("middle: {middle}"));
     }
     if !family.is_empty() {
-        parts.push(format!("family: {}", family));
+        parts.push(format!("family: {family}"));
     }
     if !suffix.is_empty() {
-        parts.push(format!("suffix: {}", suffix));
+        parts.push(format!("suffix: {suffix}"));
     }
     if !company.is_empty() {
-        parts.push(format!("company: {}", company));
+        parts.push(format!("company: {company}"));
     }
     if !title.is_empty() {
-        parts.push(format!("title: {}", title));
+        parts.push(format!("title: {title}"));
     }
     if !department.is_empty() {
-        parts.push(format!("dept: {}", department));
+        parts.push(format!("dept: {department}"));
     }
+    parts
+}
+
+/// Format a person as a pipe-delimited line showing all non-empty fields.
+/// This is the canonical way to display a contact — used by `list` and all checks.
+/// `group_names` is optional; when provided, labels are included.
+#[must_use]
+pub fn format_person_line<S: std::hash::BuildHasher>(
+    person: &google_people1::api::Person,
+    group_names: Option<&std::collections::HashMap<String, String, S>>,
+) -> String {
+    let mut parts = name_and_org_parts(person);
 
     if let Some(nicknames) = &person.nicknames {
         for n in nicknames {
             if let Some(val) = &n.value {
-                parts.push(format!("nickname: {}", val));
+                parts.push(format!("nickname: {val}"));
             }
         }
     }
@@ -743,9 +781,9 @@ pub fn format_person_line(
                     .or(e.type_.as_deref())
                     .unwrap_or("");
                 if t.is_empty() {
-                    parts.push(format!("email: {}", val));
+                    parts.push(format!("email: {val}"));
                 } else {
-                    parts.push(format!("email: {} [{}]", val, t));
+                    parts.push(format!("email: {val} [{t}]"));
                 }
             }
         }
@@ -762,9 +800,9 @@ pub fn format_person_line(
                     .or(p.type_.as_deref())
                     .unwrap_or("");
                 if t.is_empty() {
-                    parts.push(format!("phone: {}", val));
+                    parts.push(format!("phone: {val}"));
                 } else {
-                    parts.push(format!("phone: {} [{}]", val, t));
+                    parts.push(format!("phone: {val} [{t}]"));
                 }
             }
         }
@@ -784,6 +822,7 @@ pub fn format_person_line(
     }
 }
 
+#[must_use]
 pub fn person_display_name(person: &google_people1::api::Person) -> String {
     let name = person_name(person);
     if name.is_empty() {
@@ -793,6 +832,9 @@ pub fn person_display_name(person: &google_people1::api::Person) -> String {
     }
 }
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub fn get_resource_name(person: &google_people1::api::Person) -> Result<&str, String> {
     person.resource_name.as_deref().ok_or_else(|| {
         format!(
@@ -802,6 +844,7 @@ pub fn get_resource_name(person: &google_people1::api::Person) -> Result<&str, S
     })
 }
 
+#[must_use]
 pub fn build_group_name_map(
     groups: &[google_people1::api::ContactGroup],
 ) -> std::collections::HashMap<String, String> {
@@ -815,9 +858,10 @@ pub fn build_group_name_map(
         .collect()
 }
 
-pub fn person_labels(
+#[must_use]
+pub fn person_labels<S: std::hash::BuildHasher>(
     person: &google_people1::api::Person,
-    group_names: &std::collections::HashMap<String, String>,
+    group_names: &std::collections::HashMap<String, String, S>,
 ) -> Vec<String> {
     person
         .memberships
@@ -841,6 +885,9 @@ pub fn person_labels(
         .unwrap_or_default()
 }
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn update_phone_numbers<F>(
     hub: &HubType,
     person: &google_people1::api::Person,
@@ -874,6 +921,9 @@ where
     Ok(())
 }
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn fetch_all_contact_groups(
     hub: &HubType,
 ) -> Result<Vec<google_people1::api::ContactGroup>, Box<dyn std::error::Error>> {
@@ -931,16 +981,16 @@ impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for BrowserFlowDe
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
         Box::pin(async move {
             if let Err(e) = open::that(url) {
-                eprintln!(
-                    "Failed to open browser: {}. Please open this URL manually:\n{}",
-                    e, url
-                );
+                eprintln!("Failed to open browser: {e}. Please open this URL manually:\n{url}");
             }
             Ok(String::new())
         })
     }
 }
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub fn build_connector() -> Result<
     hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>,
     Box<dyn std::error::Error>,
@@ -961,6 +1011,10 @@ pub fn build_connector() -> Result<
 /// The return method must be `Interactive`: with `HTTPRedirect` yup-oauth2
 /// ignores the delegate's refusal and waits forever for a browser callback,
 /// so every command hung once the refresh token expired.
+///
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn noninteractive_authenticator(
     credentials: &std::path::Path,
     cache: &std::path::Path,
@@ -976,6 +1030,9 @@ pub async fn noninteractive_authenticator(
     .await?)
 }
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
     let cache_path = token_cache_path();
     if !cache_path.exists() {
@@ -993,10 +1050,13 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
 
 // --- Prompt helpers ---
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub fn prompt_yes_no(message: &str) -> Result<bool, Box<dyn std::error::Error>> {
     use std::io::Write;
     loop {
-        eprint!("  {} [y/n] ", message);
+        eprint!("  {message} [y/n] ");
         std::io::stderr().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
@@ -1008,14 +1068,14 @@ pub fn prompt_yes_no(message: &str) -> Result<bool, Box<dyn std::error::Error>> 
     }
 }
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub fn prompt_phone_label_fix(name: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
     use std::io::Write;
     let options = PHONE_LABEL_OPTIONS;
     loop {
-        eprint!(
-            "  Label for {}'s phone? [m]obile/[h]ome/[w]ork/m[a]in/[o]ther/[s]kip: ",
-            name
-        );
+        eprint!("  Label for {name}'s phone? [m]obile/[h]ome/[w]ork/m[a]in/[o]ther/[s]kip: ");
         std::io::stderr().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
@@ -1031,10 +1091,13 @@ pub fn prompt_phone_label_fix(name: &str) -> Result<Option<String>, Box<dyn std:
     }
 }
 
+/// # Errors
+///
+/// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub fn prompt_rename_label(name: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
     use std::io::Write;
     loop {
-        eprint!("  New name for \"{}\" (or [s]kip): ", name);
+        eprint!("  New name for \"{name}\" (or [s]kip): ");
         std::io::stderr().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
@@ -1056,6 +1119,7 @@ pub fn prompt_rename_label(name: &str) -> Result<Option<String>, Box<dyn std::er
 
 // --- Display helpers ---
 
+#[must_use]
 pub fn is_starred(person: &google_people1::api::Person) -> bool {
     person.memberships.as_ref().is_some_and(|memberships| {
         memberships.iter().any(|m| {
@@ -1090,6 +1154,7 @@ pub const IGNORED_SYSTEM_GROUPS: &[&str] = &[
     "contactGroups/blocked",
 ];
 
+#[must_use]
 pub fn has_user_label(person: &google_people1::api::Person) -> bool {
     person.memberships.as_ref().is_some_and(|memberships| {
         memberships.iter().any(|m| {
@@ -1106,7 +1171,6 @@ fn google_phone_type_to_vcard(ptype: &str) -> &'static str {
         "mobile" => "CELL",
         "home" => "HOME",
         "work" => "WORK",
-        "main" => "VOICE",
         "homefax" | "home fax" => "HOME,FAX",
         "workfax" | "work fax" => "WORK,FAX",
         _ => "VOICE",
@@ -1129,6 +1193,7 @@ fn google_address_type_to_vcard(atype: &str) -> &'static str {
     }
 }
 
+#[must_use]
 pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &str) -> String {
     let names = person.names.as_ref().and_then(|n| n.first());
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
@@ -1144,23 +1209,23 @@ pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &st
     let mut vcard = String::new();
     vcard.push_str("BEGIN:VCARD\r\n");
     vcard.push_str("VERSION:3.0\r\n");
-    vcard.push_str(&format!("UID:{}\r\n", uid));
-    vcard.push_str(&format!("REV:{}\r\n", rev));
-    vcard.push_str(&format!("FN:{}\r\n", full));
+    let _ = write!(vcard, "UID:{uid}\r\n");
+    let _ = write!(vcard, "REV:{rev}\r\n");
+    let _ = write!(vcard, "FN:{full}\r\n");
     if !given.is_empty() || !family.is_empty() {
-        vcard.push_str(&format!("N:{};{};;;\r\n", family, given));
+        let _ = write!(vcard, "N:{family};{given};;;\r\n");
     }
     if !nickname.is_empty() {
-        vcard.push_str(&format!("NICKNAME:{}\r\n", nickname));
+        let _ = write!(vcard, "NICKNAME:{nickname}\r\n");
     }
 
     // Organization
     if let Some(org) = person.organizations.as_ref().and_then(|o| o.first()) {
         if let Some(ref name) = org.name {
-            vcard.push_str(&format!("ORG:{}\r\n", name));
+            let _ = write!(vcard, "ORG:{name}\r\n");
         }
         if let Some(ref title) = org.title {
-            vcard.push_str(&format!("TITLE:{}\r\n", title));
+            let _ = write!(vcard, "TITLE:{title}\r\n");
         }
     }
 
@@ -1174,7 +1239,7 @@ pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &st
                     .or(phone.formatted_type.as_deref())
                     .unwrap_or("voice");
                 let vcard_type = google_phone_type_to_vcard(ptype);
-                vcard.push_str(&format!("TEL;TYPE={}:{}\r\n", vcard_type, value));
+                let _ = write!(vcard, "TEL;TYPE={vcard_type}:{value}\r\n");
             }
         }
     }
@@ -1189,7 +1254,7 @@ pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &st
                     .or(email.formatted_type.as_deref())
                     .unwrap_or("other");
                 let vcard_type = google_email_type_to_vcard(etype);
-                vcard.push_str(&format!("EMAIL;TYPE={}:{}\r\n", vcard_type, value));
+                let _ = write!(vcard, "EMAIL;TYPE={vcard_type}:{value}\r\n");
             }
         }
     }
@@ -1204,10 +1269,10 @@ pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &st
             let country = addr.country.as_deref().unwrap_or("");
             let atype = addr.type_.as_deref().unwrap_or("other");
             let vcard_type = google_address_type_to_vcard(atype);
-            vcard.push_str(&format!(
-                "ADR;TYPE={}:;;{};{};{};{};{}\r\n",
-                vcard_type, street, city, region, postal, country
-            ));
+            let _ = write!(
+                vcard,
+                "ADR;TYPE={vcard_type}:;;{street};{city};{region};{postal};{country}\r\n"
+            );
         }
     }
 
@@ -1217,7 +1282,7 @@ pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &st
         && let Some(ref date) = bday.date
         && let (Some(y), Some(m), Some(d)) = (date.year, date.month, date.day)
     {
-        vcard.push_str(&format!("BDAY:{:04}-{:02}-{:02}\r\n", y, m, d));
+        let _ = write!(vcard, "BDAY:{y:04}-{m:02}-{d:02}\r\n");
     }
 
     vcard.push_str("END:VCARD\r\n");

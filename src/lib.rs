@@ -36,7 +36,7 @@ pub enum Commands {
         #[arg(long, default_value = "972")]
         country: String,
     },
-    /// Authenticate with Google (opens browser for OAuth2 consent)
+    /// Authenticate with Google (opens browser for `OAuth2` consent)
     #[command(args_conflicts_with_subcommands = true)]
     Auth {
         #[command(subcommand)]

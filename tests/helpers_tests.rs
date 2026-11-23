@@ -294,7 +294,7 @@ fn test_person_to_vcard_with_nickname() {
 #[test]
 fn test_config_parse_empty() {
     let config: Config = toml::from_str("").unwrap();
-    assert!(config.check_all.skip.is_empty());
+    assert_eq!(config.check_all.skip, [] as [std::string::String; 0]);
     assert!(config.check_contact_given_name_regexp.allow.is_none());
 }
 
@@ -314,10 +314,10 @@ skip = ["check-phone-format", "check-contact-email"]
 #[test]
 fn test_config_parse_name_regexp() {
     let config: Config = toml::from_str(
-        r#"
+        r"
 [check-contact-given-name-regexp]
 allow = '^[A-Z][a-z]*$'
-"#,
+",
     )
     .unwrap();
     assert_eq!(
@@ -380,8 +380,12 @@ skip = ["check-phone-format", "check-contact-email"]
 "#,
     )
     .unwrap();
-    let skip: std::collections::HashSet<&str> =
-        config.check_all.skip.iter().map(|s| s.as_str()).collect();
+    let skip: std::collections::HashSet<&str> = config
+        .check_all
+        .skip
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     assert!(skip.contains("check-phone-format"));
     assert!(skip.contains("check-contact-email"));
     assert!(!skip.contains("check-phone-countrycode"));
@@ -391,14 +395,18 @@ skip = ["check-phone-format", "check-contact-email"]
 #[test]
 fn test_config_skip_empty_means_all_run() {
     let config: Config = toml::from_str(
-        r#"
+        r"
 [check-all]
 skip = []
-"#,
+",
     )
     .unwrap();
-    let skip: std::collections::HashSet<&str> =
-        config.check_all.skip.iter().map(|s| s.as_str()).collect();
+    let skip: std::collections::HashSet<&str> = config
+        .check_all
+        .skip
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     assert!(!skip.contains("check-phone-format"));
     assert!(!skip.contains("check-contact-given-name-known"));
 }
@@ -406,13 +414,13 @@ skip = []
 #[test]
 fn test_config_default_skip_is_empty() {
     let config: Config = toml::from_str("").unwrap();
-    assert!(config.check_all.skip.is_empty());
+    assert_eq!(config.check_all.skip, [] as [std::string::String; 0]);
 }
 
 #[test]
 fn test_config_multiple_regexp_sections() {
     let config: Config = toml::from_str(
-        r#"
+        r"
 [check-contact-given-name-regexp]
 allow = '^[A-Z]'
 
@@ -424,7 +432,7 @@ allow = '^[1-9]\d*$'
 
 [check-contact-label-regexp]
 allow = '^(type|company):.*$'
-"#,
+",
     )
     .unwrap();
     assert_eq!(

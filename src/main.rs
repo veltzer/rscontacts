@@ -1,86 +1,131 @@
 use clap::Parser;
 use rscontacts::{AuthAction, Cli, Commands, commands};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .expect("Failed to install default CryptoProvider");
+enum CommandGroup {
+    NameCheck,
+    TypePhoneMerge,
+    Other,
+}
 
-    let cli = Cli::parse();
-    rscontacts::helpers::set_transport_errors(cli.transport_errors);
+/// The exhaustive gate: every `Commands` variant is listed, so a new one fails to compile here.
+fn command_group(command: &Commands) -> CommandGroup {
+    match command {
+        Commands::CheckContactCompanyExists { .. }
+        | Commands::CheckContactCompanyKnown { .. }
+        | Commands::CheckContactDisplaynameDuplicate { .. }
+        | Commands::CheckContactNoDisplayname { .. }
+        | Commands::CheckContactEmail { .. }
+        | Commands::CheckContactEmailDuplicate { .. }
+        | Commands::CheckContactFamilyNameRegexp { .. }
+        | Commands::CheckContactGivenNameExists { .. }
+        | Commands::CheckContactGivenNameKnown { .. }
+        | Commands::CheckContactGivenNameRegexp { .. }
+        | Commands::CheckContactLabelNophone { .. }
+        | Commands::CheckContactLabelRegexp { .. }
+        | Commands::CheckContactNoGivenName { .. }
+        | Commands::CheckContactNoIdentity { .. }
+        | Commands::CheckContactNoLabel { .. }
+        | Commands::CheckContactNoMiddleName { .. }
+        | Commands::CheckContactNoNickname { .. }
+        | Commands::CheckContactSuffixRegexp { .. } => CommandGroup::NameCheck,
+        Commands::CheckContactTypeCompanyGivenName { .. }
+        | Commands::CheckContactTypeCompanyNoLabel { .. }
+        | Commands::CheckContactTypeCompanyNoCompany { .. }
+        | Commands::CheckContactType { .. }
+        | Commands::CheckPhoneCountryLabel { .. }
+        | Commands::CheckPhoneCountrycode { .. }
+        | Commands::CheckPhoneDuplicate { .. }
+        | Commands::CheckPhoneFormat { .. }
+        | Commands::CheckPhoneLabelEnglish { .. }
+        | Commands::CheckPhoneLabelMissing { .. }
+        | Commands::MergeByEmail { .. }
+        | Commands::MergeByPhone { .. }
+        | Commands::MoveFamilyToSuffix { .. }
+        | Commands::MoveSuffixToFamily { .. }
+        | Commands::CompactSuffixesForContacts { .. } => CommandGroup::TypePhoneMerge,
+        Commands::AllChecks { .. }
+        | Commands::Auth { .. }
+        | Commands::Complete { .. }
+        | Commands::EditContact { .. }
+        | Commands::ExportJson { .. }
+        | Commands::InitConfig { .. }
+        | Commands::List { .. }
+        | Commands::SyncGnomeContacts { .. }
+        | Commands::RemoveLabelFromAllContacts { .. }
+        | Commands::ReviewEmailLabel { .. }
+        | Commands::ReviewPhoneLabel { .. }
+        | Commands::ShowContact { .. }
+        | Commands::ShowContactLabels
+        | Commands::ShowEmailLabels
+        | Commands::ShowPhoneLabels
+        | Commands::TestConnect
+        | Commands::Version => CommandGroup::Other,
+    }
+}
 
-    match cli.command {
-        Commands::AllChecks {
-            fix,
-            dry_run,
-            stats,
-            verbose,
-            ref country,
-        } => commands::cmd_check_all(fix, dry_run, stats, verbose, country).await?,
-        Commands::Auth {
-            action: Some(AuthAction::CheckToken),
-            ..
-        } => commands::cmd_auth_check_token().await?,
-        Commands::Auth {
-            action: None,
-            no_browser,
-            force,
-        } => commands::cmd_auth(no_browser, force).await?,
+async fn run_name_checks(command: &Commands) -> Result<(), Box<dyn std::error::Error>> {
+    match *command {
         Commands::CheckContactCompanyExists { fix, dry_run } => {
-            commands::cmd_check_contact_company_exists(fix, dry_run).await?
+            commands::cmd_check_contact_company_exists(fix, dry_run).await?;
         }
         Commands::CheckContactCompanyKnown { fix, dry_run } => {
-            commands::cmd_check_contact_company_known(fix, dry_run).await?
+            commands::cmd_check_contact_company_known(fix, dry_run).await?;
         }
         Commands::CheckContactDisplaynameDuplicate { fix, dry_run } => {
-            commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?
+            commands::cmd_check_contact_displayname_duplicate(fix, dry_run).await?;
         }
         Commands::CheckContactNoDisplayname { fix, dry_run } => {
-            commands::cmd_check_contact_no_displayname(fix, dry_run).await?
+            commands::cmd_check_contact_no_displayname(fix, dry_run).await?;
         }
         Commands::CheckContactEmail { fix, dry_run } => {
-            commands::cmd_check_contact_email(fix, dry_run).await?
+            commands::cmd_check_contact_email(fix, dry_run).await?;
         }
         Commands::CheckContactEmailDuplicate { fix, dry_run } => {
-            commands::cmd_check_contact_email_duplicate(fix, dry_run).await?
+            commands::cmd_check_contact_email_duplicate(fix, dry_run).await?;
         }
         Commands::CheckContactFamilyNameRegexp { fix, dry_run } => {
-            commands::cmd_check_contact_family_name_regexp(fix, dry_run).await?
+            commands::cmd_check_contact_family_name_regexp(fix, dry_run).await?;
         }
         Commands::CheckContactGivenNameExists { fix, dry_run } => {
-            commands::cmd_check_contact_given_name_exists(fix, dry_run).await?
+            commands::cmd_check_contact_given_name_exists(fix, dry_run).await?;
         }
         Commands::CheckContactGivenNameKnown { fix, dry_run } => {
-            commands::cmd_check_contact_given_name_known(fix, dry_run).await?
+            commands::cmd_check_contact_given_name_known(fix, dry_run).await?;
         }
         Commands::CheckContactGivenNameRegexp { fix, dry_run } => {
-            commands::cmd_check_contact_given_name_regexp(fix, dry_run).await?
+            commands::cmd_check_contact_given_name_regexp(fix, dry_run).await?;
         }
         Commands::CheckContactLabelNophone { fix, dry_run } => {
-            commands::cmd_check_contact_label_nophone(fix, dry_run).await?
+            commands::cmd_check_contact_label_nophone(fix, dry_run).await?;
         }
         Commands::CheckContactLabelRegexp { fix, dry_run } => {
-            commands::cmd_check_contact_label_regexp(fix, dry_run).await?
+            commands::cmd_check_contact_label_regexp(fix, dry_run).await?;
         }
         Commands::CheckContactNoGivenName { fix, dry_run } => {
-            commands::cmd_check_contact_no_given_name(fix, dry_run).await?
+            commands::cmd_check_contact_no_given_name(fix, dry_run).await?;
         }
         Commands::CheckContactNoIdentity { fix, dry_run } => {
-            commands::cmd_check_contact_no_identity(fix, dry_run).await?
+            commands::cmd_check_contact_no_identity(fix, dry_run).await?;
         }
         Commands::CheckContactNoLabel { fix, dry_run } => {
-            commands::cmd_check_contact_no_label(fix, dry_run).await?
+            commands::cmd_check_contact_no_label(fix, dry_run).await?;
         }
         Commands::CheckContactNoMiddleName { fix, dry_run } => {
-            commands::cmd_check_contact_no_middle_name(fix, dry_run).await?
+            commands::cmd_check_contact_no_middle_name(fix, dry_run).await?;
         }
         Commands::CheckContactNoNickname { fix, dry_run } => {
-            commands::cmd_check_contact_no_nickname(fix, dry_run).await?
+            commands::cmd_check_contact_no_nickname(fix, dry_run).await?;
         }
         Commands::CheckContactSuffixRegexp { fix, dry_run } => {
-            commands::cmd_check_contact_suffix_regexp(fix, dry_run).await?
+            commands::cmd_check_contact_suffix_regexp(fix, dry_run).await?;
         }
+        _ => unreachable!("grouped by CommandGroup"),
+    }
+    Ok(())
+}
+
+async fn run_type_phone_and_merge(command: &Commands) -> Result<(), Box<dyn std::error::Error>> {
+    match *command {
         Commands::CheckContactTypeCompanyGivenName {
             fix,
             auto_fix,
@@ -92,13 +137,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             dry_run,
         } => commands::cmd_check_contact_type_company_no_label(fix, auto_fix, dry_run).await?,
         Commands::CheckContactTypeCompanyNoCompany { fix, dry_run } => {
-            commands::cmd_check_contact_type_company_no_company(fix, dry_run).await?
+            commands::cmd_check_contact_type_company_no_company(fix, dry_run).await?;
         }
         Commands::CheckContactType { fix, dry_run } => {
-            commands::cmd_check_contact_type(fix, dry_run).await?
+            commands::cmd_check_contact_type(fix, dry_run).await?;
         }
         Commands::CheckPhoneCountryLabel { fix, dry_run } => {
-            commands::cmd_check_phone_country_label(fix, dry_run).await?
+            commands::cmd_check_phone_country_label(fix, dry_run).await?;
         }
         Commands::CheckPhoneCountrycode {
             fix,
@@ -106,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ref country,
         } => commands::cmd_check_phone_countrycode(fix, dry_run, country).await?,
         Commands::CheckPhoneDuplicate { fix, dry_run } => {
-            commands::cmd_check_phone_duplicate(fix, dry_run).await?
+            commands::cmd_check_phone_duplicate(fix, dry_run).await?;
         }
         Commands::CheckPhoneFormat {
             fix,
@@ -114,26 +159,76 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ref country,
         } => commands::cmd_check_phone_format(fix, dry_run, country).await?,
         Commands::CheckPhoneLabelEnglish { fix, dry_run } => {
-            commands::cmd_check_phone_label_english(fix, dry_run).await?
+            commands::cmd_check_phone_label_english(fix, dry_run).await?;
         }
         Commands::CheckPhoneLabelMissing { fix, dry_run } => {
-            commands::cmd_check_phone_label_missing(fix, dry_run).await?
+            commands::cmd_check_phone_label_missing(fix, dry_run).await?;
         }
         Commands::MergeByEmail { fix, dry_run } => {
-            commands::cmd_merge_by_email(fix, dry_run).await?
+            commands::cmd_merge_by_email(fix, dry_run).await?;
         }
         Commands::MergeByPhone { fix, dry_run } => {
-            commands::cmd_merge_by_phone(fix, dry_run).await?
+            commands::cmd_merge_by_phone(fix, dry_run).await?;
         }
         Commands::MoveFamilyToSuffix { dry_run } => {
-            commands::cmd_move_family_to_suffix(dry_run).await?
+            commands::cmd_move_family_to_suffix(dry_run).await?;
         }
         Commands::MoveSuffixToFamily { dry_run } => {
-            commands::cmd_move_suffix_to_family(dry_run).await?
+            commands::cmd_move_suffix_to_family(dry_run).await?;
         }
         Commands::CompactSuffixesForContacts { dry_run } => {
-            commands::cmd_compact_suffixes_for_contacts(dry_run).await?
+            commands::cmd_compact_suffixes_for_contacts(dry_run).await?;
         }
+        _ => unreachable!("grouped by CommandGroup"),
+    }
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install default CryptoProvider");
+
+    let cli = Cli::parse();
+    rscontacts::helpers::set_transport_errors(cli.transport_errors);
+
+    match command_group(&cli.command) {
+        CommandGroup::NameCheck => return run_name_checks(&cli.command).await,
+        CommandGroup::TypePhoneMerge => return run_type_phone_and_merge(&cli.command).await,
+        CommandGroup::Other => {}
+    }
+
+    match cli.command {
+        Commands::AllChecks {
+            fix,
+            dry_run,
+            stats,
+            verbose,
+            ref country,
+        } => {
+            commands::cmd_check_all(&commands::CheckAllOptions {
+                fix,
+                dry_run,
+                stats,
+                verbosity: if verbose {
+                    commands::Verbosity::Verbose
+                } else {
+                    commands::Verbosity::Quiet
+                },
+                country,
+            })
+            .await?;
+        }
+        Commands::Auth {
+            action: Some(AuthAction::CheckToken),
+            ..
+        } => commands::cmd_auth_check_token().await?,
+        Commands::Auth {
+            action: None,
+            no_browser,
+            force,
+        } => commands::cmd_auth(no_browser, force).await?,
         Commands::Complete { shell } => rscontacts::generate_completions(shell),
         Commands::EditContact { ref name } => commands::cmd_edit_contact(name).await?,
         Commands::ExportJson { short } => commands::cmd_export_json(short).await?,
@@ -144,10 +239,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             starred,
         } => commands::cmd_list(emails, labels, starred).await?,
         Commands::SyncGnomeContacts { dry_run } => {
-            commands::cmd_sync_gnome_contacts(dry_run).await?
+            commands::cmd_sync_gnome_contacts(dry_run).await?;
         }
         Commands::RemoveLabelFromAllContacts { ref label, dry_run } => {
-            commands::cmd_remove_label_from_all_contacts(label, dry_run).await?
+            commands::cmd_remove_label_from_all_contacts(label, dry_run).await?;
         }
         Commands::ReviewEmailLabel {
             ref label,
@@ -178,6 +273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("RUST_EDITION: {}", env!("RUST_EDITION"));
             println!("BUILD_TIMESTAMP: {}", env!("BUILD_TIMESTAMP"));
         }
+        _ => unreachable!("grouped by CommandGroup"),
     }
 
     Ok(())
