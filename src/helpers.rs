@@ -23,11 +23,12 @@ pub fn set_transport_errors(enabled: bool) {
     TRANSPORT_ERRORS.store(enabled, Ordering::Relaxed);
 }
 
-fn is_transient_status(status: u16) -> bool {
+const fn is_transient_status(status: u16) -> bool {
     matches!(status, 429 | 502 | 503 | 504)
 }
 
 /// Retry an API call on transient HTTP errors (429, 502, 503, 504).
+///
 /// The closure must rebuild the request each time since `.doit()` consumes the builder.
 /// The error is boxed because `google_people1::Error` is large (>128 bytes)
 /// and would otherwise bloat every `Result` this returns.
@@ -91,6 +92,7 @@ where
 }
 
 /// Convenience macro to wrap a `.doit().await` call with retry logic.
+///
 /// The expression must be a builder chain ending before `.doit()`.
 /// It is re-evaluated on each retry, so it must not consume owned values
 /// that aren't recreated (use `.clone()` for owned parameters).
@@ -154,7 +156,7 @@ pub fn config_path() -> PathBuf {
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+pub fn load_config() -> Result<Config, BoxError> {
     let path = config_path();
     if !path.exists() {
         return Ok(Config::default());
@@ -181,7 +183,7 @@ pub fn config_dir() -> PathBuf {
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub fn credentials_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn credentials_path() -> Result<PathBuf, BoxError> {
     let path = config_dir().join("credentials.json");
     if !path.exists() {
         return Err(format!(
@@ -254,11 +256,11 @@ pub fn phone_has_type(pn: &google_people1::api::PhoneNumber) -> bool {
 #[must_use]
 pub fn is_fixable_phone(phone: &str) -> bool {
     let trimmed = phone.trim();
-    let digits: Vec<char> = trimmed.chars().filter(char::is_ascii_digit).collect();
+    let digits = trimmed.chars().filter(char::is_ascii_digit);
     !trimmed.is_empty()
         && !trimmed.contains(|c: char| c.is_alphabetic())
         && !trimmed.starts_with('*')
-        && digits.len() > 3
+        && digits.count() > 3
 }
 
 #[must_use]
@@ -587,12 +589,11 @@ pub fn fix_phone_format(phone: &str, country: &str) -> String {
         } else {
             &digits[..]
         };
-        if let Some(cc_len) = detect_country_code(pure_digits) {
-            format!("+{}-{}", &pure_digits[..cc_len], &pure_digits[cc_len..])
-        } else {
-            // Unknown country code, use default
-            format!("+{country}-{pure_digits}")
-        }
+        // Unknown country code: use the default.
+        detect_country_code(pure_digits).map_or_else(
+            || format!("+{country}-{pure_digits}"),
+            |cc_len| format!("+{}-{}", &pure_digits[..cc_len], &pure_digits[cc_len..]),
+        )
     } else {
         // No country code — add it, strip leading 0
         let without_zero = digits.strip_prefix('0').unwrap_or(&digits);
@@ -601,6 +602,10 @@ pub fn fix_phone_format(phone: &str, country: &str) -> String {
 }
 
 // --- API helper functions ---
+
+/// The error type of the API layer: `Send + Sync` so futures that hold one
+/// across an `.await` stay `Send`.
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 pub type HubType =
     PeopleService<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>;
@@ -611,7 +616,7 @@ pub type HubType =
 pub async fn fetch_all_contacts(
     hub: &HubType,
     fields: &[&str],
-) -> Result<Vec<google_people1::api::Person>, Box<dyn std::error::Error>> {
+) -> Result<Vec<google_people1::api::Person>, BoxError> {
     let mut all: Vec<google_people1::api::Person> = Vec::new();
     let mut page_token: Option<String> = None;
 
@@ -753,6 +758,7 @@ fn name_and_org_parts(person: &google_people1::api::Person) -> Vec<String> {
 }
 
 /// Format a person as a pipe-delimited line showing all non-empty fields.
+///
 /// This is the canonical way to display a contact — used by `list` and all checks.
 /// `group_names` is optional; when provided, labels are included.
 #[must_use]
@@ -892,7 +898,7 @@ pub async fn update_phone_numbers<F>(
     hub: &HubType,
     person: &google_people1::api::Person,
     transform: F,
-) -> Result<(), Box<dyn std::error::Error>>
+) -> Result<(), BoxError>
 where
     F: Fn(&str) -> Option<String>,
 {
@@ -926,7 +932,7 @@ where
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn fetch_all_contact_groups(
     hub: &HubType,
-) -> Result<Vec<google_people1::api::ContactGroup>, Box<dyn std::error::Error>> {
+) -> Result<Vec<google_people1::api::ContactGroup>, BoxError> {
     let mut all_groups: Vec<google_people1::api::ContactGroup> = Vec::new();
     let mut page_token: Option<String> = None;
 
@@ -993,7 +999,7 @@ impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for BrowserFlowDe
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub fn build_connector() -> Result<
     hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>,
-    Box<dyn std::error::Error>,
+    BoxError,
 > {
     Ok(hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()?
@@ -1018,7 +1024,7 @@ pub fn build_connector() -> Result<
 pub async fn noninteractive_authenticator(
     credentials: &std::path::Path,
     cache: &std::path::Path,
-) -> Result<yup_oauth2::authenticator::DefaultAuthenticator, Box<dyn std::error::Error>> {
+) -> Result<yup_oauth2::authenticator::DefaultAuthenticator, BoxError> {
     let secret = yup_oauth2::read_application_secret(credentials).await?;
     Ok(yup_oauth2::InstalledFlowAuthenticator::builder(
         secret,
@@ -1033,7 +1039,7 @@ pub async fn noninteractive_authenticator(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
+pub async fn build_hub() -> Result<HubType, BoxError> {
     let cache_path = token_cache_path();
     if !cache_path.exists() {
         return Err("not authenticated. Run 'rscontacts auth' first.".into());
@@ -1053,7 +1059,7 @@ pub async fn build_hub() -> Result<HubType, Box<dyn std::error::Error>> {
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub fn prompt_yes_no(message: &str) -> Result<bool, Box<dyn std::error::Error>> {
+pub fn prompt_yes_no(message: &str) -> Result<bool, BoxError> {
     use std::io::Write;
     loop {
         eprint!("  {message} [y/n] ");
@@ -1071,7 +1077,7 @@ pub fn prompt_yes_no(message: &str) -> Result<bool, Box<dyn std::error::Error>> 
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub fn prompt_phone_label_fix(name: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+pub fn prompt_phone_label_fix(name: &str) -> Result<Option<String>, BoxError> {
     use std::io::Write;
     let options = PHONE_LABEL_OPTIONS;
     loop {
@@ -1094,7 +1100,7 @@ pub fn prompt_phone_label_fix(name: &str) -> Result<Option<String>, Box<dyn std:
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub fn prompt_rename_label(name: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+pub fn prompt_rename_label(name: &str) -> Result<Option<String>, BoxError> {
     use std::io::Write;
     loop {
         eprint!("  New name for \"{name}\" (or [s]kip): ");

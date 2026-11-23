@@ -2,11 +2,11 @@ use google_people1::FieldMask;
 use std::io::Write;
 
 use crate::helpers::{
-    BrowserFlowDelegate, HubType, MUTATE_DELAY, add_country_code, build_group_name_map, build_hub,
-    config_path, credentials_path, fetch_all_contact_groups, fetch_all_contacts, find_duplicates,
-    fix_phone_format, format_person_line, get_email_label, get_phone_label, get_resource_name,
-    has_country_code, has_user_label, is_correct_phone_format, is_fixable_phone, is_starred,
-    is_valid_email, load_config, noninteractive_authenticator, person_base_name,
+    BoxError, BrowserFlowDelegate, HubType, MUTATE_DELAY, add_country_code, build_group_name_map,
+    build_hub, config_path, credentials_path, fetch_all_contact_groups, fetch_all_contacts,
+    find_duplicates, fix_phone_format, format_person_line, get_email_label, get_phone_label,
+    get_resource_name, has_country_code, has_user_label, is_correct_phone_format, is_fixable_phone,
+    is_starred, is_valid_email, load_config, noninteractive_authenticator, person_base_name,
     person_display_name, person_labels, person_name, person_to_vcard, phone_country_name,
     phone_has_type, prompt_phone_label_fix, prompt_rename_label, prompt_yes_no, retry_api,
     token_cache_path, update_phone_numbers,
@@ -104,7 +104,7 @@ impl StandardCheckSetup {
     }
 }
 
-async fn setup_standard_check(fix: bool) -> Result<StandardCheckSetup, Box<dyn std::error::Error>> {
+async fn setup_standard_check(fix: bool) -> Result<StandardCheckSetup, BoxError> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
@@ -164,7 +164,7 @@ async fn rename_contact_group(
     resource_name: &str,
     new_name: &str,
     old_name: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let mut updated_group = group.clone();
     updated_group.name = Some(new_name.to_string());
     let req = google_people1::api::UpdateContactGroupRequest {
@@ -256,7 +256,7 @@ allow = '^(type|company|person|service|group|organization):[A-Z][a-zA-Z]*$'
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub fn cmd_init_config(force: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub fn cmd_init_config(force: bool) -> Result<(), BoxError> {
     let path = config_path();
     if path.exists() && !force {
         eprintln!("Config file already exists at {}", path.display());
@@ -271,7 +271,7 @@ pub fn cmd_init_config(force: bool) -> Result<(), Box<dyn std::error::Error>> {
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), BoxError> {
     if force {
         let cache = token_cache_path();
         if cache.exists() {
@@ -315,7 +315,7 @@ pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), Box<dyn std::
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_auth_check_token() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_auth_check_token() -> Result<(), BoxError> {
     let cache_path = token_cache_path();
     if !cache_path.exists() {
         eprintln!(
@@ -347,7 +347,7 @@ pub async fn cmd_auth_check_token() -> Result<(), Box<dyn std::error::Error>> {
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_test_connect() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_test_connect() -> Result<(), BoxError> {
     eprint!("Checking credentials... ");
     credentials_path()?;
     eprintln!("OK");
@@ -396,11 +396,7 @@ pub async fn cmd_test_connect() -> Result<(), Box<dyn std::error::Error>> {
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_list(
-    emails: bool,
-    labels: bool,
-    starred: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_list(emails: bool, labels: bool, starred: bool) -> Result<(), BoxError> {
     let _ = emails; // emails are now always shown via format_person_line
     let hub = build_hub().await?;
     let fields = vec![
@@ -441,10 +437,10 @@ async fn check_phone_issues<P, T>(
     predicate: P,
     transform: T,
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>>
+) -> Result<usize, BoxError>
 where
-    P: Fn(&str) -> bool,
-    T: Fn(&str) -> String + Clone,
+    P: Fn(&str) -> bool + Send + Sync,
+    T: Fn(&str) -> String + Clone + Send + Sync,
 {
     let filtered: Vec<&google_people1::api::Person> = contacts
         .iter()
@@ -511,10 +507,7 @@ where
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_given_name_regexp(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_given_name_regexp(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -534,7 +527,7 @@ async fn check_given_name_regexp(
     contacts: &[google_people1::api::Person],
     config: &crate::helpers::NameRegexpConfig,
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let Some(pattern) = &config.allow else {
         if !ctx.quiet {
             eprintln!(
@@ -599,10 +592,7 @@ async fn check_given_name_regexp(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_suffix_regexp(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_suffix_regexp(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -624,7 +614,7 @@ async fn check_suffix_regexp(
     contacts: &[google_people1::api::Person],
     config: &crate::helpers::NameRegexpConfig,
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let default_pattern = DEFAULT_SUFFIX_REGEX.to_string();
     let pattern = config.allow.as_ref().unwrap_or(&default_pattern);
 
@@ -686,7 +676,7 @@ async fn check_suffix_regexp(
 pub async fn cmd_check_contact_family_name_regexp(
     fix: bool,
     dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -706,7 +696,7 @@ async fn check_family_name_regexp(
     contacts: &[google_people1::api::Person],
     config: &crate::helpers::NameRegexpConfig,
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let Some(pattern) = &config.allow else {
         if !ctx.quiet {
             eprintln!(
@@ -771,10 +761,7 @@ async fn check_family_name_regexp(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_no_given_name(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_given_name(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS;
     let contacts = if fix {
@@ -804,7 +791,7 @@ async fn check_no_given_name(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         // Skip companies — they don't need a given name
@@ -854,10 +841,7 @@ async fn check_no_given_name(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_no_displayname(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_displayname(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let contacts = if fix {
         fetch_all_contacts(&hub, ALL_CONTACT_FIELDS).await?
@@ -886,7 +870,7 @@ async fn check_no_displayname(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
 
     for person in contacts {
@@ -930,10 +914,7 @@ async fn check_no_displayname(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_no_identity(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_identity(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS;
     let contacts = if fix {
@@ -963,7 +944,7 @@ async fn check_no_identity(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
 
     for person in contacts {
@@ -1008,10 +989,7 @@ async fn check_no_identity(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_company_known(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_company_known(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let config = load_config()?;
     if config.check_contact_name_is_company.companies.is_empty() && !fix {
         eprintln!("No companies configured in config.toml.");
@@ -1057,7 +1035,7 @@ async fn check_company_known(
     contacts: &[google_people1::api::Person],
     companies: &[String],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut company_set: std::collections::HashSet<String> =
         companies.iter().map(|c| c.to_lowercase()).collect();
 
@@ -1134,7 +1112,7 @@ async fn check_company_known(
     Ok(count)
 }
 
-fn add_company_to_config(company: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn add_company_to_config(company: &str) -> Result<(), BoxError> {
     let mut config = load_config()?;
     if !config
         .check_contact_name_is_company
@@ -1155,7 +1133,7 @@ fn add_company_to_config(company: &str) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-fn remove_company_from_config(company: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn remove_company_from_config(company: &str) -> Result<(), BoxError> {
     let mut config = load_config()?;
     config
         .check_contact_name_is_company
@@ -1168,10 +1146,7 @@ fn remove_company_from_config(company: &str) -> Result<(), Box<dyn std::error::E
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_company_exists(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_company_exists(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let config = load_config()?;
     if config.check_contact_name_is_company.companies.is_empty() {
         eprintln!("No companies configured in config.toml.");
@@ -1203,7 +1178,7 @@ fn check_company_exists(
     contacts: &[google_people1::api::Person],
     companies: &[String],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     // Collect all org names from company contacts
     let mut existing: std::collections::HashSet<String> = std::collections::HashSet::new();
     for person in contacts {
@@ -1266,14 +1241,14 @@ fn check_company_exists(
     Ok(count)
 }
 
-fn atomic_write(path: &std::path::Path, contents: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn atomic_write(path: &std::path::Path, contents: &str) -> Result<(), BoxError> {
     let tmp = path.with_extension("toml.tmp");
     std::fs::write(&tmp, contents)?;
     std::fs::rename(&tmp, path)?;
     Ok(())
 }
 
-fn save_company_list(companies: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+fn save_company_list(companies: &[String]) -> Result<(), BoxError> {
     let path = config_path();
     let content = std::fs::read_to_string(&path)?;
 
@@ -1297,10 +1272,7 @@ fn save_company_list(companies: &[String]) -> Result<(), Box<dyn std::error::Err
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_given_name_known(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_given_name_known(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -1320,7 +1292,7 @@ async fn check_given_name_known(
     contacts: &[google_people1::api::Person],
     names: &[String],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut name_set: std::collections::HashSet<String> =
         names.iter().map(|n| n.to_lowercase()).collect();
 
@@ -1396,7 +1368,7 @@ async fn check_given_name_known(
     Ok(count)
 }
 
-fn add_given_name_to_config(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn add_given_name_to_config(name: &str) -> Result<(), BoxError> {
     let mut config = load_config()?;
     if !config
         .check_contact_given_name_known
@@ -1417,7 +1389,7 @@ fn add_given_name_to_config(name: &str) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-fn remove_given_name_from_config(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn remove_given_name_from_config(name: &str) -> Result<(), BoxError> {
     let mut config = load_config()?;
     config
         .check_contact_given_name_known
@@ -1430,10 +1402,7 @@ fn remove_given_name_from_config(name: &str) -> Result<(), Box<dyn std::error::E
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_given_name_exists(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_given_name_exists(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let config = load_config()?;
     if config.check_contact_given_name_known.names.is_empty() {
         eprintln!("No given names configured in config.toml.");
@@ -1465,7 +1434,7 @@ fn check_given_name_exists(
     contacts: &[google_people1::api::Person],
     names: &[String],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     // Collect all given names from person contacts
     let mut existing: std::collections::HashSet<String> = std::collections::HashSet::new();
     for person in contacts {
@@ -1528,7 +1497,7 @@ fn check_given_name_exists(
     Ok(count)
 }
 
-fn save_given_name_list(names: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+fn save_given_name_list(names: &[String]) -> Result<(), BoxError> {
     let path = config_path();
     let content = std::fs::read_to_string(&path)?;
 
@@ -1555,7 +1524,7 @@ fn save_given_name_list(names: &[String]) -> Result<(), Box<dyn std::error::Erro
 pub async fn cmd_check_contact_displayname_duplicate(
     fix: bool,
     dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -1567,7 +1536,7 @@ async fn check_name_duplicate(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut name_groups: std::collections::HashMap<String, Vec<&google_people1::api::Person>> =
         std::collections::HashMap::new();
     for person in contacts {
@@ -1626,10 +1595,7 @@ async fn check_name_duplicate(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_phone_country_label(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_country_label(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -1660,7 +1626,7 @@ async fn add_country_label(
     ctx: &CheckContext<'_>,
     person: &google_people1::api::Person,
     expected_label: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let resource_name = get_resource_name(person)?;
     // Find or create the contact group
     let group_rn = if let Some((_, rn)) = ctx
@@ -1714,7 +1680,7 @@ async fn remove_country_label(
     ctx: &CheckContext<'_>,
     person: &google_people1::api::Person,
     label: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let resource_name = get_resource_name(person)?;
     // Find the group resource name for this label
     if let Some((_, rn)) = ctx.user_groups.iter().find(|(name, _)| *name == label) {
@@ -1741,7 +1707,7 @@ async fn check_phone_country_label(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
 
     let expected_countries = expected_phone_countries(contacts);
@@ -1832,7 +1798,7 @@ pub async fn cmd_check_phone_countrycode(
     fix: bool,
     dry_run: bool,
     country: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
     let country = country.to_string();
@@ -1865,7 +1831,7 @@ pub async fn cmd_check_phone_format(
     fix: bool,
     dry_run: bool,
     country: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, STANDARD_CONTACT_FIELDS).await?;
     let country_owned = country.to_string();
@@ -1895,7 +1861,7 @@ async fn check_duplicate_phones(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if let Some(nums) = &person.phone_numbers {
@@ -1945,7 +1911,7 @@ async fn check_email(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if let Some(emails) = &person.email_addresses {
@@ -2016,7 +1982,7 @@ async fn check_no_label(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if !has_user_label(person) {
@@ -2059,10 +2025,7 @@ async fn check_no_label(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_phone_duplicate(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_duplicate(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2073,10 +2036,7 @@ pub async fn cmd_check_phone_duplicate(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_email(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_email(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2088,7 +2048,7 @@ async fn check_duplicate_emails(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if let Some(emails) = &person.email_addresses {
@@ -2137,10 +2097,7 @@ async fn check_duplicate_emails(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_email_duplicate(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_email_duplicate(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2152,7 +2109,7 @@ async fn check_phone_label_missing(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if let Some(nums) = &person.phone_numbers {
@@ -2198,10 +2155,7 @@ async fn check_phone_label_missing(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_phone_label_missing(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_label_missing(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2213,7 +2167,7 @@ async fn check_phone_label_english(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if let Some(nums) = &person.phone_numbers {
@@ -2267,10 +2221,7 @@ async fn check_phone_label_english(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_phone_label_english(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_phone_label_english(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -2281,10 +2232,7 @@ pub async fn cmd_check_phone_label_english(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_no_label(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_label(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS;
     let contacts = if fix {
@@ -2333,7 +2281,7 @@ async fn prompt_label_autocomplete(
     hub: &HubType,
     label_names: &[String],
     user_groups: &[(&str, &str)],
-) -> Result<Option<String>, Box<dyn std::error::Error>> {
+) -> Result<Option<String>, BoxError> {
     use rustyline::Editor;
     use rustyline::Helper;
     use rustyline::completion::{Completer, Pair};
@@ -2552,7 +2500,7 @@ async fn edit_simple_name_field(
     resource_name: &str,
     field: &str,
     label: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let cur_val = get_name_field(current, field);
     eprint!("  {label} [{cur_val}] (new value / - to clear / Enter to skip): ");
     std::io::stderr().flush()?;
@@ -2613,7 +2561,7 @@ async fn edit_org_field(
     resource_name: &str,
     field: &str,
     label: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let cur_val = get_org_field(current, field);
     eprint!("  {label} [{cur_val}] (new value / - to clear / Enter to skip): ");
     std::io::stderr().flush()?;
@@ -2673,7 +2621,7 @@ async fn edit_nickname(
     hub: &HubType,
     current: &mut google_people1::api::Person,
     resource_name: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let cur_val = current
         .nicknames
         .as_ref()
@@ -2715,7 +2663,7 @@ async fn apply_person_update(
     updated: &google_people1::api::Person,
     resource_name: &str,
     fields: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let (_, refreshed) = retry_api(|| {
         let r = hub
             .people()
@@ -2761,7 +2709,7 @@ async fn edit_phones(
     hub: &HubType,
     current: &mut google_people1::api::Person,
     resource_name: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     print_phone_list(current);
     eprint!("  [a]dd / [r]emove #N / [e]dit #N / [b]ack? ");
     std::io::stderr().flush()?;
@@ -2884,7 +2832,7 @@ async fn edit_emails(
     hub: &HubType,
     current: &mut google_people1::api::Person,
     resource_name: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     print_email_list(current);
     eprint!("  [a]dd / [r]emove #N / [e]dit #N / [b]ack? ");
     std::io::stderr().flush()?;
@@ -2982,7 +2930,7 @@ async fn assign_label_interactive(
     resource_name: &str,
     label_names: &[String],
     user_groups: &[(&str, &str)],
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     if let Some(group_rn) = prompt_label_autocomplete(hub, label_names, user_groups).await? {
         let req = google_people1::api::ModifyContactGroupMembersRequest {
             resource_names_to_add: Some(vec![resource_name.to_string()]),
@@ -3017,7 +2965,7 @@ async fn remove_label_interactive(
     resource_name: &str,
     group_names: &std::collections::HashMap<String, String>,
     user_groups: &[(&str, &str)],
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let labels = person_labels(current, group_names);
     if labels.is_empty() {
         eprintln!("  No labels to remove.");
@@ -3074,7 +3022,7 @@ async fn interactive_edit_contact(
     user_groups: &[(&str, &str)],
     label_names: &[String],
     group_names: &std::collections::HashMap<String, String>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let resource_name = get_resource_name(person)?.to_string();
 
     let mut current = person.clone();
@@ -3159,10 +3107,7 @@ async fn interactive_edit_contact(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_type(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_type(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -3195,7 +3140,7 @@ async fn check_contact_type(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
 
     for person in contacts {
@@ -3253,7 +3198,7 @@ async fn check_contact_type(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_export_json(short: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_export_json(short: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let fields: &[&str] = if short {
         &["names", "organizations"]
@@ -3309,7 +3254,7 @@ fn write_contact_to_eds(
     uid: &str,
     now: &str,
     is_update: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let names = person.names.as_ref().and_then(|n| n.first());
     let given = names.and_then(|n| n.given_name.as_deref()).unwrap_or("");
     let family = names.and_then(|n| n.family_name.as_deref()).unwrap_or("");
@@ -3378,7 +3323,7 @@ fn write_contact_to_eds(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_sync_gnome_contacts(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_sync_gnome_contacts(dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_fields = &[
         "names",
@@ -3473,7 +3418,7 @@ pub async fn cmd_check_contact_type_company_given_name(
     fix: bool,
     auto_fix: bool,
     dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -3486,7 +3431,7 @@ async fn check_type_company_given_name(
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
     auto_fix: bool,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if !is_company(person, ctx.group_names) {
@@ -3592,7 +3537,7 @@ pub async fn cmd_check_contact_type_company_no_label(
     fix: bool,
     auto_fix: bool,
     dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let s = setup_standard_check(fix || auto_fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -3605,7 +3550,7 @@ async fn check_type_company_no_label(
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
     auto_fix: bool,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if !is_company(person, ctx.group_names) {
@@ -3710,7 +3655,7 @@ async fn check_type_company_no_label(
 pub async fn cmd_check_contact_type_company_no_company(
     fix: bool,
     dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -3722,7 +3667,7 @@ async fn check_type_company_no_company(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if !is_company(person, ctx.group_names) {
@@ -3775,10 +3720,7 @@ async fn check_type_company_no_company(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_no_middle_name(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_middle_name(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -3790,7 +3732,7 @@ async fn check_no_middle_name(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if is_company(person, ctx.group_names) {
@@ -3843,10 +3785,7 @@ async fn check_no_middle_name(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_no_nickname(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_no_nickname(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let s = setup_standard_check(fix).await?;
     let ug = s.to_ref_vec();
     let ctx = s.make_ctx(fix, dry_run, &ug);
@@ -3858,7 +3797,7 @@ async fn check_no_nickname(
     hub: &HubType,
     contacts: &[google_people1::api::Person],
     ctx: &CheckContext<'_>,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, BoxError> {
     let mut count = 0;
     for person in contacts {
         if is_company(person, ctx.group_names) {
@@ -3910,10 +3849,7 @@ async fn check_no_nickname(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_label_nophone(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_label_nophone(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
@@ -3954,7 +3890,7 @@ pub async fn cmd_check_contact_label_nophone(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_show_contact(search: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_show_contact(search: &str) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS_WITH_METADATA;
     let contacts = fetch_all_contacts(&hub, all_fields).await?;
@@ -3991,7 +3927,7 @@ pub async fn cmd_show_contact(search: &str) -> Result<(), Box<dyn std::error::Er
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_edit_contact(search: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_edit_contact(search: &str) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS_WITH_METADATA;
     let contacts = fetch_all_contacts(&hub, all_fields).await?;
@@ -4371,10 +4307,7 @@ fn print_person_details(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_contact_label_regexp(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_contact_label_regexp(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let config = load_config()?;
     let allow = if let Some(ref pattern) = config.check_contact_label_regexp.allow {
         pattern.clone()
@@ -4425,7 +4358,7 @@ pub async fn cmd_check_contact_label_regexp(
 pub async fn cmd_remove_label_from_all_contacts(
     label: &str,
     dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
 
@@ -4505,7 +4438,7 @@ pub async fn cmd_remove_label_from_all_contacts(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_show_phone_labels() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_show_phone_labels() -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["phoneNumbers"]).await?;
     let mut labels = std::collections::BTreeSet::new();
@@ -4528,7 +4461,7 @@ pub async fn cmd_show_phone_labels() -> Result<(), Box<dyn std::error::Error>> {
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_show_email_labels() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_show_email_labels() -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["emailAddresses"]).await?;
     let mut labels = std::collections::BTreeSet::new();
@@ -4551,11 +4484,7 @@ pub async fn cmd_show_email_labels() -> Result<(), Box<dyn std::error::Error>> {
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_review_phone_label(
-    label: &str,
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_review_phone_label(label: &str, fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS;
     let contacts = if fix {
@@ -4611,11 +4540,7 @@ pub async fn cmd_review_phone_label(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_review_email_label(
-    label: &str,
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_review_email_label(label: &str, fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_fields = ALL_CONTACT_FIELDS;
     let contacts = if fix {
@@ -4671,7 +4596,7 @@ pub async fn cmd_review_email_label(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_show_contact_labels() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_show_contact_labels() -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
     for group in &all_groups {
@@ -4718,7 +4643,7 @@ struct AllChecksEnv<'a> {
 }
 
 impl AllChecksEnv<'_> {
-    fn hdr(&self, s: &'static str) -> Option<&'static str> {
+    const fn hdr(&self, s: &'static str) -> Option<&'static str> {
         if self.opts.stats { None } else { Some(s) }
     }
 
@@ -4728,7 +4653,7 @@ impl AllChecksEnv<'_> {
         }
     }
 
-    fn make_ctx(&self, header: Option<&'static str>) -> CheckContext<'_> {
+    const fn make_ctx(&self, header: Option<&'static str>) -> CheckContext<'_> {
         CheckContext {
             fix: self.opts.fix,
             dry_run: self.opts.dry_run,
@@ -4745,7 +4670,7 @@ impl AllChecksEnv<'_> {
 async fn run_check_group_1(
     env: &AllChecksEnv<'_>,
     results: &mut Vec<(&'static str, usize)>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let hub = env.hub;
     let all_contacts = env.all_contacts;
     let config = env.config;
@@ -4827,7 +4752,7 @@ async fn run_check_group_1(
 async fn run_check_group_2(
     env: &AllChecksEnv<'_>,
     results: &mut Vec<(&'static str, usize)>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let hub = env.hub;
     let all_contacts = env.all_contacts;
     let config = env.config;
@@ -4892,7 +4817,7 @@ async fn run_check_group_2(
 async fn run_check_group_3(
     env: &AllChecksEnv<'_>,
     results: &mut Vec<(&'static str, usize)>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let hub = env.hub;
     let all_contacts = env.all_contacts;
     let config = env.config;
@@ -4975,7 +4900,7 @@ async fn run_check_group_3(
 async fn run_check_group_4(
     env: &AllChecksEnv<'_>,
     results: &mut Vec<(&'static str, usize)>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let hub = env.hub;
     let all_contacts = env.all_contacts;
     if !env.skip.contains("check-contact-type-company-given-name") {
@@ -5057,7 +4982,7 @@ async fn run_check_group_4(
 async fn run_check_group_5(
     env: &AllChecksEnv<'_>,
     results: &mut Vec<(&'static str, usize)>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let hub = env.hub;
     let all_contacts = env.all_contacts;
     let all_groups = env.all_groups;
@@ -5124,7 +5049,7 @@ async fn run_check_group_5(
 async fn run_check_group_6(
     env: &AllChecksEnv<'_>,
     results: &mut Vec<(&'static str, usize)>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let hub = env.hub;
     let all_groups = env.all_groups;
     let config = env.config;
@@ -5183,7 +5108,7 @@ async fn run_check_group_6(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_check_all(opts: &CheckAllOptions<'_>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_check_all(opts: &CheckAllOptions<'_>) -> Result<(), BoxError> {
     let config = load_config()?;
     let skip: std::collections::HashSet<&str> = config
         .check_all
@@ -5436,10 +5361,10 @@ fn merge_contact_fields(
 /// Copy labels (contact group memberships) from source to target, skipping duplicates.
 async fn merge_contact_labels(
     hub: &HubType,
-    target: &mut google_people1::api::Person,
+    target: &google_people1::api::Person,
     source: &google_people1::api::Person,
     group_names: &std::collections::HashMap<String, String>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     if let Some(src_memberships) = &source.memberships {
         for m in src_memberships {
             if let Some(cgm) = &m.contact_group_membership {
@@ -5487,7 +5412,7 @@ async fn merge_group_into(
     alive: &[usize],
     keep_idx: usize,
     group_names: &std::collections::HashMap<String, String>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let others: Vec<usize> = alive.iter().copied().filter(|i| *i != keep_idx).collect();
 
     // Re-fetch the target contact to get fresh etag
@@ -5507,7 +5432,7 @@ async fn merge_group_into(
 
     for &src_idx in &others {
         merge_contact_fields(&mut target, &contacts[src_idx]);
-        merge_contact_labels(hub, &mut target, &contacts[src_idx], group_names).await?;
+        merge_contact_labels(hub, &target, &contacts[src_idx], group_names).await?;
     }
 
     // Update the target contact with merged fields
@@ -5551,7 +5476,7 @@ async fn interactive_merge_group(
     group: &[usize],
     all_groups: &[google_people1::api::ContactGroup],
     group_names: &std::collections::HashMap<String, String>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let (user_groups_owned, label_names) = build_user_groups_and_labels(all_groups, true);
     let user_groups: Vec<(&str, &str)> = user_groups_owned
         .iter()
@@ -5661,10 +5586,7 @@ async fn interactive_merge_group(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_merge_by_phone(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_merge_by_phone(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, ALL_CONTACT_FIELDS).await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
@@ -5756,10 +5678,7 @@ pub async fn cmd_merge_by_phone(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_merge_by_email(
-    fix: bool,
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_merge_by_email(fix: bool, dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, ALL_CONTACT_FIELDS).await?;
     let all_groups = fetch_all_contact_groups(&hub).await?;
@@ -5846,7 +5765,7 @@ pub async fn cmd_merge_by_email(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_move_family_to_suffix(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_move_family_to_suffix(dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations"]).await?;
 
@@ -5916,7 +5835,7 @@ pub async fn cmd_move_family_to_suffix(dry_run: bool) -> Result<(), Box<dyn std:
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_move_suffix_to_family(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_move_suffix_to_family(dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations"]).await?;
 
@@ -5988,7 +5907,7 @@ async fn set_suffix(
     hub: &HubType,
     person: &google_people1::api::Person,
     suffix: &u32,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let resource_name = get_resource_name(person)?;
     let mut updated = person.clone();
     match updated.names {
@@ -6037,9 +5956,7 @@ fn group_by_base_name(
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
-pub async fn cmd_compact_suffixes_for_contacts(
-    dry_run: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_compact_suffixes_for_contacts(dry_run: bool) -> Result<(), BoxError> {
     let hub = build_hub().await?;
     let contacts = fetch_all_contacts(&hub, &["names", "organizations"]).await?;
 
@@ -6130,10 +6047,9 @@ pub async fn cmd_compact_suffixes_for_contacts(
 
         for (hole, idx) in holes.iter().zip(needs_reassign.iter()) {
             let (person, old_suffix) = &suffix_contacts[*idx];
-            let old_str = match old_suffix {
-                Some(s) => s.to_string(),
-                None => "none".to_string(),
-            };
+            let old_str = old_suffix
+                .as_ref()
+                .map_or_else(|| "none".to_string(), ToString::to_string);
             println!(
                 "  {} -> suffix \"{}\" (was \"{}\")",
                 format_person_line(person, None::<&std::collections::HashMap<String, String>>),

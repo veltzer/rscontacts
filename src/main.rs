@@ -1,4 +1,5 @@
 use clap::Parser;
+use rscontacts::helpers::BoxError;
 use rscontacts::{AuthAction, Cli, Commands, commands};
 
 enum CommandGroup {
@@ -8,7 +9,7 @@ enum CommandGroup {
 }
 
 /// The exhaustive gate: every `Commands` variant is listed, so a new one fails to compile here.
-fn command_group(command: &Commands) -> CommandGroup {
+const fn command_group(command: &Commands) -> CommandGroup {
     match command {
         Commands::CheckContactCompanyExists { .. }
         | Commands::CheckContactCompanyKnown { .. }
@@ -63,7 +64,7 @@ fn command_group(command: &Commands) -> CommandGroup {
     }
 }
 
-async fn run_name_checks(command: &Commands) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_name_checks(command: &Commands) -> Result<(), BoxError> {
     match *command {
         Commands::CheckContactCompanyExists { fix, dry_run } => {
             commands::cmd_check_contact_company_exists(fix, dry_run).await?;
@@ -124,7 +125,7 @@ async fn run_name_checks(command: &Commands) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-async fn run_type_phone_and_merge(command: &Commands) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_type_phone_and_merge(command: &Commands) -> Result<(), BoxError> {
     match *command {
         Commands::CheckContactTypeCompanyGivenName {
             fix,
@@ -185,7 +186,7 @@ async fn run_type_phone_and_merge(command: &Commands) -> Result<(), Box<dyn std:
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), BoxError> {
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("Failed to install default CryptoProvider");
