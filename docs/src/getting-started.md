@@ -8,7 +8,7 @@ After installing rscontacts and placing your OAuth2 credentials, authenticate:
 rscontacts auth
 ```
 
-This opens your browser for Google OAuth2 consent. The token is cached at `~/.config/rscontacts/token_cache.json` for future use.
+This opens your browser for Google OAuth2 consent. The token is cached for future use in the pass entry `gcp/rscontacts/token` when pass is set up, otherwise at `~/.config/rscontacts/token_cache.json`.
 
 If you're on a headless machine:
 

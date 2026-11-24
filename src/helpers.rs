@@ -8,6 +8,8 @@ use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use crate::pass::{Entries, Pass, TokenBackend, choose_token_backend, load_secret};
+
 pub const MUTATE_DELAY: Duration = Duration::from_millis(500);
 
 static TRANSPORT_ERRORS: AtomicBool = AtomicBool::new(false);
@@ -108,6 +110,8 @@ pub const PHONE_LABEL_OPTIONS: &[&str] = &["mobile", "home", "work", "main", "ot
 
 #[derive(serde::Deserialize, Default, Debug)]
 pub struct Config {
+    #[serde(default)]
+    pub pass: crate::pass::PassConfig,
     #[serde(default, rename = "check-all")]
     pub check_all: CheckAllConfig,
     #[serde(default, rename = "check-contact-given-name-regexp")]
@@ -192,6 +196,32 @@ pub fn credentials_path() -> Result<PathBuf, BoxError> {
         ).into());
     }
     Ok(path)
+}
+
+/// The pass entry holding the OAuth client JSON unless `[pass]` overrides it.
+pub const DEFAULT_PASS_OAUTH_CLIENT: &str = "gcp/rscontacts/oauth-client";
+
+/// The pass entry holding the token cache unless `[pass]` overrides it.
+pub const DEFAULT_PASS_TOKEN: &str = "gcp/rscontacts/token";
+
+/// Read the OAuth client and decide where the token cache lives.
+///
+/// Both come from pass when the entries exist (see [`crate::pass`]) and fall
+/// back to the files under `~/.config/rscontacts` otherwise.
+///
+/// # Errors
+///
+/// Returns an error if neither pass nor the credentials file has a valid OAuth client.
+pub async fn resolve_auth() -> Result<(yup_oauth2::ApplicationSecret, TokenBackend), BoxError> {
+    let config = load_config().unwrap_or_default();
+    let pass = Pass::new();
+    let entries = Entries::new(DEFAULT_PASS_OAUTH_CLIENT, DEFAULT_PASS_TOKEN, &config.pass);
+    let (secret, from_pass) = load_secret(&pass, &entries, || {
+        credentials_path().map_err(std::io::Error::other)
+    })
+    .await?;
+    let backend = choose_token_backend(&pass, &entries, from_pass, &token_cache_path());
+    Ok((secret, backend))
 }
 
 #[must_use]
@@ -986,8 +1016,22 @@ impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for BrowserFlowDe
         _need_code: bool,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
         Box::pin(async move {
-            if let Err(e) = open::that(url) {
-                eprintln!("Failed to open browser: {e}. Please open this URL manually:\n{url}");
+            eprintln!("Opening your web browser to sign in to Google...");
+            match open::that(url) {
+                Ok(()) => {
+                    eprintln!(
+                        "Complete the authorization in the browser window that just opened.\n\
+                         This command waits here until you approve access.\n\
+                         If no browser window appeared, open this URL yourself:\n{url}"
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Could not open the browser ({e}).\n\
+                         Open this URL yourself and complete the authorization there:\n{url}\n\
+                         This command waits here until you approve access."
+                    );
+                }
             }
             Ok(String::new())
         })
@@ -1022,30 +1066,34 @@ pub fn build_connector() -> Result<
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn noninteractive_authenticator(
-    credentials: &std::path::Path,
-    cache: &std::path::Path,
+    secret: yup_oauth2::ApplicationSecret,
+    backend: &TokenBackend,
 ) -> Result<yup_oauth2::authenticator::DefaultAuthenticator, BoxError> {
-    let secret = yup_oauth2::read_application_secret(credentials).await?;
-    Ok(yup_oauth2::InstalledFlowAuthenticator::builder(
+    let builder = yup_oauth2::InstalledFlowAuthenticator::builder(
         secret,
         yup_oauth2::InstalledFlowReturnMethod::Interactive,
-    )
-    .persist_tokens_to_disk(cache)
-    .flow_delegate(Box::new(NoInteractionDelegate))
-    .build()
-    .await?)
+    );
+    let builder = match (backend.pass_storage(), backend) {
+        (Some(storage), _) => builder.with_storage(Box::new(storage)),
+        (None, TokenBackend::File(path)) => builder.persist_tokens_to_disk(path),
+        (None, TokenBackend::Pass { .. }) => builder,
+    };
+    Ok(builder
+        .flow_delegate(Box::new(NoInteractionDelegate))
+        .build()
+        .await?)
 }
 
 /// # Errors
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn build_hub() -> Result<HubType, BoxError> {
-    let cache_path = token_cache_path();
-    if !cache_path.exists() {
+    let (secret, backend) = resolve_auth().await?;
+    if !backend.exists() {
         return Err("not authenticated. Run 'rscontacts auth' first.".into());
     }
 
-    let auth = noninteractive_authenticator(&credentials_path()?, &cache_path).await?;
+    let auth = noninteractive_authenticator(secret, &backend).await?;
 
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
         .pool_idle_timeout(Duration::from_secs(30))

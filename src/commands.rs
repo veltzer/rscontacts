@@ -3,14 +3,15 @@ use std::io::Write;
 
 use crate::helpers::{
     BoxError, BrowserFlowDelegate, HubType, MUTATE_DELAY, add_country_code, build_group_name_map,
-    build_hub, config_path, credentials_path, fetch_all_contact_groups, fetch_all_contacts,
-    find_duplicates, fix_phone_format, format_person_line, get_email_label, get_phone_label,
-    get_resource_name, has_country_code, has_user_label, is_correct_phone_format, is_fixable_phone,
-    is_starred, is_valid_email, load_config, noninteractive_authenticator, person_base_name,
+    build_hub, config_path, fetch_all_contact_groups, fetch_all_contacts, find_duplicates,
+    fix_phone_format, format_person_line, get_email_label, get_phone_label, get_resource_name,
+    has_country_code, has_user_label, is_correct_phone_format, is_fixable_phone, is_starred,
+    is_valid_email, load_config, noninteractive_authenticator, person_base_name,
     person_display_name, person_labels, person_name, person_to_vcard, phone_country_name,
-    phone_has_type, prompt_phone_label_fix, prompt_rename_label, prompt_yes_no, retry_api,
-    token_cache_path, update_phone_numbers,
+    phone_has_type, prompt_phone_label_fix, prompt_rename_label, prompt_yes_no, resolve_auth,
+    retry_api, update_phone_numbers,
 };
+use crate::pass::TokenBackend;
 
 const STANDARD_CONTACT_FIELDS: &[&str] = &[
     "names",
@@ -184,6 +185,12 @@ async fn rename_contact_group(
 
 const DEFAULT_CONFIG: &str = r#"# rscontacts configuration
 
+# pass(1) entries for the OAuth client JSON and the token cache. The files in
+# ~/.config/rscontacts are used when pass or the entry is missing.
+# [pass]
+# oauth_client = "gcp/rscontacts/oauth-client"
+# token = "gcp/rscontacts/token"
+
 [check-all]
 # List of checks to skip when running check-all.
 # All checks not listed here will run by default.
@@ -272,20 +279,20 @@ pub fn cmd_init_config(force: bool) -> Result<(), BoxError> {
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), BoxError> {
-    if force {
-        let cache = token_cache_path();
-        if cache.exists() {
-            std::fs::remove_file(&cache)?;
-            eprintln!("Removed cached token at {}", cache.display());
-        }
+    let (secret, mut backend) = resolve_auth().await?;
+    if force && backend.remove()? {
+        eprintln!("Removed cached token ({})", backend.describe());
     }
-    let secret = yup_oauth2::read_application_secret(credentials_path()?).await?;
 
-    let mut builder = yup_oauth2::InstalledFlowAuthenticator::builder(
+    let builder = yup_oauth2::InstalledFlowAuthenticator::builder(
         secret,
         yup_oauth2::InstalledFlowReturnMethod::HTTPRedirect,
-    )
-    .persist_tokens_to_disk(token_cache_path());
+    );
+    let mut builder = match (backend.pass_storage(), &backend) {
+        (Some(storage), _) => builder.with_storage(Box::new(storage)),
+        (None, TokenBackend::File(path)) => builder.persist_tokens_to_disk(path),
+        (None, TokenBackend::Pass { .. }) => builder,
+    };
 
     if !no_browser {
         builder = builder.flow_delegate(Box::new(BrowserFlowDelegate));
@@ -299,7 +306,7 @@ pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), BoxError> {
 
     eprintln!(
         "Authentication successful. Token cached to {}",
-        token_cache_path().display()
+        backend.describe()
     );
     Ok(())
 }
@@ -316,15 +323,15 @@ pub async fn cmd_auth(no_browser: bool, force: bool) -> Result<(), BoxError> {
 ///
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn cmd_auth_check_token() -> Result<(), BoxError> {
-    let cache_path = token_cache_path();
-    if !cache_path.exists() {
+    let (secret, backend) = resolve_auth().await?;
+    if !backend.exists() {
         eprintln!(
             "Token: MISSING ({}). Run 'rscontacts auth'.",
-            cache_path.display()
+            backend.describe()
         );
         std::process::exit(1);
     }
-    let auth = noninteractive_authenticator(&credentials_path()?, &cache_path).await?;
+    let auth = noninteractive_authenticator(secret, &backend).await?;
     let scopes = &["https://www.googleapis.com/auth/contacts"];
     match auth.token(scopes).await {
         Ok(token) => {
@@ -349,12 +356,11 @@ pub async fn cmd_auth_check_token() -> Result<(), BoxError> {
 /// Returns an error if reading the configuration, calling the Google People API, or writing output fails.
 pub async fn cmd_test_connect() -> Result<(), BoxError> {
     eprint!("Checking credentials... ");
-    credentials_path()?;
+    let (_secret, backend) = resolve_auth().await?;
     eprintln!("OK");
 
     eprint!("Checking token cache... ");
-    let cache_path = token_cache_path();
-    if !cache_path.exists() {
+    if !backend.exists() {
         eprintln!("MISSING");
         return Err("not authenticated. Run 'rscontacts auth' first.".into());
     }

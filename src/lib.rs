@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod helpers;
+pub mod pass;
 
 use clap::{CommandFactory, Parser, Subcommand};
 

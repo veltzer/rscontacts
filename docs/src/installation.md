@@ -34,4 +34,4 @@ The binary will be at `target/release/rscontacts`.
    - Click "Create Credentials" > "OAuth client ID"
    - Choose "Desktop application" as the application type
    - Download the JSON file
-5. Place the credentials file at `~/.config/rscontacts/credentials.json`
+5. Place the credentials file at `~/.config/rscontacts/credentials.json`, or store its content in the pass entry `gcp/rscontacts/oauth-client` (see [Authentication](authentication.md))

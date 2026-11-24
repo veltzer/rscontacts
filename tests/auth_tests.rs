@@ -9,6 +9,7 @@
 use std::time::Duration;
 
 use rscontacts::helpers::noninteractive_authenticator;
+use rscontacts::pass::TokenBackend;
 
 #[tokio::test]
 async fn failed_refresh_errors_instead_of_hanging() {
@@ -32,7 +33,11 @@ async fn failed_refresh_errors_instead_of_hanging() {
     )
     .unwrap();
 
-    let auth = noninteractive_authenticator(&credentials, &cache)
+    let secret = yup_oauth2::read_application_secret(&credentials)
+        .await
+        .unwrap();
+    let backend = TokenBackend::File(cache);
+    let auth = noninteractive_authenticator(secret, &backend)
         .await
         .unwrap();
     let result = tokio::time::timeout(

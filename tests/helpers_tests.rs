@@ -150,6 +150,21 @@ fn test_token_cache_path_is_in_config_dir() {
 }
 
 #[test]
+fn test_default_pass_entries() {
+    assert_eq!(DEFAULT_PASS_OAUTH_CLIENT, "gcp/rscontacts/oauth-client");
+    assert_eq!(DEFAULT_PASS_TOKEN, "gcp/rscontacts/token");
+}
+
+#[test]
+fn test_config_pass_table_overrides_entries() {
+    let config: Config = toml::from_str("[pass]\ntoken = \"x/token\"\n").unwrap();
+    assert_eq!(config.pass.token.as_deref(), Some("x/token"));
+    assert!(config.pass.oauth_client.is_none());
+    let config: Config = toml::from_str("").unwrap();
+    assert!(config.pass.token.is_none());
+}
+
+#[test]
 fn test_person_to_vcard_basic() {
     let person = Person {
         names: Some(vec![Name {

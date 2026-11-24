@@ -12,6 +12,22 @@ If the file does not exist, rscontacts runs with default settings (all checks en
 
 You can generate a default config file with `rscontacts init-config`. Use `--force` to overwrite an existing file.
 
+## pass entries
+
+The optional `[pass]` table overrides the [pass](https://www.passwordstore.org/)
+entries that hold the OAuth client and the token cache (see
+[Authentication](authentication.md)). Both keys are optional.
+
+```toml
+[pass]
+oauth_client = "gcp/my-project/oauth-client"
+token = "gcp/my-project/token"
+```
+
+The defaults are `gcp/rscontacts/oauth-client` and `gcp/rscontacts/token`. When
+`pass` or the entry is missing, `credentials.json` and `token_cache.json` in
+the config directory are used.
+
 ## check-all skip list
 
 The `[check-all]` section controls which checks are included when running `check-all`. By default, all checks run. You can skip specific checks by listing them in the `skip` array:

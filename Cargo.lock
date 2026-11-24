@@ -1330,6 +1330,7 @@ dependencies = [
 name = "rscontacts"
 version = "0.2.10"
 dependencies = [
+ "async-trait",
  "chrono",
  "clap",
  "clap_complete",

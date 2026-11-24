@@ -36,6 +36,11 @@ Requires Rust edition 2024.
 
    Creates `~/.config/rscontacts/config.toml` with default settings.
 
+Instead of the files, the OAuth client and the token cache can live in
+[pass](https://www.passwordstore.org/) entries (`gcp/rscontacts/oauth-client` and
+`gcp/rscontacts/token` by default). pass is tried first and the files are the
+fallback. See the Authentication chapter of the book for details.
+
 ## Usage
 
 ### List contacts
