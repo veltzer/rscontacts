@@ -188,8 +188,8 @@ const DEFAULT_CONFIG: &str = r#"# rscontacts configuration
 # pass(1) entries for the OAuth client JSON and the token cache. The files in
 # ~/.config/rscontacts are used when pass or the entry is missing.
 # [pass]
-# oauth_client = "gcp/rscontacts/oauth-client"
-# token = "gcp/rscontacts/token"
+# oauth_client = "gcp/veltzer-rscontacts-id/oauth-client"
+# token = "gcp/veltzer-rscontacts-id/token"
 
 [check-all]
 # List of checks to skip when running check-all.

@@ -24,7 +24,7 @@ oauth_client = "gcp/my-project/oauth-client"
 token = "gcp/my-project/token"
 ```
 
-The defaults are `gcp/rscontacts/oauth-client` and `gcp/rscontacts/token`. When
+The defaults are `gcp/veltzer-rscontacts-id/oauth-client` and `gcp/veltzer-rscontacts-id/token`. When
 `pass` or the entry is missing, `credentials.json` and `token_cache.json` in
 the config directory are used.
 

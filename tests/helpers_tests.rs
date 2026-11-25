@@ -151,8 +151,11 @@ fn test_token_cache_path_is_in_config_dir() {
 
 #[test]
 fn test_default_pass_entries() {
-    assert_eq!(DEFAULT_PASS_OAUTH_CLIENT, "gcp/rscontacts/oauth-client");
-    assert_eq!(DEFAULT_PASS_TOKEN, "gcp/rscontacts/token");
+    assert_eq!(
+        DEFAULT_PASS_OAUTH_CLIENT,
+        "gcp/veltzer-rscontacts-id/oauth-client"
+    );
+    assert_eq!(DEFAULT_PASS_TOKEN, "gcp/veltzer-rscontacts-id/token");
 }
 
 #[test]

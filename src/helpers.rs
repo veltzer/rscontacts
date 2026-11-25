@@ -199,10 +199,10 @@ pub fn credentials_path() -> Result<PathBuf, BoxError> {
 }
 
 /// The pass entry holding the OAuth client JSON unless `[pass]` overrides it.
-pub const DEFAULT_PASS_OAUTH_CLIENT: &str = "gcp/rscontacts/oauth-client";
+pub const DEFAULT_PASS_OAUTH_CLIENT: &str = "gcp/veltzer-rscontacts-id/oauth-client";
 
 /// The pass entry holding the token cache unless `[pass]` overrides it.
-pub const DEFAULT_PASS_TOKEN: &str = "gcp/rscontacts/token";
+pub const DEFAULT_PASS_TOKEN: &str = "gcp/veltzer-rscontacts-id/token";
 
 /// Read the OAuth client and decide where the token cache lives.
 ///

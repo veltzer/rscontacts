@@ -15,8 +15,8 @@ to plain files when `pass` is not installed or the entry does not exist.
 
 | What | pass entry (default) | Fallback file |
 |------|----------------------|---------------|
-| OAuth2 client (the JSON from Google Cloud Console) | `gcp/rscontacts/oauth-client` | `~/.config/rscontacts/credentials.json` |
-| Token cache (access/refresh tokens) | `gcp/rscontacts/token` | `~/.config/rscontacts/token_cache.json` |
+| OAuth2 client (the JSON from Google Cloud Console) | `gcp/veltzer-rscontacts-id/oauth-client` | `~/.config/rscontacts/credentials.json` |
+| Token cache (access/refresh tokens) | `gcp/veltzer-rscontacts-id/token` | `~/.config/rscontacts/token_cache.json` |
 
 Users without a pass store need do nothing: the files work exactly as before.
 
@@ -25,8 +25,8 @@ The entries can be renamed in `config.toml` (see [Configuration](configuration.m
 To use pass, store the content of the two files in the entries:
 
 ```bash
-pass insert -m gcp/rscontacts/oauth-client < credentials.json
-pass insert -m gcp/rscontacts/token < token_cache.json
+pass insert -m gcp/veltzer-rscontacts-id/oauth-client < credentials.json
+pass insert -m gcp/veltzer-rscontacts-id/token < token_cache.json
 ```
 
 The pass token entry has the same JSON layout as `token_cache.json`.
