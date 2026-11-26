@@ -90,7 +90,7 @@ args = ["--doc"]
 
 # lint the TOML files of the repo with taplo
 [processor.checker.taplo]
-src_files = [".rumdl.toml", "Cargo.toml", "deny.toml", "release.toml", "rsconstruct.toml", "rust-toolchain.toml"]
+src_files = [".config/nextest.toml", ".rumdl.toml", "Cargo.toml", "deny.toml", "docs/book.toml", "release.toml", "rsconstruct.toml", "rust-toolchain.toml"]
 
 # lint the shell scripts with shellcheck (policy: .shellcheckrc)
 [processor.checker.ishellcheck]
