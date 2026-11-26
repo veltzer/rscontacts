@@ -56,4 +56,4 @@ With `--fix --dry-run`, shows what would happen without making changes.
 - Only "fixable" phone numbers are considered (see `is_fixable_phone` — star codes, short codes, and alphanumeric entries are skipped).
 - The merge is additive for multi-value fields (phones, emails, addresses, labels) and first-wins for single-value fields (organization, birthday, biography).
 - The target contact is re-fetched before updating to ensure a fresh etag, avoiding conflicts.
-- This is NOT included in `check-all` since it is a destructive operation requiring careful interactive review.
+- This is NOT included in `all-checks` since it is a destructive operation requiring careful interactive review.

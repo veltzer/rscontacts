@@ -46,4 +46,4 @@ And many more — see the full mapping in `src/helpers.rs`.
 
 - Only phone numbers with a recognized country code prefix are considered. Phones without country codes are ignored (fix those first with [check-phone-countrycode](check-phone-countrycode.md)).
 - Only `country:` labels that match a recognized country name are considered for removal. Custom labels that happen to start with `country:` but use a different name will not be touched.
-- This check is included in [check-all](check-all.md).
+- This check is included in [all-checks](all-checks.md).

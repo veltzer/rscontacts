@@ -26,4 +26,4 @@ With `--fix`, shows full contact details (name, phones, emails, organization, et
 
 In Google Contacts, "labels" are contact groups (e.g., "Friends", "Family", "Work"). This check finds contacts that have no group membership (excluding the default "myContacts" system group).
 
-This is different from [check-phone-no-label](check-phone-no-label.md), which checks phone number type labels.
+This is different from [check-phone-label-missing](check-phone-label-missing.md), which checks phone number type labels.
