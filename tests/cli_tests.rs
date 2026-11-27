@@ -1,3 +1,6 @@
+// Everything here is test code; clippy.toml lets test code unwrap.
+#![cfg(test)]
+
 use clap::Parser;
 use rscontacts::{AuthAction, Cli, Commands};
 

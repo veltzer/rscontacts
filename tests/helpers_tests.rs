@@ -1,3 +1,6 @@
+// Everything here is test code; clippy.toml lets test code unwrap.
+#![cfg(test)]
+
 use google_people1::api::*;
 use rscontacts::helpers::Config;
 use rscontacts::helpers::*;

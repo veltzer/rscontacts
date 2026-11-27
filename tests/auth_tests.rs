@@ -1,3 +1,6 @@
+// Everything here is test code; clippy.toml lets test code unwrap.
+#![cfg(test)]
+
 //! Regression test: a failed token refresh must produce an error, not a hang.
 //!
 //! With `InstalledFlowReturnMethod::HTTPRedirect`, yup-oauth2 ignored the
