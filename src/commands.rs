@@ -4622,16 +4622,23 @@ pub async fn cmd_show_contact_labels() -> Result<(), BoxError> {
 /// How chatty `all-checks` is on stderr.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Verbosity {
+    /// Print findings only.
     Quiet,
+    /// Also say which check is running.
     Verbose,
 }
 
 /// Options of the `all-checks` command.
 pub struct CheckAllOptions<'a> {
+    /// Offer to fix what the checks find.
     pub fix: bool,
+    /// Show what a fix would change without changing it.
     pub dry_run: bool,
+    /// Print how many findings each check had.
     pub stats: bool,
+    /// How chatty to be on stderr.
     pub verbosity: Verbosity,
+    /// The country calling code given to phone numbers that have none.
     pub country: &'a str,
 }
 

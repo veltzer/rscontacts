@@ -1,6 +1,6 @@
 -- project definitions
 NAME = "rscontacts"
-DESCRIPTION_SHORT = "Managed your google contacts"
+DESCRIPTION_SHORT = "Manage your Google contacts"
 KEYWORDS = {
     "google-contacts",
     "cli",

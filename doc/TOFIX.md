@@ -16,4 +16,3 @@ Findings from a code scan on 2026-10-04.
 - `docs/src/configuration.md:17` - calls the command `check-all` (also `docs/src/commands/merge-by-email.md:57`, `docs/src/commands/merge-by-phone.md:58`); the subcommand is `all-checks` (only the config table is named `[check-all]`). Say `all-checks` when referring to the command.
 - `src/commands.rs:4530` - names in `[check-all] skip` are never validated, so a typo silently leaves the check running; reject (or warn about) skip entries that are not known check names.
 - `CLAUDE.md:20` - says "Three source files" with all unit tests in `mod tests` in `src/main.rs`, and names a `check-phone-no-label` check (`CLAUDE.md:30`); there is also `src/lib.rs`, tests live in `tests/*.rs`, no `mod tests` exists, and the check is `check-phone-label-missing`. Update it.
-- `Cargo.toml:6` - description "Managed your google contacts" is ungrammatical and is what crates.io shows; use e.g. "Audit and fix your Google Contacts".

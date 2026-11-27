@@ -1,9 +1,14 @@
+//! Library half of rscontacts: what the binary and the integration tests share.
+
+/// The commands: one function per subcommand, and the checks they run.
 pub mod commands;
+/// Configuration, authentication, the People API client, and phone and name helpers.
 pub mod helpers;
 pub mod pass;
 
 use clap::{CommandFactory, Parser, Subcommand};
 
+/// The command line of rscontacts.
 #[derive(Parser)]
 #[command(name = "rscontacts")]
 #[command(about = "Google Contacts CLI tool")]
@@ -12,10 +17,12 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub transport_errors: bool,
 
+    /// The subcommand to run.
     #[command(subcommand)]
     pub command: Commands,
 }
 
+/// The subcommands of rscontacts.
 #[derive(Subcommand)]
 pub enum Commands {
     /// Run all checks
@@ -40,6 +47,7 @@ pub enum Commands {
     /// Authenticate with Google (opens browser for `OAuth2` consent)
     #[command(args_conflicts_with_subcommands = true)]
     Auth {
+        /// What to do instead of the browser sign-in.
         #[command(subcommand)]
         action: Option<AuthAction>,
         /// Don't open browser automatically; print URL instead
@@ -437,12 +445,14 @@ pub enum Commands {
     Version,
 }
 
+/// The subcommands of `auth`.
 #[derive(Subcommand)]
 pub enum AuthAction {
     /// Check whether the cached token is valid, refreshing it if expired (no browser)
     CheckToken,
 }
 
+/// Print the completion script for `shell` on standard output.
 pub fn generate_completions(shell: clap_complete::Shell) {
     clap_complete::generate(
         shell,

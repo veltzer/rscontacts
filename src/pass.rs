@@ -24,7 +24,9 @@ use yup_oauth2::storage::{TokenInfo, TokenStorage, TokenStorageError};
 /// The pass entries holding the OAuth client JSON and the token cache.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entries {
+    /// The entry holding the OAuth client JSON.
     pub oauth_client: String,
+    /// The entry holding the token cache.
     pub token: String,
 }
 
@@ -49,7 +51,9 @@ impl Entries {
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct PassConfig {
+    /// The entry holding the OAuth client JSON, when not the default.
     pub oauth_client: Option<String>,
+    /// The entry holding the token cache, when not the default.
     pub token: Option<String>,
 }
 
@@ -66,11 +70,13 @@ impl Default for Pass {
 }
 
 impl Pass {
+    /// A runner for the `pass` found on `PATH`.
     #[must_use]
     pub fn new() -> Self {
         Self::with_program("pass")
     }
 
+    /// A runner for the given program in place of `pass`; tests use this.
     #[must_use]
     pub fn with_program(program: impl Into<OsString>) -> Self {
         Self {
@@ -161,8 +167,11 @@ impl Pass {
 pub enum TokenBackend {
     /// A pass entry. `initial` is its content when it exists.
     Pass {
+        /// The runner that reads and writes the entry.
         pass: Pass,
+        /// The name of the pass entry.
         entry: String,
+        /// The entry's content at startup, or `None` when it does not exist yet.
         initial: Option<String>,
     },
     /// The plaintext `token_cache.json` file.

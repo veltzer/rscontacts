@@ -1,3 +1,5 @@
+//! rscontacts: Manage your Google contacts.
+
 use clap::Parser;
 use rscontacts::helpers::BoxError;
 use rscontacts::{AuthAction, Cli, Commands, commands};

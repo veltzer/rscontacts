@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use crate::pass::{Entries, Pass, TokenBackend, choose_token_backend, load_secret};
 
+/// Pause after every write to the People API, to stay inside its quota.
 pub const MUTATE_DELAY: Duration = Duration::from_millis(500);
 
 static TRANSPORT_ERRORS: AtomicBool = AtomicBool::new(false);
@@ -21,6 +22,7 @@ const RETRY_DELAYS: [Duration; 3] = [
 ];
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Turn on or off the message printed when a transient API error is retried.
 pub fn set_transport_errors(enabled: bool) {
     TRANSPORT_ERRORS.store(enabled, Ordering::Relaxed);
 }
@@ -106,52 +108,71 @@ macro_rules! doit_retry {
         $crate::helpers::retry_api(|| async { $expr.doit().await }).await
     };
 }
+/// The labels offered when a phone number has none.
 pub const PHONE_LABEL_OPTIONS: &[&str] = &["mobile", "home", "work", "main", "other"];
 
+/// The contents of `config.toml`.
 #[derive(serde::Deserialize, Default, Debug)]
 pub struct Config {
+    /// The `[pass]` table: which pass entries hold the credentials.
     #[serde(default)]
     pub pass: crate::pass::PassConfig,
+    /// The `[check-all]` table.
     #[serde(default, rename = "check-all")]
     pub check_all: CheckAllConfig,
+    /// The `[check-contact-given-name-regexp]` table.
     #[serde(default, rename = "check-contact-given-name-regexp")]
     pub check_contact_given_name_regexp: NameRegexpConfig,
+    /// The `[check-contact-family-name-regexp]` table.
     #[serde(default, rename = "check-contact-family-name-regexp")]
     pub check_contact_family_name_regexp: NameRegexpConfig,
+    /// The `[check-contact-suffix-regexp]` table.
     #[serde(default, rename = "check-contact-suffix-regexp")]
     pub check_contact_suffix_regexp: NameRegexpConfig,
+    /// The `[check-contact-label-regexp]` table.
     #[serde(default, rename = "check-contact-label-regexp")]
     pub check_contact_label_regexp: NameRegexpConfig,
+    /// The `[check-contact-name-is-company]` table.
     #[serde(default, rename = "check-contact-name-is-company")]
     pub check_contact_name_is_company: CompanyNamesConfig,
+    /// The `[check-contact-given-name-known]` table.
     #[serde(default, rename = "check-contact-given-name-known")]
     pub check_contact_given_name_known: GivenNamesConfig,
 }
 
+/// Configuration of the known-given-name check.
 #[derive(serde::Deserialize, Default, Debug)]
 pub struct GivenNamesConfig {
+    /// The given names accepted as known.
     #[serde(default)]
     pub names: Vec<String>,
 }
 
+/// Configuration of the name-is-a-company check.
 #[derive(serde::Deserialize, Default, Debug)]
 pub struct CompanyNamesConfig {
+    /// The company names the check looks for.
     #[serde(default)]
     pub companies: Vec<String>,
 }
 
+/// Configuration of the `all-checks` command.
 #[derive(serde::Deserialize, Default, Debug)]
 pub struct CheckAllConfig {
+    /// Names of the checks `all-checks` leaves out.
     #[serde(default)]
     pub skip: Vec<String>,
 }
 
+/// Configuration of one of the name regexp checks.
 #[derive(serde::Deserialize, Default, Debug)]
 pub struct NameRegexpConfig {
+    /// The regular expression a value must match; no expression, no check.
     #[serde(default)]
     pub allow: Option<String>,
 }
 
+/// The path of `config.toml`.
 #[must_use]
 pub fn config_path() -> PathBuf {
     config_dir().join("config.toml")
@@ -224,11 +245,13 @@ pub async fn resolve_auth() -> Result<(yup_oauth2::ApplicationSecret, TokenBacke
     Ok((secret, backend))
 }
 
+/// The path of the plaintext token cache, `token_cache.json`.
 #[must_use]
 pub fn token_cache_path() -> PathBuf {
     config_dir().join("token_cache.json")
 }
 
+/// Whether `email` has the shape `local@domain.tld`. A syntax check only.
 #[must_use]
 pub fn is_valid_email(email: &str) -> bool {
     let trimmed = email.trim();
@@ -251,6 +274,7 @@ pub fn is_valid_email(email: &str) -> bool {
     true
 }
 
+/// The label of a phone number (`mobile`, `home`, ...), or `""` when it has none.
 #[must_use]
 pub fn get_phone_label(pn: &google_people1::api::PhoneNumber) -> &str {
     pn.formatted_type
@@ -259,6 +283,7 @@ pub fn get_phone_label(pn: &google_people1::api::PhoneNumber) -> &str {
         .unwrap_or("")
 }
 
+/// The label of an email address (`home`, `work`, ...), or `""` when it has none.
 #[must_use]
 pub fn get_email_label(e: &google_people1::api::EmailAddress) -> &str {
     e.formatted_type
@@ -267,6 +292,7 @@ pub fn get_email_label(e: &google_people1::api::EmailAddress) -> &str {
         .unwrap_or("")
 }
 
+/// The values that occur more than once, one entry for each repeat.
 #[must_use]
 pub fn find_duplicates<'a>(values: &[&'a str]) -> Vec<&'a str> {
     let mut seen = std::collections::HashSet::new();
@@ -277,12 +303,14 @@ pub fn find_duplicates<'a>(values: &[&'a str]) -> Vec<&'a str> {
         .collect()
 }
 
+/// Whether the phone number carries a label.
 #[must_use]
 pub fn phone_has_type(pn: &google_people1::api::PhoneNumber) -> bool {
     !pn.type_.as_deref().unwrap_or("").is_empty()
         || !pn.formatted_type.as_deref().unwrap_or("").is_empty()
 }
 
+/// Whether `phone` is a plain number that can be reformatted: more than three digits, no letters, not a `*` service code.
 #[must_use]
 pub fn is_fixable_phone(phone: &str) -> bool {
     let trimmed = phone.trim();
@@ -293,12 +321,14 @@ pub fn is_fixable_phone(phone: &str) -> bool {
         && digits.count() > 3
 }
 
+/// Whether `phone` starts with `+` or `00`.
 #[must_use]
 pub fn has_country_code(phone: &str) -> bool {
     let trimmed = phone.trim();
     trimmed.starts_with('+') || trimmed.starts_with("00")
 }
 
+/// `phone` with `+country` in front, a leading `0` dropped.
 #[must_use]
 pub fn add_country_code(phone: &str, country: &str) -> String {
     let trimmed = phone.trim();
@@ -306,6 +336,7 @@ pub fn add_country_code(phone: &str, country: &str) -> String {
     format!("+{country}{without_leading_zero}")
 }
 
+/// Whether `phone` is in the one accepted form, `+<country code>-<digits>`, with a known country code.
 pub fn is_correct_phone_format(phone: &str) -> bool {
     let trimmed = phone.trim();
     if !trimmed.starts_with('+') {
@@ -328,6 +359,7 @@ pub fn is_correct_phone_format(phone: &str) -> bool {
 static COUNTRY_CODE_SET: LazyLock<std::collections::HashSet<&'static str>> =
     LazyLock::new(|| COUNTRY_CODES.iter().copied().collect());
 
+/// Every country calling code, without the `+`.
 pub const COUNTRY_CODES: &[&str] = &[
     "1", "7", "20", "27", "30", "31", "32", "33", "34", "36", "39", "40", "41", "43", "44", "45",
     "46", "47", "48", "49", "51", "52", "53", "54", "55", "56", "57", "58", "60", "61", "62", "63",
@@ -593,6 +625,7 @@ pub fn phone_country_name(phone: &str) -> Option<&'static str> {
     COUNTRY_CODE_TO_NAME.get(cc).copied()
 }
 
+/// The length of the country calling code that `digits` starts with, longest match first, or `None`.
 pub fn detect_country_code(digits: &str) -> Option<usize> {
     // Try longest match first (3 digits, then 2, then 1)
     for len in (1..=3).rev() {
@@ -606,6 +639,7 @@ pub fn detect_country_code(digits: &str) -> Option<usize> {
     None
 }
 
+/// `phone` rewritten as `+<country code>-<digits>`; `country` is used when the number has no known code of its own.
 #[must_use]
 pub fn fix_phone_format(phone: &str, country: &str) -> String {
     let trimmed = phone.trim();
@@ -637,6 +671,7 @@ pub fn fix_phone_format(phone: &str, country: &str) -> String {
 /// across an `.await` stay `Send`.
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
+/// The People API client, over the HTTPS connector this tool builds.
 pub type HubType =
     PeopleService<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>;
 
@@ -678,6 +713,7 @@ pub async fn fetch_all_contacts(
     Ok(all)
 }
 
+/// The contact's name as rscontacts prints it; empty when it has none.
 #[must_use]
 pub fn person_name(person: &google_people1::api::Person) -> String {
     let names = person.names.as_ref().and_then(|n| n.first());
@@ -858,6 +894,7 @@ pub fn format_person_line<S: std::hash::BuildHasher>(
     }
 }
 
+/// Like [`person_name`], but `<no name>` in place of an empty name.
 #[must_use]
 pub fn person_display_name(person: &google_people1::api::Person) -> String {
     let name = person_name(person);
@@ -880,6 +917,7 @@ pub fn get_resource_name(person: &google_people1::api::Person) -> Result<&str, S
     })
 }
 
+/// Map each contact group's resource name to its display name.
 #[must_use]
 pub fn build_group_name_map(
     groups: &[google_people1::api::ContactGroup],
@@ -894,6 +932,7 @@ pub fn build_group_name_map(
         .collect()
 }
 
+/// The names of the contact groups (labels) the contact belongs to.
 #[must_use]
 pub fn person_labels<S: std::hash::BuildHasher>(
     person: &google_people1::api::Person,
@@ -993,6 +1032,7 @@ pub async fn fetch_all_contact_groups(
 
 // --- Auth delegates ---
 
+/// OAuth delegate for non-interactive use: fails instead of opening a browser.
 pub struct NoInteractionDelegate;
 
 impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for NoInteractionDelegate {
@@ -1007,6 +1047,7 @@ impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for NoInteraction
     }
 }
 
+/// OAuth delegate that sends the user to the consent page in a browser.
 pub struct BrowserFlowDelegate;
 
 impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for BrowserFlowDelegate {
@@ -1173,6 +1214,7 @@ pub fn prompt_rename_label(name: &str) -> Result<Option<String>, BoxError> {
 
 // --- Display helpers ---
 
+/// Whether the contact is starred.
 #[must_use]
 pub fn is_starred(person: &google_people1::api::Person) -> bool {
     person.memberships.as_ref().is_some_and(|memberships| {
@@ -1208,6 +1250,7 @@ pub const IGNORED_SYSTEM_GROUPS: &[&str] = &[
     "contactGroups/blocked",
 ];
 
+/// Whether the contact has a label of the user's own, as opposed to Google's system groups.
 #[must_use]
 pub fn has_user_label(person: &google_people1::api::Person) -> bool {
     person.memberships.as_ref().is_some_and(|memberships| {
@@ -1247,6 +1290,7 @@ fn google_address_type_to_vcard(atype: &str) -> &'static str {
     }
 }
 
+/// The contact as a vCard, with the given `UID` and `REV` values.
 #[must_use]
 pub fn person_to_vcard(person: &google_people1::api::Person, uid: &str, rev: &str) -> String {
     let names = person.names.as_ref().and_then(|n| n.first());
