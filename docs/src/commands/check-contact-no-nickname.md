@@ -13,6 +13,6 @@ rscontacts check-contact-no-nickname --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix contacts with nicknames |
 | `--dry-run` | Show what would change without modifying anything |

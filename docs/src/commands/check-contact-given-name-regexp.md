@@ -13,7 +13,7 @@ rscontacts check-contact-given-name-regexp --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix non-matching given names |
 | `--dry-run` | Show what would change without modifying anything |
 

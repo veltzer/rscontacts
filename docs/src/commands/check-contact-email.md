@@ -13,6 +13,6 @@ rscontacts check-contact-email --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix invalid or uppercase emails |
 | `--dry-run` | Show what would change without modifying anything |

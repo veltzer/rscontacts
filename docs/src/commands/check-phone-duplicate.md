@@ -13,6 +13,6 @@ rscontacts check-phone-duplicate --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix duplicate phone entries |
 | `--dry-run` | Show what would change without modifying anything |

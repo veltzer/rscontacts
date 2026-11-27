@@ -13,7 +13,7 @@ rscontacts check-contact-family-name-regexp --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix non-matching family names |
 | `--dry-run` | Show what would change without modifying anything |
 

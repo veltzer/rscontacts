@@ -30,15 +30,15 @@ With `--fix --dry-run`, shows what would be changed without modifying anything.
 
 All ITU-T E.164 country codes are recognized, including:
 
-| Code | Country | Code | Country |
-|------|---------|------|---------|
-| +1   | USA     | +44  | UK      |
-| +7   | Russia  | +49  | Germany |
-| +33  | France  | +86  | China   |
-| +34  | Spain   | +91  | India   |
-| +39  | Italy   | +380 | Ukraine |
-| +41  | Switzerland | +972 | Israel |
-| +971 | UAE     | +966 | Saudi Arabia |
+| Code | Country     | Code | Country      |
+| ---- | ----------- | ---- | ------------ |
+| +1   | USA         | +44  | UK           |
+| +7   | Russia      | +49  | Germany      |
+| +33  | France      | +86  | China        |
+| +34  | Spain       | +91  | India        |
+| +39  | Italy       | +380 | Ukraine      |
+| +41  | Switzerland | +972 | Israel       |
+| +971 | UAE         | +966 | Saudi Arabia |
 
 And many more — see the full mapping in `src/helpers.rs`.
 

@@ -14,7 +14,7 @@ rscontacts check-phone-countrycode --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Add country code to matching phone numbers |
 | `--dry-run` | Show changes without applying |
 | `--country <CODE>` | Country code to prepend (default: `972`) |

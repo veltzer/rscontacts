@@ -16,7 +16,7 @@ rscontacts all-checks --country 1
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix all issues found |
 | `--dry-run` | Show what would change without modifying anything |
 | `--stats` | Only show error counts per check, no details |

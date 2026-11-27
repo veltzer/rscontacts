@@ -13,6 +13,6 @@ rscontacts check-contact-no-given-name --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix contacts missing a given name |
 | `--dry-run` | Show what would change without modifying anything |

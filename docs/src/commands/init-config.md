@@ -12,5 +12,5 @@ rscontacts init-config --force
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--force` | Overwrite the config file if it already exists |

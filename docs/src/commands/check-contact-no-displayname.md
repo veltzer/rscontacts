@@ -13,6 +13,6 @@ rscontacts check-contact-no-displayname --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix contacts with empty display names |
 | `--dry-run` | Show what would change without modifying anything |

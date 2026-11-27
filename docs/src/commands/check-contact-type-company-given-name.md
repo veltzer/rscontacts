@@ -14,7 +14,7 @@ rscontacts check-contact-type-company-given-name --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix mismatched given names |
 | `--auto-fix` | Automatically set given name to match company field |
 | `--dry-run` | Show what would change without modifying anything |

@@ -13,6 +13,6 @@ rscontacts check-contact-label-regexp --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix non-matching labels |
 | `--dry-run` | Show what would change without modifying anything |

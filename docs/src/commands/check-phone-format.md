@@ -21,7 +21,7 @@ rscontacts check-phone-format --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Reformat phone numbers to `+CC-NUMBER` |
 | `--dry-run` | Show changes without applying |
 | `--country <CODE>` | Default country code for numbers without one (default: `972`) |

@@ -12,5 +12,5 @@ rscontacts move-suffix-to-family --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--dry-run` | Show what would change without modifying anything |

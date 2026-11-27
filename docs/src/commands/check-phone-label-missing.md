@@ -13,7 +13,7 @@ rscontacts check-phone-label-missing --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively assign labels to unlabeled phone numbers |
 | `--dry-run` | Show what would change without modifying anything |
 

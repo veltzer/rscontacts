@@ -49,7 +49,7 @@ Individual check commands (e.g., `rscontacts check-contact-given-name-regexp`) a
 The following check names can be used in the `skip` list:
 
 | Check name | Description |
-|---|---|
+| --- | --- |
 | `check-phone-countrycode` | Phone numbers missing a country code |
 | `check-phone-format` | Phone numbers not in +CC-NUMBER format |
 | `check-contact-given-name-regexp` | Given names not matching the configured allow regex |

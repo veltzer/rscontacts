@@ -13,12 +13,12 @@ rscontacts review-phone-label "Work Fax" --fix --dry-run
 ## Arguments
 
 | Argument | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `label` | The phone label to review |
 
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix phone labels |
 | `--dry-run` | Show what would change without modifying anything |

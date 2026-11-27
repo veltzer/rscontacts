@@ -14,7 +14,7 @@ rscontacts check-contact-type-company-no-label --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix missing company labels |
 | `--auto-fix` | Automatically create and assign the company label |
 | `--dry-run` | Show what would change without modifying anything |

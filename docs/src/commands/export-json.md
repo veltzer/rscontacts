@@ -12,5 +12,5 @@ rscontacts export-json --short
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--short` | Export a shorter/summarized version of each contact |

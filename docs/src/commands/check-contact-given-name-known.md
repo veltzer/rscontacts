@@ -13,7 +13,7 @@ rscontacts check-contact-given-name-known --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix unknown given names |
 | `--dry-run` | Show what would change without modifying anything |
 

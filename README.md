@@ -66,7 +66,7 @@ rscontacts all-checks --verbose  # Print each check name as it runs
 Each check can be run standalone with optional `--fix` and `--dry-run` flags:
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `check-contact-given-name-regexp` | Given names matching a configurable regex |
 | `check-contact-family-name-regexp` | Family names matching a configurable regex |
 | `check-contact-suffix-regexp` | Name suffixes matching a configurable regex |
@@ -94,7 +94,7 @@ Each check can be run standalone with optional `--fix` and `--dry-run` flags:
 ### Processor commands
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `auto-contact-type` | Auto-assign type:Person or type:Company based on name fields |
 | `company-labels` | Prefix labels of company contacts with `company:` |
 | `fix-labels` | Interactively fix labels that don't match the configured regex |
@@ -106,7 +106,7 @@ Each check can be run standalone with optional `--fix` and `--dry-run` flags:
 ### Utility commands
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `list` | List all contacts |
 | `show-contact <name>` | Show full details for a contact |
 | `edit-contact <name>` | Interactively edit a contact |

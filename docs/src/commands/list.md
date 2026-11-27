@@ -14,7 +14,7 @@ rscontacts list --emails --labels
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--emails` | Also show email addresses |
 | `--labels` | Also show contact labels (contact group memberships) |
 | `--starred` | Only show starred contacts |

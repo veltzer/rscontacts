@@ -13,6 +13,6 @@ rscontacts check-contact-label-nophone --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix empty labels |
 | `--dry-run` | Show what would change without modifying anything |

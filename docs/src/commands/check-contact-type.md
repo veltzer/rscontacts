@@ -13,6 +13,6 @@ rscontacts check-contact-type --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix contacts with missing or duplicate type labels |
 | `--dry-run` | Show what would change without modifying anything |

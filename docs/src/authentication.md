@@ -14,7 +14,7 @@ rscontacts looks in [pass](https://www.passwordstore.org/) first and falls back
 to plain files when `pass` is not installed or the entry does not exist.
 
 | What | pass entry (default) | Fallback file |
-|------|----------------------|---------------|
+| ------ | ---------------------- | --------------- |
 | OAuth2 client (the JSON from Google Cloud Console) | `gcp/veltzer-rscontacts-id/oauth-client` | `~/.config/rscontacts/credentials.json` |
 | Token cache (access/refresh tokens) | `gcp/veltzer-rscontacts-id/token` | `~/.config/rscontacts/token_cache.json` |
 

@@ -13,6 +13,6 @@ rscontacts check-contact-email-duplicate --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix duplicate email entries |
 | `--dry-run` | Show what would change without modifying anything |

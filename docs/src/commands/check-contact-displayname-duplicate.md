@@ -13,6 +13,6 @@ rscontacts check-contact-displayname-duplicate --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix duplicate display names |
 | `--dry-run` | Show what would change without modifying anything |

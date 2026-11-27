@@ -16,12 +16,12 @@ Error: Failure(Response { status: 502, version: HTTP/2.0, headers: {"content-typ
 
 rscontacts automatically retries API calls that fail with any of these HTTP status codes:
 
-| Code | Meaning             | Typical cause                              |
-|------|---------------------|--------------------------------------------|
-| 429  | Too Many Requests   | Rate limit exceeded                        |
-| 502  | Bad Gateway         | Google backend overloaded or timed out     |
-| 503  | Service Unavailable | Temporary Google service disruption        |
-| 504  | Gateway Timeout     | Google backend did not respond in time     |
+| Code | Meaning             | Typical cause                          |
+| ---- | ------------------- | -------------------------------------- |
+| 429  | Too Many Requests   | Rate limit exceeded                    |
+| 502  | Bad Gateway         | Google backend overloaded or timed out |
+| 503  | Service Unavailable | Temporary Google service disruption    |
+| 504  | Gateway Timeout     | Google backend did not respond in time |
 
 ## Retry behavior
 

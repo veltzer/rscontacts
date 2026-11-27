@@ -12,7 +12,7 @@ rscontacts edit-contact "John"
 ## Arguments
 
 | Argument | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `name` | Name (or partial name) of the contact to edit |
 
 ## Notes

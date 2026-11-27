@@ -13,6 +13,6 @@ rscontacts check-contact-company-exists --fix --dry-run
 ## Flags
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--fix` | Interactively fix contacts with unknown companies |
 | `--dry-run` | Show what would change without modifying anything |
