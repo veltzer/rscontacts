@@ -231,12 +231,12 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Check that contacts tagged type:Company have a matching company:<name> label
+    /// Check that contacts tagged type:Company have a matching `company:<name>` label
     CheckContactTypeCompanyNoLabel {
         /// Interactively fix each flagged contact
         #[arg(long)]
         fix: bool,
-        /// Automatically create and assign the company:<name> label
+        /// Automatically create and assign the `company:<name>` label
         #[arg(long)]
         auto_fix: bool,
         /// Show what would be changed without modifying anything
@@ -261,7 +261,7 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Check that contacts have correct country:<Name> labels matching their phone country codes
+    /// Check that contacts have correct `country:<Name>` labels matching their phone country codes
     CheckPhoneCountryLabel {
         /// Automatically add/remove country labels
         #[arg(long)]
